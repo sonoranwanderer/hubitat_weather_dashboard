@@ -5,6 +5,7 @@ the core display elements of the Ecowitt HP2561. Notable tiles include:
 
 * `wind-compass.js` — renders a compass-inspired visualization of current, gust, and averaged wind direction.
 * `wind-average-text.js` — provides a single-line readout of ten-minute averaged wind bearing, cardinal direction, and speed that other tiles can reference.
+* `rain-rate-summary.js` — combines readings from the rain-rate, event, and accumulation tiles into a single drop-themed summary with current rate, daily total, and interval table.
 
 The Javascript is brought into the dashboard by using the Dashboard JavaScript Injector:
 https://github.com/michaelbarone/hubitat/blob/master/drivers/dashboardJavaScriptInjector.groovy 
