@@ -12,3 +12,9 @@ The javscript reads data from other tiles on the dashboard that expose one of:
 * Collection of HTML formated data from a weather device (device driver specific)
 * Other useful information from non device or hub variable sources
 
+This code relies on the Ecowitt driver as maintained 
+https://github.com/sburke781/ecowitt
+
+The documentation for the HTML templates on the Github sit above is incomplete, the 
+full set of templates can be read directly here:
+https://sburke781.github.io/ecowitt/html/ecowitt.json
