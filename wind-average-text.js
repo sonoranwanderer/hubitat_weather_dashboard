@@ -9,6 +9,7 @@
     bearing: false,
     cardinal: true,
     speed: true,
+    unit: false,
   };
 
   /* ====== CSS ====== */
@@ -16,7 +17,7 @@
   .wind-average-text-tile{position:relative;overflow:hidden;font-family:system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;line-height:1.1}
   .wind-source-hidden{opacity:0!important;position:absolute!important;pointer-events:none!important;width:1px!important;height:1px!important;overflow:hidden!important}
   .wind-average-shell{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:8px;text-align:center}
-  .wind-average-line{display:flex;align-items:center;justify-content:center;gap:0.65rem;font-size:1.4rem;font-weight:600;white-space:nowrap}
+  .wind-average-line{display:flex;align-items:center;justify-content:center;gap:0.65rem;font-size:1.4rem;font-weight:400;white-space:nowrap}
   .wind-average-line .value{font-variant-numeric:tabular-nums}
   .wind-average-line .unit{margin-left:0.25rem;font-size:0.65em;letter-spacing:0.08em;text-transform:uppercase;opacity:0.7}
   .wind-average-line .is-hidden{display:none!important}
@@ -202,10 +203,12 @@
     const cardinalValEl = shell.querySelector('.wind-average-cardinal .value');
     const speedEl = shell.querySelector('.wind-average-speed');
     const speedValEl = shell.querySelector('.wind-average-speed .value');
+    const speedUnitEl = shell.querySelector('.wind-average-speed .unit');
 
     applyVisibility(bearingEl, !!SHOW_PARTS.bearing);
     applyVisibility(cardinalEl, !!SHOW_PARTS.cardinal);
     applyVisibility(speedEl, !!SHOW_PARTS.speed);
+    applyVisibility(speedUnitEl, !!SHOW_PARTS.unit);
 
     const refresh = rafDebounce(() => {
       const { deg, speed } = parseWind(windTile, nodeText(windNode));
