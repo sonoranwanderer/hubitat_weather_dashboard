@@ -1,10 +1,9 @@
-// Wind Compass — centered, performant, gust from Hub Variable (pure JS)
+// Wind Compass — centered, performant, with 10-minute direction averaging (pure JS)
 (() => {
   /* ====== CONFIG ====== */
   const MAIN_TILE_ID    = 'tile-22';               // e.g. 'tile-28'
   const WIND_TILE_ID    = 'tile-17';               // e.g. 'tile-28'
-  const GUST_TILE_ID    = 'tile-23';               // e.g. 'tile-25'
-  const GUST_MATCH_EPSILON = 0.05;                 // fallback heuristic mph
+  const AVERAGE_WINDOW_MS = 10 * 60 * 1000;        // 10 minute rolling window
 
   // SVG geometry (viewBox 0..200)
   const RING_OUTER = 92, ARROW_BASE_R = 89, ARROW_TIP_R = 74;
@@ -20,7 +19,7 @@
   .no-aspect .compass-square>.compass-abs{position:absolute;inset:0}
   .compass-square svg{width:100%;height:100%;display:block}
   .wind-source-hidden{opacity:0!important;position:absolute!important;pointer-events:none!important;width:1px!important;height:1px!important;overflow:hidden!important}
-  :root{--ring:#5f6b7a;--ring-alt:#8aa4c2;--ticks:#8091a7;--text:currentColor;--needle-current:#4cc3ff;--needle-gust:#ff9f43}
+  :root{--ring:#5f6b7a;--ring-alt:#8aa4c2;--ticks:#8091a7;--text:currentColor;--needle-current:#4cc3ff;--needle-avg:#d0d5dc;--needle-gust:#ff9f43}
   .center-stack{position:absolute;inset:28% 18%;display:grid;place-items:center;gap:4px;text-align:center;pointer-events:none;white-space:nowrap;text-shadow:0 1px 2px rgba(0,0,0,.35)}
   .center-stack .bearing{font-weight:700;font-size:calc(12px*var(--k));opacity:.95}
   .center-stack .speed{display:inline-flex;align-items:center;gap:6px;font-weight:800;font-size:calc(21px*var(--k));color:var(--needle-current);line-height:1.05}
@@ -136,11 +135,6 @@
 
     return {deg,speed,gust};
   }
-  function parseBearingDegrees(text){
-    const m=(text||'').match(/(-?\d+(?:\.\d+)?)\s*°?/);
-    if(!m) return NaN; let d=parseFloat(m[1]); if(!Number.isFinite(d)) return NaN;
-    return ((d%360)+360)%360;
-  }
   function card16(deg){
     if(!Number.isFinite(deg)) return '--';
     const dirs=['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
@@ -148,7 +142,7 @@
   }
 
   /* ====== Init ====== */
-  function initOnceOnTile(mainTile, windTile, gustTile){
+  function initOnceOnTile(mainTile, windTile){
     if(!windTile || windTile.dataset.windCompassInstalled==='1') return;
     windTile.dataset.windCompassInstalled='1';
 
@@ -179,18 +173,44 @@
     mainTile.appendChild(shell);
 
     const currentArrow=makeArrow({outline:false,color:'var(--needle-current)',baseHalf:ARROW_BASE_HALF_CURRENT});
-    const gustArrow   =makeArrow({outline:true, color:'var(--needle-gust)',   baseHalf:ARROW_BASE_HALF_GUST});
-    arrows.appendChild(currentArrow); arrows.appendChild(gustArrow); svg.appendChild(arrows);
+    const avgArrow    =makeArrow({outline:true, color:'var(--needle-avg)',    baseHalf:ARROW_BASE_HALF_GUST});
+    arrows.appendChild(currentArrow); arrows.appendChild(avgArrow); svg.appendChild(arrows);
 
     const bearingEl=stack.querySelector('.bearing');
     const speedEl  =stack.querySelector('.speed .val');
     const gustEl   =stack.querySelector('.gust .val');
 
-    // gust dir state + storage
-    const tileId = windTile.id || windTile.getAttribute('data-id') || 'wind-tile';
-    const gustKey = `windCompass_gustDir_${tileId}`;
-    let gustDirDeg = Number.parseFloat(localStorage.getItem(gustKey));
-    if(!Number.isFinite(gustDirDeg)) gustDirDeg = NaN;
+    // rolling average direction state
+    const samples=[];
+    const sums={sin:0, cos:0};
+    function pruneOld(now){
+      const ts = Number.isFinite(now) ? now : Date.now();
+      const cutoff = ts - AVERAGE_WINDOW_MS;
+      while(samples.length && samples[0].ts < cutoff){
+        const old = samples.shift();
+        sums.sin -= old.sin;
+        sums.cos -= old.cos;
+      }
+    }
+    function addDirectionSample(deg, now){
+      const ts = Number.isFinite(now) ? now : Date.now();
+      const rad = deg * Math.PI / 180;
+      const sin = Math.sin(rad);
+      const cos = Math.cos(rad);
+      samples.push({ts, sin, cos});
+      sums.sin += sin;
+      sums.cos += cos;
+      pruneOld(ts);
+    }
+    function averageDirection(){
+      pruneOld();
+      if(!samples.length) return NaN;
+      const sin = sums.sin;
+      const cos = sums.cos;
+      if(Math.abs(sin) < 1e-6 && Math.abs(cos) < 1e-6) return NaN;
+      const rad = Math.atan2(sin, cos);
+      return ((rad * 180 / Math.PI) % 360 + 360) % 360;
+    }
 
     // ---- Observe main value node (leaf only) ----
     const refresh = rafDebounce(() => {
@@ -198,24 +218,17 @@
       if(Number.isFinite(deg)){
         bearingEl.textContent = `${card16(deg)} ${Math.round(((deg%360)+360)%360)}°`;
         setRot(currentArrow, deg);
+        addDirectionSample(((deg%360)+360)%360, Date.now());
       } else {
         bearingEl.textContent='--';
       }
 
-      // keep gust arrow: prefer gust tile reading if valid, else fallback memory
-      const showGustDeg = Number.isFinite(gustDirDeg) ? gustDirDeg : (Number.isFinite(deg)?deg:0);
-      setRot(gustArrow, showGustDeg);
+      const avgDeg = averageDirection();
+      const showAvgDeg = Number.isFinite(avgDeg) ? avgDeg : (Number.isFinite(deg) ? deg : 0);
+      setRot(avgArrow, showAvgDeg);
 
       speedEl.textContent = Number.isFinite(speed)? speed.toFixed(1) : '--';
       gustEl.textContent  = Number.isFinite(gust) ? gust.toFixed(1)  : '--';
-
-      // if no gust tile yet, update memory when speed ~= gust
-      if(!Number.isFinite(gustDirDeg) && Number.isFinite(speed) && Number.isFinite(gust) && Number.isFinite(deg)){
-        if(Math.abs(speed-gust) <= GUST_MATCH_EPSILON){
-          gustDirDeg = deg; try{localStorage.setItem(gustKey,String(gustDirDeg));}catch(_){}
-          setRot(gustArrow, gustDirDeg);
-        }
-      }
     });
 
     const moWind = new MutationObserver(refresh);
@@ -233,27 +246,6 @@
       }
     }, 2000);
 
-    // ---- Gust variable tile (leaf only) ----
-    if(gustTile){
-      let gustNode = findValueNode(gustTile);
-      const readGust = rafDebounce(()=> {
-        const d = parseBearingDegrees(nodeText(gustNode));
-        if(Number.isFinite(d)){
-          gustDirDeg = d; try{localStorage.setItem(gustKey,String(gustDirDeg));}catch(_){}
-          setRot(gustArrow, gustDirDeg);
-        }
-      });
-      if(gustNode){
-        const moG = new MutationObserver(readGust);
-        moG.observe(gustNode, {subtree:true,childList:true,characterData:true});
-        readGust();
-        setInterval(()=> {
-          const nn = findValueNode(gustTile);
-          if(nn && nn!==gustNode){ moG.disconnect(); gustNode=nn; moG.observe(gustNode,{subtree:true,childList:true,characterData:true}); readGust(); }
-        }, 2000);
-      }
-    }
-
     // ---- Resize (no intervals) ----
     const resize = rafDebounce(()=> {
       const w = mainTile.getBoundingClientRect().width;
@@ -269,8 +261,7 @@
     injectCSSOnce('wind-compass-style-perf', CSS);
     const mainTile = byId(MAIN_TILE_ID);
     const windTile = byId(WIND_TILE_ID);
-    const gustTile = byId(GUST_TILE_ID);
-    if(mainTile) initOnceOnTile(mainTile, windTile, gustTile);
+    if(mainTile) initOnceOnTile(mainTile, windTile);
   }
 
   if(document.readyState==='loading'){
