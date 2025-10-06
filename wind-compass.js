@@ -19,7 +19,7 @@
   .no-aspect .compass-square>.compass-abs{position:absolute;inset:0}
   .compass-square svg{width:100%;height:100%;display:block}
   .wind-source-hidden{opacity:0!important;position:absolute!important;pointer-events:none!important;width:1px!important;height:1px!important;overflow:hidden!important}
-  :root{--ring:#5f6b7a;--ring-alt:#8aa4c2;--ticks:#8091a7;--text:currentColor;--needle-current:#4cc3ff;--needle-gust:#d0d5dc}
+  :root{--ring:#5f6b7a;--ring-alt:#8aa4c2;--ticks:#8091a7;--text:currentColor;--needle-current:#4cc3ff;--needle-avg:#d0d5dc;--needle-gust:#ff9f43}
   .center-stack{position:absolute;inset:28% 18%;display:grid;place-items:center;gap:4px;text-align:center;pointer-events:none;white-space:nowrap;text-shadow:0 1px 2px rgba(0,0,0,.35)}
   .center-stack .bearing{font-weight:700;font-size:calc(12px*var(--k));opacity:.95}
   .center-stack .speed{display:inline-flex;align-items:center;gap:6px;font-weight:800;font-size:calc(21px*var(--k));color:var(--needle-current);line-height:1.05}
@@ -173,7 +173,7 @@
     mainTile.appendChild(shell);
 
     const currentArrow=makeArrow({outline:false,color:'var(--needle-current)',baseHalf:ARROW_BASE_HALF_CURRENT});
-    const avgArrow    =makeArrow({outline:true, color:'var(--needle-gust)',   baseHalf:ARROW_BASE_HALF_GUST});
+    const avgArrow    =makeArrow({outline:true, color:'var(--needle-avg)',    baseHalf:ARROW_BASE_HALF_GUST});
     arrows.appendChild(currentArrow); arrows.appendChild(avgArrow); svg.appendChild(arrows);
 
     const bearingEl=stack.querySelector('.bearing');
