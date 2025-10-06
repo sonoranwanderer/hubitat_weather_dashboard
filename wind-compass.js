@@ -1,11 +1,8 @@
 // Wind Compass — centered, performant, gust from Hub Variable (pure JS)
 (() => {
   /* ====== CONFIG ====== */
-  const MAIN_TILE_TITLE = 'Wind Compass';          // Display tile
   const MAIN_TILE_ID    = 'tile-22';               // e.g. 'tile-28'
-  const WIND_TILE_TITLE = 'Wind Compass';          // your wind attribute tile
   const WIND_TILE_ID    = 'tile-17';               // e.g. 'tile-28'
-  const GUST_TILE_TITLE = 'Gust_Compass_Bearing';  // hub variable tile
   const GUST_TILE_ID    = 'tile-23';               // e.g. 'tile-25'
   const GUST_MATCH_EPSILON = 0.05;                 // fallback heuristic mph
 
@@ -37,16 +34,7 @@
   /* ====== Utilities (perf) ====== */
   const rafDebounce = (fn)=>{let s=false;return(...a)=>{if(s) return;s=true;requestAnimationFrame(()=>{s=false;fn(...a);});};};
   const injectCSSOnce = (id,css)=>{if(!document.getElementById(id)){const s=document.createElement('style');s.id=id;s.textContent=css;document.head.appendChild(s);}};
-  const qsa = (s,root=document)=>Array.from(root.querySelectorAll(s));
-
-  function findTileByTitle(title){
-    for(const t of qsa('.tile')){
-      const el=t.querySelector('.tile-title, .tile .title');
-      if(el && el.textContent.trim()===title) return t;
-    }
-    return null;
-  }
-  const byIdOrTitle=(id,title)=> (id && document.getElementById(id)) || (title && findTileByTitle(title)) || null;
+  const byId = id => (id ? document.getElementById(id) : null);
 
   // Robust value node finder (device attribute OR hub variable)
   function findValueNode(tile){
@@ -108,12 +96,44 @@
     </span>`;
 
   /* ====== Parsing ====== */
-  function parseMainWind(text){
-    const L=(text||'').split('\n').map(s=>s.trim()).filter(Boolean);
+  function parseMainWind(tile, text){
     let deg=NaN,speed=NaN,gust=NaN;
-    if(L[0]){const m=L[0].match(/(-?\d+(?:\.\d+)?)\s*°/); if(m) deg=parseFloat(m[1]);}
-    if(L[1]){const m=L[1].match(/(-?\d+(?:\.\d+)?)/);    if(m) speed=parseFloat(m[1]);}
-    if(L[2]){const m=L[2].match(/(-?\d+(?:\.\d+)?)/);    if(m) gust=parseFloat(m[1]);}
+
+    if(tile){
+      const root = tile.querySelector('.tile-contents, .tile-primary, .tile-content, .tile .content');
+      const bearingEl = root ? Array.from(root.querySelectorAll('[class]')).find(el => el.className.split(/\s+/).some(c => c.startsWith('ewl-wind'))) : null;
+      const speedEl = root?.querySelector('.ewi-windspeed');
+
+      if(bearingEl){
+        const m = bearingEl.textContent?.match(/(-?\d+(?:\.\d+)?)\s*°?/);
+        if(m) deg = parseFloat(m[1]);
+      }
+      if(speedEl){
+        const parts = speedEl.innerText.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+        if(parts[0]){
+          const m = parts[0].match(/(-?\d+(?:\.\d+)?)/);
+          if(m) speed = parseFloat(m[1]);
+        }
+        if(parts[1]){
+          const m = parts[1].match(/(-?\d+(?:\.\d+)?)/);
+          if(m) gust = parseFloat(m[1]);
+        }
+      }
+    }
+
+    if(!Number.isFinite(deg) || !Number.isFinite(speed) || !Number.isFinite(gust)){
+      const L=(text||'').split('\n').map(s=>s.trim()).filter(Boolean);
+      if(!Number.isFinite(deg) && L[0]){
+        const m=L[0].match(/(-?\d+(?:\.\d+)?)\s*°/); if(m) deg=parseFloat(m[1]);
+      }
+      if(!Number.isFinite(speed) && L[1]){
+        const m=L[1].match(/(-?\d+(?:\.\d+)?)/);    if(m) speed=parseFloat(m[1]);
+      }
+      if(!Number.isFinite(gust) && L[2]){
+        const m=L[2].match(/(-?\d+(?:\.\d+)?)/);    if(m) gust=parseFloat(m[1]);
+      }
+    }
+
     return {deg,speed,gust};
   }
   function parseBearingDegrees(text){
@@ -174,7 +194,7 @@
 
     // ---- Observe main value node (leaf only) ----
     const refresh = rafDebounce(() => {
-      const {deg,speed,gust} = parseMainWind(nodeText(windNode));
+      const {deg,speed,gust} = parseMainWind(windTile, nodeText(windNode));
       if(Number.isFinite(deg)){
         bearingEl.textContent = `${card16(deg)} ${Math.round(((deg%360)+360)%360)}°`;
         setRot(currentArrow, deg);
@@ -247,9 +267,9 @@
 
   function bootOnce(){
     injectCSSOnce('wind-compass-style-perf', CSS);
-    const mainTile = byIdOrTitle(MAIN_TILE_ID, MAIN_TILE_TITLE);
-    const windTile = byIdOrTitle(WIND_TILE_ID, WIND_TILE_TITLE);
-    const gustTile = byIdOrTitle(GUST_TILE_ID, GUST_TILE_TITLE);
+    const mainTile = byId(MAIN_TILE_ID);
+    const windTile = byId(WIND_TILE_ID);
+    const gustTile = byId(GUST_TILE_ID);
     if(mainTile) initOnceOnTile(mainTile, windTile, gustTile);
   }
 
