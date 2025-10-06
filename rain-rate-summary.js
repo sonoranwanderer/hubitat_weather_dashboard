@@ -19,31 +19,24 @@
   /* ====== CSS ====== */
   const CSS = `
   .rainfusion-host{position:relative;overflow:hidden}
-  .rainfusion-wrap{position:absolute;inset:8px;display:grid;grid-template-columns:110px 1fr auto;gap:18px;align-items:center;
+  .rainfusion-wrap{position:absolute;inset:8px;display:grid;grid-template-columns:110px 1fr auto;gap:18px;align-items:flex-start;
     font-family:"Inter","Segoe UI","Helvetica Neue",Arial,sans-serif;color:#f4f7ff;text-shadow:0 1px 2px rgba(0,0,0,.35)}
-  .rainfusion-wrap .drop-column{display:flex;flex-direction:column;align-items:center;justify-content:center}
+  .rainfusion-wrap .drop-column{display:flex;flex-direction:column;align-items:center;justify-content:center;align-self:center}
   .rainfusion-drop{width:100%;max-width:100px}
   .rainfusion-drop svg{width:100%;height:auto;display:block}
   .rainfusion-drop-outline{fill:none;stroke:#6ab9ff;stroke-width:6;stroke-linejoin:round}
   .rainfusion-drop-bg{fill:rgba(80,160,255,.15)}
   .rainfusion-drop-fill{transition:all .4s ease-in-out}
-  .rainfusion-center{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:4px}
-  .rainfusion-rate-label{font-size:18px;letter-spacing:.08em;text-transform:uppercase;opacity:.85}
-  .rainfusion-rate-value{font-size:58px;font-weight:600;line-height:1;font-variant-numeric:tabular-nums}
-  .rainfusion-rate-value .unit{font-size:.33em;margin-left:.45em;font-weight:500;opacity:.85}
-  .rainfusion-daily-label{margin-top:6px;font-size:18px;letter-spacing:.08em;text-transform:uppercase;opacity:.85}
-  .rainfusion-daily-value{font-size:30px;font-weight:600;line-height:1.1;font-variant-numeric:tabular-nums}
-  .rainfusion-table{display:flex;align-items:center;justify-content:flex-end}
+  .rainfusion-center{display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-start;gap:12px}
+  .rainfusion-rate-line{display:flex;align-items:baseline;gap:6px;font-size:18px;font-weight:400;opacity:.9;font-variant-numeric:tabular-nums}
+  .rainfusion-rate-line .label{font-weight:600;margin-right:2px}
+  .rainfusion-daily-value{font-size:48px;font-weight:700;line-height:1}
+  .rainfusion-daily-label{font-size:18px;font-weight:600;opacity:.9}
+  .rainfusion-table{display:flex;align-items:flex-start;justify-content:flex-end}
   .rainfusion-table table{border-collapse:collapse;font-size:18px;min-width:140px}
   .rainfusion-table td{padding:4px 0;color:#f4f7ff}
   .rainfusion-table td:first-child{text-align:left;padding-right:12px;white-space:nowrap;opacity:.85}
   .rainfusion-table td:last-child{text-align:right;font-variant-numeric:tabular-nums}
-  .rainfusion-spark{margin-top:12px;width:30px;height:24px;position:relative}
-  .rainfusion-spark i{position:absolute;bottom:0;left:0;width:4px;background:rgba(90,180,255,.85);box-shadow:0 0 6px rgba(90,180,255,.4)}
-  .rainfusion-spark i:nth-child(1){height:35%;}
-  .rainfusion-spark i:nth-child(2){left:8px;height:55%;}
-  .rainfusion-spark i:nth-child(3){left:16px;height:80%;}
-  .rainfusion-spark i:nth-child(4){left:24px;height:45%;}
   .hide-title .tile-title,.hide-title .title{display:none!important}
   .source-hidden{opacity:0!important;position:absolute!important;pointer-events:none!important;width:1px!important;height:1px!important;overflow:hidden!important}
   `;
@@ -178,34 +171,24 @@
         <path class="rainfusion-drop-outline" d="M60 10 C40 45 20 75 20 105 C20 135 38 150 60 150 C82 150 100 135 100 105 C100 75 80 45 60 10 Z" />
       </svg>`;
 
-    const spark = document.createElement('div');
-    spark.className = 'rainfusion-spark';
-    spark.innerHTML = '<i></i><i></i><i></i><i></i>';
-    dropColumn.appendChild(spark);
-
     const center = document.createElement('div');
     center.className = 'rainfusion-center';
     wrap.appendChild(center);
 
-    const rateLabel = document.createElement('div');
-    rateLabel.className = 'rainfusion-rate-label';
-    rateLabel.textContent = 'Rate';
-    center.appendChild(rateLabel);
+    const rateLine = document.createElement('div');
+    rateLine.className = 'rainfusion-rate-line';
+    rateLine.innerHTML = '<span class="label">Rate:</span><span class="value">--</span><span class="unit">in/hr</span>';
+    center.appendChild(rateLine);
 
-    const rateValue = document.createElement('div');
-    rateValue.className = 'rainfusion-rate-value';
-    rateValue.innerHTML = '<span class="value">--</span><span class="unit">in/hr</span>';
-    center.appendChild(rateValue);
+    const dailyValue = document.createElement('div');
+    dailyValue.className = 'rainfusion-daily-value';
+    dailyValue.innerHTML = '<span class="value">--</span>';
+    center.appendChild(dailyValue);
 
     const dailyLabel = document.createElement('div');
     dailyLabel.className = 'rainfusion-daily-label';
     dailyLabel.textContent = 'Daily Rain';
     center.appendChild(dailyLabel);
-
-    const dailyValue = document.createElement('div');
-    dailyValue.className = 'rainfusion-daily-value';
-    dailyValue.innerHTML = '<span class="value">--</span><span class="unit"> in</span>';
-    center.appendChild(dailyValue);
 
     const tableWrap = document.createElement('div');
     tableWrap.className = 'rainfusion-table';
@@ -238,7 +221,8 @@
     }
 
     const dropFillRect = drop.querySelector('.rainfusion-drop-fill');
-    const rateValueSpan = rateValue.querySelector('.value');
+    const rateValueSpan = rateLine.querySelector('.value');
+    const rateUnitSpan = rateLine.querySelector('.unit');
     const dailyValueSpan = dailyValue.querySelector('.value');
 
     const updateView = () => {
@@ -250,6 +234,7 @@
       dropFillRect.setAttribute('height', String(height));
 
       rateValueSpan.textContent = formatRate(rate);
+      rateUnitSpan.style.display = rate == null || !isFinite(rate) ? 'none' : 'inline';
       dailyValueSpan.textContent = state.daily == null || !isFinite(state.daily) ? '--' : state.daily.toFixed(2);
 
       rowMap.get('event').textContent = formatInches(state.event);
