@@ -1,7 +1,7 @@
 // Wind Average Text Tile — 10 minute averaged direction (bearing/cardinal) + speed
 (() => {
   /* ====== CONFIG ====== */
-  const MAIN_TILE_ID = 'tile-23';               // Replace with the tile hosting this script
+  const MAIN_TILE_ID = 'tile-36';               // Replace with the tile hosting this script
   const WIND_TILE_ID = 'tile-17';               // Tile that exposes the raw wind data
   const AVERAGE_WINDOW_MS = 10 * 60 * 1000;     // 10 minute rolling window
   const SPEED_UNIT = 'mph';                     // Display unit for averaged speed
