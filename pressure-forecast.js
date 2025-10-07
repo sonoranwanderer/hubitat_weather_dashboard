@@ -12,30 +12,35 @@
   .pressure-forecast-host{position:relative;overflow:hidden;font-family:system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
   .pressure-forecast-host .tile-title,.pressure-forecast-host .title{display:none!important}
   .pressure-hidden-source{display:none!important}
-  .pressure-forecast{position:absolute;inset:6px;display:flex;flex-direction:column;justify-content:space-between;gap:10px;color:#f8fbff;text-shadow:0 1px 2px rgba(0,0,0,.35)}
-  .pressure-main{display:flex;align-items:center;gap:10px}
-  .pressure-value{display:flex;flex-direction:column;line-height:1}
-  .pressure-value .number{font-weight:800;font-size:clamp(28px,9vw,40px);letter-spacing:-0.02em}
-  .pressure-value .unit{font-size:clamp(12px,3vw,16px);opacity:.8;font-weight:600}
-  .pressure-mode-btn{border:none;background:rgba(255,255,255,.12);color:inherit;border-radius:12px;padding:10px;display:grid;place-items:center;cursor:pointer;transition:background .2s ease,transform .2s ease}
+  .pressure-forecast{position:absolute;inset:6px;display:flex;flex-direction:column;justify-content:center;gap:10px;color:#f8fbff;text-shadow:0 1px 2px rgba(0,0,0,.35)}
+  .pressure-row{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  .pressure-reading{display:flex;flex-direction:column;gap:6px;min-width:0}
+  .pressure-reading .reading-label{font-size:clamp(11px,2.8vw,13px);font-weight:700;letter-spacing:.08em;text-transform:uppercase;opacity:.8}
+  .pressure-reading .reading-main{display:flex;align-items:center;gap:12px;flex-wrap:nowrap}
+  .pressure-mode-btn{border:none;background:rgba(255,255,255,.12);color:inherit;border-radius:12px;padding:8px 10px;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;transition:background .2s ease,transform .2s ease}
   .pressure-mode-btn[disabled]{cursor:default;opacity:.6}
   .pressure-mode-btn:not([disabled]):hover{background:rgba(255,255,255,.2);transform:translateY(-1px)}
   .pressure-mode-btn:not([disabled]):active{transform:scale(.98)}
-  .pressure-mode-btn svg{width:36px;height:36px;display:block}
-  .pressure-mode-btn .label{display:block;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;opacity:.9;margin-top:4px}
-  .pressure-mode-btn .icon{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;background:rgba(0,0,0,.25)}
-  .pressure-meta{display:flex;flex-direction:column;gap:6px;font-size:clamp(12px,3.1vw,14px)}
-  .tendency{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
-  .tendency .value{font-weight:700;font-size:clamp(16px,4.5vw,20px)}
-  .tendency .value.positive{color:#5cff9a}
-  .tendency .value.negative{color:#ff6b6b}
-  .tendency .trend{font-weight:600;opacity:.85}
-  .forecast{display:flex;align-items:center;gap:10px}
-  .forecast-icon{width:44px;height:44px;flex:none;border-radius:50%;background:rgba(0,0,0,.25);display:grid;place-items:center}
-  .forecast-icon svg{width:32px;height:32px;display:block}
-  .forecast-text{flex:1;font-weight:600;line-height:1.2;opacity:.9}
+  .pressure-mode-btn .icon{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;background:rgba(0,0,0,.25)}
+  .pressure-mode-btn svg{width:30px;height:30px;display:block}
+  .pressure-mode-btn .label{display:block;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;opacity:.9}
+  .pressure-value{display:flex;flex-direction:column;line-height:1;min-width:0}
+  .pressure-value .number{font-weight:800;font-size:clamp(30px,10vw,44px);letter-spacing:-0.02em}
+  .pressure-value .unit{font-size:clamp(12px,3vw,16px);opacity:.8;font-weight:600}
+  .tendency-group{display:flex;align-items:center;gap:10px;min-width:0}
+  .tendency-icon{width:46px;height:46px;border-radius:50%;border:2px solid rgba(255,255,255,.35);background:rgba(0,0,0,.25);display:grid;place-items:center;color:#f8fbff}
+  .tendency-icon svg{width:28px;height:28px;display:block;transform-origin:50% 50%;transition:transform .3s ease}
+  .tendency-icon.arrow-up svg{transform:rotate(-45deg)}
+  .tendency-icon.arrow-down svg{transform:rotate(45deg)}
+  .tendency-icon.arrow-steady svg{transform:rotate(0deg)}
+  .tendency-value{display:flex;align-items:baseline;gap:4px;font-size:clamp(18px,5vw,24px);font-weight:700}
+  .tendency-value .number.positive{color:#5cff9a}
+  .tendency-value .number.negative{color:#ff6b6b}
+  .forecast-icon{width:52px;height:52px;flex:none;border-radius:50%;background:rgba(0,0,0,.25);display:grid;place-items:center}
+  .forecast-icon svg{width:38px;height:38px;display:block}
   .pressure-stats{font-size:11px;opacity:.7;font-weight:600;display:flex;gap:10px;flex-wrap:wrap}
   .pressure-missing{opacity:.8;font-style:italic}
+  .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
   `;
 
   /* ===== ICONS ===== */
@@ -134,6 +139,20 @@
 
   const forecastIcon = key => FORECAST_ICONS[key] || FORECAST_ICONS.cloudy;
 
+  const resolveTendencyDirection = (text, value) => {
+    const normalized = (text || '').toLowerCase();
+    if (normalized.includes('rise') || normalized.includes('increase')) return 'up';
+    if (normalized.includes('fall') || normalized.includes('decre')) return 'down';
+    if (value != null && !Number.isNaN(Number(value))) {
+      const num = Number(value);
+      if (num > 0.005) return 'up';
+      if (num < -0.005) return 'down';
+    }
+    return 'steady';
+  };
+
+  const TENDENCY_ARROW = `<svg viewBox="0 0 48 48" role="img" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" d="M14 16l16 8-16 8"/><path fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" d="M12 24h18"/></svg>`;
+
   /* ===== Render ===== */
   function render(tile, node, ui, summary) {
     if (!summary) {
@@ -163,34 +182,37 @@
     const avg30 = summary.thirtyDayAverage;
 
     const tendencyClass = Number(tendencyValue) > 0 ? 'positive' : Number(tendencyValue) < 0 ? 'negative' : 'neutral';
+    const tendencyDirection = resolveTendencyDirection(tendencyText, tendencyValue);
 
     ui.classList.remove('pressure-missing');
     ui.innerHTML = `
-      <div class="pressure-main">
-        <button class="pressure-mode-btn" type="button" aria-label="${altAvailable ? `Switch to ${alternateMode} pressure` : pressureModeTitle}" title="${altAvailable ? `Switch to ${alternateMode} pressure` : pressureModeTitle}" data-mode="${mode}" ${altAvailable ? '' : 'disabled'}>
-          <div class="icon" aria-hidden="true">${MODE_ICONS[mode] || modeLabel(mode)}</div>
-          <span class="label">${mode === 'absolute' ? 'ABS' : 'REL'}</span>
-        </button>
-        <div class="pressure-value" aria-live="polite">
-          <span class="number">${formatPressure(pressureValue, unit)}</span>
-          <span class="unit">${unit}</span>
+      <div class="pressure-row">
+        <div class="pressure-reading">
+          <div class="reading-label">Barometer Reading</div>
+          <div class="reading-main">
+            <button class="pressure-mode-btn" type="button" aria-label="${altAvailable ? `Switch to ${alternateMode} pressure` : pressureModeTitle}" title="${altAvailable ? `Switch to ${alternateMode} pressure` : pressureModeTitle}" data-mode="${mode}" ${altAvailable ? '' : 'disabled'}>
+              <div class="icon" aria-hidden="true">${MODE_ICONS[mode] || modeLabel(mode)}</div>
+              <span class="label">${mode === 'absolute' ? 'ABS' : 'REL'}</span>
+            </button>
+            <div class="pressure-value" aria-live="polite">
+              <span class="number">${formatPressure(pressureValue, unit)}</span>
+              <span class="unit">${unit}</span>
+            </div>
+          </div>
         </div>
+        <div class="tendency-group" role="group" aria-label="Barometric tendency ${tendencyText}" title="${tendencyText}">
+          <div class="tendency-icon arrow-${tendencyDirection}" aria-hidden="true">${TENDENCY_ARROW}</div>
+          <div class="tendency-value">
+            <span class="number ${tendencyClass}">${formatTendency(tendencyValue, unit)}</span>
+            <span class="unit">${unit}</span>
+          </div>
+          <span class="sr-only">${tendencyText}</span>
+        </div>
+        <div class="forecast-icon" role="img" aria-label="${forecastText}" title="${forecastText}">${forecastIcon(forecastKey)}</div>
       </div>
-      <div class="pressure-meta">
-        <div class="tendency">
-          <span class="label">Tendency:</span>
-          <span class="value ${tendencyClass}">${formatTendency(tendencyValue, unit)}</span>
-          <span class="unit">${unit}</span>
-          <span class="trend">${tendencyText}</span>
-        </div>
-        <div class="pressure-stats">
-          <span>Daily avg: ${dailyAvg != null ? formatPressure(dailyAvg, unit) : '--'} ${unit}</span>
-          <span>30-day avg: ${avg30 != null ? formatPressure(avg30, unit) : '--'} ${unit}</span>
-        </div>
-        <div class="forecast">
-          <div class="forecast-icon" aria-hidden="true">${forecastIcon(forecastKey)}</div>
-          <div class="forecast-text">${forecastText}</div>
-        </div>
+      <div class="pressure-stats">
+        <span>Daily avg: ${dailyAvg != null ? formatPressure(dailyAvg, unit) : '--'} ${unit}</span>
+        <span>30-day avg: ${avg30 != null ? formatPressure(avg30, unit) : '--'} ${unit}</span>
       </div>`;
 
     const btn = ui.querySelector('.pressure-mode-btn');
