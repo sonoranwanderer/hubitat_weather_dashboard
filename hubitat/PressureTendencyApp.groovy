@@ -79,7 +79,8 @@ def handlePressureEvent(evt) {
     try {
         processPressure()
     } catch (Throwable t) {
-        log.error "Pressure Tendency App failed to process pressure", t
+        log.error "Pressure Tendency App failed to process pressure: ${t?.message ?: t}"
+        log.debug "Pressure Tendency App exception details: ${t}"
     }
 }
 
@@ -121,12 +122,14 @@ private void processPressure() {
 private Map readCurrentPressures() {
     Map result = [relative: null, absolute: null, reference: null, unit: null]
     if (relativeAttribute) {
-        result.relative = parseBigDecimal(sourceDevice?.currentValue(relativeAttribute))
-        result.unit = sourceDevice?.currentUnit(relativeAttribute) ?: result.unit
+        def state = sourceDevice?.currentState(relativeAttribute)
+        result.relative = parseBigDecimal(state?.value)
+        result.unit = state?.unit ?: result.unit
     }
     if (absoluteAttribute) {
-        result.absolute = parseBigDecimal(sourceDevice?.currentValue(absoluteAttribute))
-        result.unit = sourceDevice?.currentUnit(absoluteAttribute) ?: result.unit
+        def state = sourceDevice?.currentState(absoluteAttribute)
+        result.absolute = parseBigDecimal(state?.value)
+        result.unit = state?.unit ?: result.unit
     }
     if ("absolute" == referenceAttribute) {
         result.reference = result.absolute ?: result.relative
