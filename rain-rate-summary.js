@@ -19,20 +19,21 @@
   /* ====== CSS ====== */
   const CSS = `
   .rainfusion-host{position:relative;overflow:hidden}
-  .rainfusion-wrap{position:absolute;inset:8px;display:grid;grid-template-columns:110px 1fr auto;gap:18px;align-items:flex-start;
+  .rainfusion-wrap{position:absolute;inset:8px;display:grid;width:calc(100% - 16px);height:calc(100% - 16px);
+    grid-template-columns:auto auto auto;gap:24px;align-content:center;justify-content:center;align-items:center;justify-items:center;
     font-family:"Inter","Segoe UI","Helvetica Neue",Arial,sans-serif;color:#f4f7ff;text-shadow:0 1px 2px rgba(0,0,0,.35)}
-  .rainfusion-wrap .drop-column{display:flex;flex-direction:column;align-items:center;justify-content:center;align-self:center}
-  .rainfusion-drop{width:100%;max-width:100px}
+  .rainfusion-wrap .drop-column{display:flex;flex-direction:column;align-items:center;justify-content:center}
+  .rainfusion-drop{width:100%;max-width:110px}
   .rainfusion-drop svg{width:100%;height:auto;display:block}
   .rainfusion-drop-outline{fill:none;stroke:#6ab9ff;stroke-width:6;stroke-linejoin:round}
   .rainfusion-drop-bg{fill:rgba(80,160,255,.15)}
   .rainfusion-drop-fill{transition:all .4s ease-in-out}
-  .rainfusion-center{display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-start;gap:12px}
+  .rainfusion-center{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;text-align:center}
   .rainfusion-rate-line{display:flex;align-items:baseline;gap:6px;font-size:18px;font-weight:400;opacity:.9;font-variant-numeric:tabular-nums}
   .rainfusion-rate-line .label{font-weight:600;margin-right:2px}
   .rainfusion-daily-value{font-size:48px;font-weight:700;line-height:1}
   .rainfusion-daily-label{font-size:18px;font-weight:600;opacity:.9}
-  .rainfusion-table{display:flex;align-items:flex-start;justify-content:flex-end}
+  .rainfusion-table{display:flex;align-items:center;justify-content:center}
   .rainfusion-table table{border-collapse:collapse;font-size:18px;min-width:140px}
   .rainfusion-table td{padding:4px 0;color:#f4f7ff}
   .rainfusion-table td:first-child{text-align:left;padding-right:12px;white-space:nowrap;opacity:.85}
