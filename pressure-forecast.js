@@ -1,8 +1,10 @@
 // Pressure Forecast Tile — toggles absolute/relative pressure, shows tendency & forecast icon
 (() => {
   /* ===== CONFIG ===== */
-  const MAIN_TILE_ID = 'tile-99';              // Replace with your tile id
-  const MAIN_TILE_TITLE = 'Pressure Summary';  // Or provide the attribute tile title
+  const DISPLAY_TILE_ID = 'tile-99';              // Tile where the custom UI should render
+  const DISPLAY_TILE_TITLE = 'Pressure Summary';  // Or provide the display tile title
+  const SOURCE_TILE_ID = '';                      // Optional: separate tile that exposes pressureSummary JSON
+  const SOURCE_TILE_TITLE = '';                   // Optional title for the source tile
   const STORAGE_KEY = 'ecowitt-pressure-mode';
 
   /* ===== CSS ===== */
@@ -203,23 +205,26 @@
 
   /* ===== Init ===== */
   function setup() {
-    const tile = byIdOrTitle(MAIN_TILE_ID, MAIN_TILE_TITLE);
-    if (!tile || tile.dataset.pressureForecastInstalled === '1') return;
-    const valueNode = findValueNode(tile);
+    const displayTile = byIdOrTitle(DISPLAY_TILE_ID, DISPLAY_TILE_TITLE);
+    if (!displayTile || displayTile.dataset.pressureForecastInstalled === '1') return;
+    const sourceTile = byIdOrTitle(SOURCE_TILE_ID, SOURCE_TILE_TITLE) || displayTile;
+    const valueNode = findValueNode(sourceTile);
     if (!valueNode) return;
 
-    tile.dataset.pressureForecastInstalled = '1';
+    displayTile.dataset.pressureForecastInstalled = '1';
     injectCSSOnce('pressure-forecast-css', CSS);
-    tile.classList.add('pressure-forecast-host');
-    if (valueNode) valueNode.classList.add('pressure-hidden-source');
+    displayTile.classList.add('pressure-forecast-host');
+    if (displayTile === sourceTile && valueNode) {
+      valueNode.classList.add('pressure-hidden-source');
+    }
 
     const ui = document.createElement('div');
     ui.className = 'pressure-forecast';
-    tile.appendChild(ui);
+    displayTile.appendChild(ui);
 
     const update = () => {
       const summary = parseSummary(valueNode.textContent.trim());
-      render(tile, valueNode, ui, summary);
+      render(displayTile, valueNode, ui, summary);
     };
 
     const observer = new MutationObserver(update);

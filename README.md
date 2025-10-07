@@ -36,5 +36,6 @@ The repository now includes a simple Hubitat app/driver pair to accumulate the p
 1. In **Drivers Code**, add `PressureTendencyDevice.groovy`, then create a new Virtual Device using that driver (e.g., "Pressure Tendency Summary").
 2. In **Apps Code**, add `PressureTendencyApp.groovy`, install the app, select your Ecowitt source device, provide the attribute names for relative/absolute pressure, choose which attribute should be the reference for averaging, and select the virtual device created above.
 3. Add the virtual device's `pressureSummary` attribute to your dashboard as an *Attribute* tile, note its tile ID/title, and inject `pressure-forecast.js` with the matching configuration constants.
+   * The script now supports separate tiles for the rendered display and the raw data source. Provide the display tile's ID/title via `DISPLAY_TILE_ID`/`DISPLAY_TILE_TITLE`, and (optionally) point `SOURCE_TILE_ID`/`SOURCE_TILE_TITLE` at a different attribute tile if you want to keep the JSON visible for troubleshooting.
 
 The app persists up to 30 daily averages so the 30-day baseline gradually becomes more accurate as data accumulates. Until enough history exists the tendency will gracefully fall back to the best available information.
