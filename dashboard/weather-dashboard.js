@@ -13,6 +13,8 @@
   const TEMP_RANGE = { min: -40, max: 120 };
   const AMBIENT_ROTATION_DEFAULT_SECONDS = 12;
   const AMBIENT_ROTATION_MIN_SECONDS = 3;
+  const INIT_RETRY_LIMIT = 40;
+  const INIT_RETRY_DELAY = 250;
 
   const TEMP_COLORS = [
     { max: -20, colors: ['#70a9ff', '#3c6aff'] },
@@ -48,12 +50,24 @@
     humidityUnit: '%'
   };
 
-  init();
+  whenDomReady(init);
 
-  function init() {
+  function whenDomReady(callback) {
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', callback, { once: true });
+    } else {
+      callback();
+    }
+  }
+
+  function init(attempt = 0) {
     const displayTile = byId(DISPLAY_TILE_ID);
     if (!displayTile) {
-      console.warn('[WeatherDashboard] Display tile not found');
+      if (attempt < INIT_RETRY_LIMIT) {
+        setTimeout(() => init(attempt + 1), INIT_RETRY_DELAY);
+      } else {
+        console.warn('[WeatherDashboard] Display tile not found after waiting');
+      }
       return;
     }
 
@@ -69,7 +83,6 @@
     content.innerHTML = `<div class="wdash" role="presentation"><div class="wdash-grid" data-empty="true"></div></div>`;
 
     const dataTiles = DATA_TILE_IDS.map(id => byId(id)).filter(Boolean);
-    dataTiles.forEach(tile => tile.classList.add('wdash-source-tile'));
 
     const observer = new MutationObserver(debounce(renderFromData, 150));
     dataTiles.forEach(tile => {
@@ -89,12 +102,14 @@
       grid.dataset.empty = 'true';
       grid.innerHTML = `<div class="wdash-empty">Waiting for weather data…</div>`;
       clearAmbientRotation();
+      toggleSourceTileMask(false);
       return;
     }
 
     grid.dataset.empty = 'false';
     grid.innerHTML = buildMarkup(payload);
     setupAmbientRotation(payload);
+    toggleSourceTileMask(true);
   }
 
   function readPayloads() {
@@ -104,6 +119,9 @@
       if (!tile) continue;
       const text = getTileText(tile);
       if (!text) continue;
+      if (/please select an attribute/i.test(text)) {
+        continue;
+      }
       const json = extractJson(text);
       if (!json) continue;
       try {
@@ -113,6 +131,14 @@
       }
     }
     return payloads;
+  }
+
+  function toggleSourceTileMask(hide) {
+    for (const id of DATA_TILE_IDS) {
+      const tile = byId(id);
+      if (!tile) continue;
+      tile.classList.toggle('wdash-source-tile', hide);
+    }
   }
 
   function mergePayloads(payloads) {
@@ -524,7 +550,7 @@
     style.id = CSS_ID;
     style.textContent = `
       .wdash-host .tile-title, .wdash-host .tile-primary > .title { display: none !important; }
-      .wdash-source-tile { opacity: 0 !important; position: absolute !important; pointer-events: none !important; width: 1px !important; height: 1px !important; overflow: hidden !important; }
+      .wdash-source-tile { opacity: 0 !important; pointer-events: none !important; }
       .wdash { width: 100%; height: 100%; font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif; color: #f4f6ff; background: rgba(4, 9, 20, 0.85); backdrop-filter: blur(4px); border-radius: 12px; padding: 16px; box-sizing: border-box; }
       .wdash-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); grid-auto-rows: minmax(120px, auto); gap: 14px; height: 100%; }
       .wdash-grid[data-empty="true"] { place-items: center; }
