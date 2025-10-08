@@ -220,6 +220,8 @@
   function buildTemperatureCard(data) {
     const outdoor = data.outdoor || {};
     const temp = toNumber(outdoor.temperatureF);
+    const high = toNumber(outdoor.dailyHighF);
+    const low = toNumber(outdoor.dailyLowF);
     const feels = toNumber(outdoor.feelsLikeF);
     const dew = toNumber(outdoor.dewPointF);
     const humidity = toNumber(outdoor.humidity);
@@ -227,10 +229,12 @@
 
     const colors = colorForTemp(temp);
     const angle = gaugeAngle(temp);
-    const feelsText = formatTemperature(feels);
     const dewText = formatTemperature(dew);
     const humidityText = formatPercent(humidity, 0);
     const trendText = formatSigned(trend, 2, '°/hr');
+    const feelsText = formatTemperature(feels);
+    const highText = formatTemperature(high);
+    const lowText = formatTemperature(low);
 
     return `
       <section class="wdash-card wdash-card--temp">
@@ -239,15 +243,32 @@
           <div class="wdash-gauge" style="--gauge-angle:${angle};--gauge-color-a:${colors[0]};--gauge-color-b:${colors[1]};">
             <div class="wdash-gauge-ring"></div>
             <div class="wdash-gauge-center">
+              <div class="wdash-temp-extrema wdash-temp-extrema--high">
+                <span class="wdash-temp-extrema-label">High</span>
+                <span class="wdash-temp-extrema-value">${highText}</span>
+              </div>
               <div class="wdash-gauge-value">${formatTemperature(temp)}</div>
-              <div class="wdash-gauge-label">Feels like ${feelsText}</div>
+              <div class="wdash-gauge-label">Current</div>
+              <div class="wdash-temp-extrema wdash-temp-extrema--low">
+                <span class="wdash-temp-extrema-label">Low</span>
+                <span class="wdash-temp-extrema-value">${lowText}</span>
+              </div>
             </div>
           </div>
-          <dl class="wdash-temp-details">
-            <div><dt>Dew Point</dt><dd>${dewText}</dd></div>
-            <div><dt>Humidity</dt><dd>${humidityText}</dd></div>
-            <div><dt>Trend</dt><dd>${trendText}</dd></div>
-          </dl>
+          <div class="wdash-temp-stats">
+            <div class="wdash-temp-stats-row wdash-temp-stats-row--labels">
+              <span>Dew Point</span>
+              <span>Humidity</span>
+              <span>Trend</span>
+              <span>Feels Like</span>
+            </div>
+            <div class="wdash-temp-stats-row wdash-temp-stats-row--values">
+              <span>${dewText}</span>
+              <span>${humidityText}</span>
+              <span>${trendText}</span>
+              <span>${feelsText}</span>
+            </div>
+          </div>
         </div>
       </section>
     `;
@@ -636,18 +657,22 @@
         .wdash-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
         .wdash-card { grid-column: span 6 !important; }
       }
-      .wdash-temp { display: grid; grid-template-columns: minmax(0, 1fr) 160px; align-items: center; gap: 16px; }
-      @media (max-width: 800px) { .wdash-temp { grid-template-columns: 1fr; } }
-      .wdash-gauge { position: relative; width: 100%; padding-bottom: 100%; border-radius: 50%; }
+      .wdash-temp { display: grid; gap: 18px; align-items: center; justify-items: center; }
+      .wdash-gauge { position: relative; width: 100%; max-width: 260px; margin: 0 auto; padding-bottom: 100%; border-radius: 50%; }
       .wdash-gauge-ring { position: absolute; inset: 6%; border-radius: 50%; background: conic-gradient(var(--gauge-color-a), var(--gauge-color-b) var(--gauge-angle), rgba(255,255,255,0.12) var(--gauge-angle), rgba(255,255,255,0.05)); mask: radial-gradient(closest-side, transparent calc(100% - 16px), black calc(100% - 15px)); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08); }
-      .wdash-gauge-center { position: absolute; inset: 20%; border-radius: 50%; background: rgba(5,10,20,0.85); display: grid; place-items: center; text-align: center; padding: 10px; }
+      .wdash-gauge-center { position: absolute; inset: 20%; border-radius: 50%; background: rgba(5,10,20,0.85); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 12px 10px; gap: 6px; }
       .wdash-gauge-value { font-size: clamp(2.6rem, 5vw, 3.6rem); font-weight: 800; letter-spacing: -0.02em; }
-      .wdash-gauge-value::after { content: '°'; font-size: 0.55em; vertical-align: super; margin-left: 2px; }
-      .wdash-gauge-label { font-size: 0.8rem; opacity: 0.85; }
-      .wdash-temp-details { display: grid; gap: 8px; font-size: 0.82rem; }
-      .wdash-temp-details div { display: flex; justify-content: space-between; }
-      .wdash-temp-details dt { color: #8ea0c8; font-weight: 600; }
-      .wdash-temp-details dd { margin: 0; font-weight: 600; }
+      .wdash-gauge-label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.12em; color: #9badcf; }
+      .wdash-temp-extrema { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+      .wdash-temp-extrema-label { font-size: 0.65rem; letter-spacing: 0.12em; text-transform: uppercase; color: #8ea0c8; }
+      .wdash-temp-extrema-value { font-size: 1.05rem; font-weight: 600; color: #dce8ff; }
+      .wdash-temp-extrema--high .wdash-temp-extrema-value { color: #ffb95a; }
+      .wdash-temp-extrema--low .wdash-temp-extrema-value { color: #7cc5ff; }
+      .wdash-temp-stats { width: 100%; background: rgba(255,255,255,0.06); border-radius: 12px; padding: 12px 16px; display: grid; gap: 8px; }
+      .wdash-temp-stats-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; text-align: center; }
+      .wdash-temp-stats-row--labels span { text-transform: uppercase; font-size: 0.68rem; letter-spacing: 0.1em; color: #8ea0c8; }
+      .wdash-temp-stats-row--values span { font-size: 1.05rem; font-weight: 600; }
+      @media (max-width: 700px) { .wdash-temp-stats-row { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
       .wdash-wind { display: grid; grid-template-columns: 1fr 160px; gap: 16px; align-items: center; }
       @media (max-width: 800px) { .wdash-wind { grid-template-columns: 1fr; } }
       .wdash-wind-primary { display: grid; gap: 12px; }

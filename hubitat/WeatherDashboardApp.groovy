@@ -312,6 +312,14 @@ def refreshWeatherData() {
         }
     }
 
+    def dailyExtrema = updateDailyOutdoorExtrema(tempF, now, tz)
+    if (dailyExtrema?.high != null) {
+        outdoor.dailyHighF = dailyExtrema.high
+    }
+    if (dailyExtrema?.low != null) {
+        outdoor.dailyLowF = dailyExtrema.low
+    }
+
     def feels = readDecimalFor("attrFeelsLike")
     if (feels != null) outdoor.feelsLikeF = round(feels, 1)
 
@@ -719,6 +727,32 @@ private void updateTemperatureHistory(BigDecimal temperature, long timestamp) {
         history << [time: timestamp, temperature: temperature as BigDecimal]
     }
     state.temperatureHistory = history
+}
+
+private Map updateDailyOutdoorExtrema(BigDecimal temperature, long timestamp, TimeZone tz) {
+    def record = (state.dailyOutdoorTemp ?: [:]) as Map
+    def dayKey = dayKeyFor(timestamp, tz)
+    if (!record.day || record.day != dayKey) {
+        record = [day: dayKey, high: null, low: null]
+    }
+    if (temperature != null) {
+        def rounded = round(temperature, 1)
+        if (record.high == null || rounded > record.high) {
+            record.high = rounded
+        }
+        if (record.low == null || rounded < record.low) {
+            record.low = rounded
+        }
+    }
+    record.updatedAt = timestamp
+    state.dailyOutdoorTemp = record
+    record
+}
+
+private String dayKeyFor(long timestamp, TimeZone tz) {
+    def formatter = new SimpleDateFormat("yyyy-MM-dd")
+    formatter.setTimeZone(tz ?: TimeZone.getTimeZone('UTC'))
+    formatter.format(new Date(timestamp))
 }
 
 private BigDecimal computeTemperatureTrend() {
