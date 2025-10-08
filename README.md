@@ -28,10 +28,10 @@ v1/
 3. Configure the app by selecting your source weather device and mapping the attribute names that correspond to each data point.
 4. Add both the dashboard device (as an **Attribute** tile) and the JavaScript Injector tile to your Hubitat dashboard.
    * Assign the injector to `tile-0`.
-   * Assign the dashboard device attribute(s) to `tile-1` (and optionally `tile-2`, `tile-3` if you split the payload).
+   * Assign the dashboard device attribute(s) to `tile-1`, `tile-2`, and `tile-3` (all template **Attribute**). Select `dashboardData` on tile-1, `dashboardDataChunk2` on tile-2, and `dashboardDataChunk3` on tile-3. The renderer automatically reassembles the payload if the driver splits it across multiple attributes.
 5. Paste the contents of `dashboard/weather-dashboard.js` into the JavaScript Injector configuration.
 
-The app publishes a consolidated JSON document to the dashboard device’s `dashboardData` attribute. The JavaScript presentation tile watches that attribute and renders the rich dashboard view.
+The app publishes a consolidated JSON document to the dashboard device. Hubitat dashboard attributes are limited to ~1 KB, so the driver automatically splits large payloads into up to three chunks (`dashboardData`, `dashboardDataChunk2`, `dashboardDataChunk3`). The JavaScript presentation tile reassembles those chunks before rendering the rich dashboard view.
 
 > **Tip:** The original experimental scripts, apps, and drivers are preserved under `v1/` for reference.
 

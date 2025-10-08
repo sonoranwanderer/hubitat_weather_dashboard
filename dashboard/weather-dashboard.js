@@ -9,6 +9,7 @@
 (() => {
   const DISPLAY_TILE_ID = 'tile-0';
   const DATA_TILE_IDS = ['tile-1', 'tile-2', 'tile-3'];
+  const CHUNK_NAMESPACE = 'weather-dashboard';
   const CSS_ID = 'weather-dashboard-css';
   const TEMP_RANGE = { min: -40, max: 120 };
   const AMBIENT_ROTATION_DEFAULT_SECONDS = 12;
@@ -123,6 +124,7 @@
 
   function readPayloads() {
     const payloads = [];
+    const chunkEnvelopes = [];
     for (const id of DATA_TILE_IDS) {
       const tile = byId(id);
       if (!tile) continue;
@@ -138,10 +140,19 @@
       const json = extractJson(text);
       if (!json) continue;
       try {
-        payloads.push(JSON.parse(json));
+        const parsed = JSON.parse(json);
+        if (isChunkEnvelope(parsed)) {
+          chunkEnvelopes.push({ ...parsed, tileId: id });
+        } else {
+          payloads.push(parsed);
+        }
       } catch (err) {
         console.warn('[WeatherDashboard] Failed to parse payload from', id, err, json.slice(0, 1200));
       }
+    }
+    const assembled = assembleChunkPayload(chunkEnvelopes);
+    if (assembled) {
+      payloads.push(assembled);
     }
     return payloads;
   }
@@ -794,6 +805,48 @@
 
   function isPlainObject(value) {
     return Object.prototype.toString.call(value) === '[object Object]';
+  }
+
+  function isChunkEnvelope(payload) {
+    if (!payload || typeof payload !== 'object') return false;
+    if (payload.chunkNamespace !== CHUNK_NAMESPACE) return false;
+    if (!Number.isInteger(payload.chunkIndex) || !Number.isInteger(payload.chunkCount)) return false;
+    if (payload.chunkIndex < 1 || payload.chunkCount < 1) return false;
+    return typeof payload.chunkData === 'string';
+  }
+
+  function assembleChunkPayload(envelopes) {
+    if (!envelopes || envelopes.length === 0) return null;
+    const valid = envelopes.filter(isChunkEnvelope);
+    if (!valid.length) return null;
+
+    valid.sort((a, b) => a.chunkIndex - b.chunkIndex);
+    const expectedCount = valid[0].chunkCount;
+    if (valid.some(env => env.chunkCount !== expectedCount)) {
+      console.warn('[WeatherDashboard] Chunk payload counts differ across tiles', valid);
+      return null;
+    }
+
+    if (expectedCount > valid.length) {
+      const missing = [];
+      for (let i = 1; i <= expectedCount; i++) {
+        if (!valid.some(env => env.chunkIndex === i)) {
+          missing.push(i);
+        }
+      }
+      console.warn('[WeatherDashboard] Missing dashboard data chunk(s)', missing);
+      return null;
+    }
+
+    const buffer = valid.map(env => env.chunkData || '').join('');
+    if (!buffer) return null;
+
+    try {
+      return JSON.parse(buffer);
+    } catch (err) {
+      console.warn('[WeatherDashboard] Failed to reassemble chunked payload', err);
+      return null;
+    }
   }
 
   function extractJson(text) {
