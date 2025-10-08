@@ -7,6 +7,8 @@
 
 import groovy.json.JsonOutput
 import java.math.RoundingMode
+import java.text.SimpleDateFormat
+import java.util.TimeZone
 
 definition(
     name: "Weather Dashboard App",
@@ -55,8 +57,6 @@ def mainPage() {
             attributeInputs("Solar radiation", "attrSolarRadiation", "solarRadiation", deviceOptions)
             attributeInputs("Air quality index", "attrAQI", "aqi", deviceOptions)
             attributeInputs("PM2.5", "attrPM25", "pm25", deviceOptions)
-            attributeInputs("Sunrise", "attrSunrise", "sunrise", deviceOptions)
-            attributeInputs("Sunset", "attrSunset", "sunset", deviceOptions)
         }
 
         section("Ambient rotation sensors (optional)") {
@@ -183,9 +183,7 @@ private List<Map> getAttributeSubscriptions() {
         "attrUVIndex",
         "attrSolarRadiation",
         "attrAQI",
-        "attrPM25",
-        "attrSunrise",
-        "attrSunset"
+        "attrPM25"
     ]
 
     attrs.collect { settingName ->
@@ -408,10 +406,10 @@ def refreshWeatherData() {
     if (air) payload.airQuality = air
 
     def sun = [:]
-    def sunrise = readStringFor("attrSunrise")
-    if (sunrise) sun.sunrise = sunrise
-    def sunset = readStringFor("attrSunset")
-    if (sunset) sun.sunset = sunset
+    def sunriseDate = location?.sunrise
+    if (sunriseDate) sun.sunrise = formatDateTime(sunriseDate, tz)
+    def sunsetDate = location?.sunset
+    if (sunsetDate) sun.sunset = formatDateTime(sunsetDate, tz)
     if (sun) payload.sun = sun
 
     if (!payload.outlook24h) {
@@ -491,6 +489,13 @@ private Map buildAmbientSensorsPayload() {
         temperatureUnit: tempUnit,
         humidityUnit: humidityUnit
     ]
+}
+
+private String formatDateTime(Date date, TimeZone tz) {
+    if (!date) return null
+    def formatter = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX")
+    formatter.setTimeZone(tz ?: TimeZone.getTimeZone('UTC'))
+    formatter.format(date)
 }
 
 private void createOrUpdateChildDevice() {
