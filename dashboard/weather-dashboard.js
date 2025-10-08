@@ -706,7 +706,7 @@
       .wdash-gauge { position: relative; width: 100%; max-width: 260px; margin: 0 auto; padding-bottom: 100%; border-radius: 50%; aspect-ratio: 1 / 1; }
       .wdash-gauge-ring { position: absolute; inset: 6%; border-radius: 50%; background: conic-gradient(var(--gauge-color-a), var(--gauge-color-b) var(--gauge-angle), rgba(255,255,255,0.12) var(--gauge-angle), rgba(255,255,255,0.05)); mask: radial-gradient(closest-side, transparent calc(100% - 16px), black calc(100% - 15px)); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08); }
       .wdash-gauge-center { position: absolute; inset: 20%; border-radius: 50%; background: rgba(5,10,20,0.85); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 12px 10px; gap: 6px; }
-      .wdash-gauge-value { font-size: clamp(2.6rem, 5vw, 3.6rem); font-weight: 800; letter-spacing: -0.02em; }
+      .wdash-gauge-value { font-size: 3.3rem; font-weight: 800; letter-spacing: -0.02em; }
       .wdash-gauge-label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.12em; color: #9badcf; }
       .wdash-temp-extrema { display: flex; flex-direction: column; align-items: center; gap: 2px; }
       .wdash-temp-extrema-label { font-size: 0.65rem; letter-spacing: 0.12em; text-transform: uppercase; color: #8ea0c8; }
@@ -741,7 +741,7 @@
       .wdash-ambient-circle { flex: 1; aspect-ratio: 1; border-radius: 50%; display: grid; place-items: center; gap: 6px; position: relative; color: #fff; font-weight: 600; box-shadow: 0 8px 18px rgba(4, 9, 20, 0.35); }
       .wdash-ambient-circle--temp { background: radial-gradient(circle at 30% 30%, rgba(255,158,89,0.9), rgba(242,91,44,0.6)); }
       .wdash-ambient-circle--humidity { background: radial-gradient(circle at 30% 30%, rgba(90,160,255,0.88), rgba(51,96,255,0.55)); }
-      .wdash-ambient-value { font-size: clamp(1.8rem, 4vw, 2.4rem); font-weight: 700; }
+      .wdash-ambient-value { font-size: 2.2rem; font-weight: 700; }
       .wdash-ambient-unit { font-size: 0.9rem; opacity: 0.85; }
       .wdash-ambient-label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.75; }
       .wdash-ambient-footer { display: flex; justify-content: space-between; align-items: baseline; font-size: 0.85rem; color: #c9d8ff; }
