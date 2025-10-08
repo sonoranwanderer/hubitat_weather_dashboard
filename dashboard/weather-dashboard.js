@@ -15,6 +15,7 @@
   const AMBIENT_ROTATION_MIN_SECONDS = 3;
   const INIT_RETRY_LIMIT = 40;
   const INIT_RETRY_DELAY = 250;
+  const DATA_REFRESH_INTERVAL = 5000;
 
   const TEMP_COLORS = [
     { max: -20, colors: ['#70a9ff', '#3c6aff'] },
@@ -50,6 +51,10 @@
     humidityUnit: '%'
   };
 
+  const dataTileObservers = new Map();
+  let domObserver = null;
+  const placeholderLogged = new Set();
+
   whenDomReady(init);
 
   function whenDomReady(callback) {
@@ -82,15 +87,19 @@
 
     content.innerHTML = `<div class="wdash" role="presentation"><div class="wdash-grid" data-empty="true"></div></div>`;
 
-    const dataTiles = DATA_TILE_IDS.map(id => byId(id)).filter(Boolean);
+    ensureDataTileObservers();
+    watchForTileInsertions();
 
-    const observer = new MutationObserver(debounce(renderFromData, 150));
-    dataTiles.forEach(tile => {
-      observer.observe(tile, { childList: true, subtree: true, characterData: true });
-    });
+    safeRenderFromData();
+    setInterval(safeRenderFromData, DATA_REFRESH_INTERVAL);
+  }
 
-    renderFromData();
-    setInterval(renderFromData, 60 * 1000);
+  function safeRenderFromData() {
+    try {
+      renderFromData();
+    } catch (err) {
+      console.error('[WeatherDashboard] Unable to render dashboard payload', err);
+    }
   }
 
   function renderFromData() {
@@ -120,6 +129,10 @@
       const text = getTileText(tile);
       if (!text) continue;
       if (/please select an attribute/i.test(text)) {
+        if (!placeholderLogged.has(id)) {
+          placeholderLogged.add(id);
+          console.warn(`[WeatherDashboard] ${id} is still showing the Hubitat placeholder text. Confirm the tile template is set to Attribute and the dashboardData attribute is selected.`);
+        }
         continue;
       }
       const json = extractJson(text);
@@ -127,7 +140,7 @@
       try {
         payloads.push(JSON.parse(json));
       } catch (err) {
-        console.warn('[WeatherDashboard] Failed to parse payload from', id, err);
+        console.warn('[WeatherDashboard] Failed to parse payload from', id, err, json.slice(0, 1200));
       }
     }
     return payloads;
@@ -139,6 +152,37 @@
       if (!tile) continue;
       tile.classList.toggle('wdash-source-tile', hide);
     }
+  }
+
+  function ensureDataTileObservers() {
+    for (const id of DATA_TILE_IDS) {
+      const tile = byId(id);
+      const existing = dataTileObservers.get(id);
+      if (!tile) {
+        if (existing) {
+          existing.observer.disconnect();
+          dataTileObservers.delete(id);
+        }
+        continue;
+      }
+      if (existing && existing.tile === tile) continue;
+      if (existing) {
+        existing.observer.disconnect();
+      }
+      const observer = new MutationObserver(debounce(safeRenderFromData, 150));
+      observer.observe(tile, { childList: true, subtree: true, characterData: true });
+      dataTileObservers.set(id, { observer, tile });
+      safeRenderFromData();
+    }
+  }
+
+  function watchForTileInsertions() {
+    if (domObserver || !(document.body || document.documentElement)) return;
+    const root = document.body || document.documentElement;
+    domObserver = new MutationObserver(debounce(() => {
+      ensureDataTileObservers();
+    }, 200));
+    domObserver.observe(root, { childList: true, subtree: true });
   }
 
   function mergePayloads(payloads) {
