@@ -227,7 +227,11 @@
     const height = rect.height;
     if (!width || !height) return;
     const scale = Math.max(0.1, Math.min(width / BASE_WIDTH, height / BASE_HEIGHT));
+    const renderWidth = BASE_WIDTH * scale;
+    const renderHeight = BASE_HEIGHT * scale;
     root.style.setProperty('--wdash-scale', `${scale}`);
+    root.style.setProperty('--wdash-render-width', `${renderWidth}px`);
+    root.style.setProperty('--wdash-render-height', `${renderHeight}px`);
   }
 
   function watchForTileInsertions() {
@@ -670,9 +674,9 @@
     style.textContent = `
       .wdash-host .tile-title, .wdash-host .tile-primary > .title { display: none !important; }
       .wdash-source-tile { opacity: 0 !important; pointer-events: none !important; }
-      .wdash-root { position: relative; width: 100%; height: 100%; --wdash-base-width: 1200px; --wdash-base-height: 900px; --wdash-scale: 1; background: rgba(4, 9, 20, 0.85); border-radius: 12px; overflow: hidden; box-sizing: border-box; }
-      .wdash-frame { position: absolute; top: 50%; left: 50%; width: var(--wdash-base-width); height: var(--wdash-base-height); transform: translate(-50%, -50%) scale(var(--wdash-scale)); transform-origin: center; display: flex; align-items: center; justify-content: center; }
-      .wdash { width: 100%; height: 100%; font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif; color: #f4f6ff; background: linear-gradient(145deg, rgba(27,35,58,0.95), rgba(13,18,32,0.95)); backdrop-filter: blur(4px); border-radius: 12px; padding: 16px; box-sizing: border-box; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05); }
+      .wdash-root { position: relative; width: 100%; height: 100%; --wdash-base-width: 1200px; --wdash-base-height: 900px; --wdash-scale: 1; --wdash-render-width: var(--wdash-base-width); --wdash-render-height: var(--wdash-base-height); background: rgba(4, 9, 20, 0.85); border-radius: 12px; overflow: hidden; box-sizing: border-box; display: flex; align-items: center; justify-content: center; }
+      .wdash-frame { position: relative; width: var(--wdash-render-width); height: var(--wdash-render-height); display: flex; align-items: center; justify-content: center; overflow: hidden; }
+      .wdash { width: var(--wdash-base-width); height: var(--wdash-base-height); font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif; color: #f4f6ff; background: linear-gradient(145deg, rgba(27,35,58,0.95), rgba(13,18,32,0.95)); backdrop-filter: blur(4px); border-radius: 12px; padding: 16px; box-sizing: border-box; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05); transform-origin: top left; transform: scale(var(--wdash-scale)); }
       .wdash-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); grid-auto-rows: minmax(120px, auto); gap: 14px; height: 100%; }
       .wdash-grid[data-empty="true"] { place-items: center; }
       .wdash-empty { width: 100%; text-align: center; font-size: 1.1rem; opacity: 0.7; }
@@ -702,8 +706,8 @@
         .wdash-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
         .wdash-card { grid-column: span 6 !important; }
       }
-      .wdash-temp { display: grid; gap: 18px; align-items: center; justify-items: center; }
-      .wdash-gauge { position: relative; width: 100%; max-width: 260px; margin: 0 auto; padding-bottom: 100%; border-radius: 50%; aspect-ratio: 1 / 1; }
+      .wdash-temp { display: grid; grid-template-rows: auto auto; gap: 18px; align-items: center; justify-items: center; }
+      .wdash-gauge { position: relative; width: 100%; max-width: 320px; margin: 0 auto; border-radius: 50%; aspect-ratio: 1 / 1; }
       .wdash-gauge-ring { position: absolute; inset: 6%; border-radius: 50%; background: conic-gradient(var(--gauge-color-a), var(--gauge-color-b) var(--gauge-angle), rgba(255,255,255,0.12) var(--gauge-angle), rgba(255,255,255,0.05)); mask: radial-gradient(closest-side, transparent calc(100% - 16px), black calc(100% - 15px)); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08); }
       .wdash-gauge-center { position: absolute; inset: 20%; border-radius: 50%; background: rgba(5,10,20,0.85); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 12px 10px; gap: 6px; }
       .wdash-gauge-value { font-size: 3.3rem; font-weight: 800; letter-spacing: -0.02em; }
