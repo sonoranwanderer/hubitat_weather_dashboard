@@ -1,14 +1,14 @@
 // weather-dashboard.js
 //
 // JavaScript presentation layer for the Hubitat dashboard tile.  This script is
-// intended to be loaded via the JavaScript Injector driver (tile-1).  It reads the
-// JSON payload exposed by the Weather Dashboard virtual device (tile-2, optional
-// tile-3/tile-4) and renders an information dense layout inspired by the Ecowitt
+// intended to be loaded via the JavaScript Injector driver (tile-0).  It reads the
+// JSON payload exposed by the Weather Dashboard virtual device (tile-1, optional
+// tile-2/tile-3) and renders an information dense layout inspired by the Ecowitt
 // console.
 
 (() => {
-  const DISPLAY_TILE_ID = 'tile-1';
-  const DATA_TILE_IDS = ['tile-2', 'tile-3', 'tile-4'];
+  const DISPLAY_TILE_ID = 'tile-0';
+  const DATA_TILE_IDS = ['tile-1', 'tile-2', 'tile-3'];
   const CSS_ID = 'weather-dashboard-css';
   const TEMP_RANGE = { min: -40, max: 120 };
   const AMBIENT_ROTATION_DEFAULT_SECONDS = 12;
