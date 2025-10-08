@@ -25,33 +25,49 @@ preferences {
 
 def mainPage() {
     dynamicPage(name: "mainPage") {
-        section("Weather data source") {
-            input name: "weatherDevice", type: "capability.sensor", title: "Primary weather device", required: true, submitOnChange: true
+        section("Weather data sources") {
+            input name: "weatherDevices", type: "capability.sensor", title: "Weather devices", multiple: true, required: true, submitOnChange: true
+            if (!settings.weatherDevices) {
+                paragraph "Select one or more devices that provide the core weather attributes."
+            }
         }
 
-        section("Attribute mapping (override if your driver uses different names)") {
-            input name: "attrOutdoorTemp", type: "text", title: "Outdoor temperature attribute", defaultValue: "temperature"
-            input name: "attrFeelsLike", type: "text", title: "Feels like attribute", defaultValue: "feelsLike"
-            input name: "attrDewPoint", type: "text", title: "Dew point attribute", defaultValue: "dewPoint"
-            input name: "attrOutdoorHumidity", type: "text", title: "Outdoor humidity attribute", defaultValue: "humidity"
-            input name: "attrIndoorTemp", type: "text", title: "Indoor temperature attribute", defaultValue: "temperatureIndoor"
-            input name: "attrIndoorHumidity", type: "text", title: "Indoor humidity attribute", defaultValue: "humidityIndoor"
-            input name: "attrWindSpeed", type: "text", title: "Wind speed attribute", defaultValue: "windSpeed"
-            input name: "attrWindGust", type: "text", title: "Wind gust attribute", defaultValue: "windGust"
-            input name: "attrWindDirection", type: "text", title: "Wind direction (cardinal) attribute", defaultValue: "windDirection"
-            input name: "attrWindDirectionDegrees", type: "text", title: "Wind direction (degrees) attribute", defaultValue: "windDirectionDegrees"
-            input name: "attrPressure", type: "text", title: "Relative pressure attribute", defaultValue: "pressure"
-            input name: "attrAbsolutePressure", type: "text", title: "Absolute pressure attribute", defaultValue: "pressureAbsolute"
-            input name: "attrRainRate", type: "text", title: "Rain rate (per hour) attribute", defaultValue: "rainRate"
-            input name: "attrRainDaily", type: "text", title: "Daily rain attribute", defaultValue: "rainDaily"
-            input name: "attrRainWeekly", type: "text", title: "Weekly rain attribute", defaultValue: "rainWeekly"
-            input name: "attrRainMonthly", type: "text", title: "Monthly rain attribute", defaultValue: "rainMonthly"
-            input name: "attrUVIndex", type: "text", title: "UV index attribute", defaultValue: "uv"
-            input name: "attrSolarRadiation", type: "text", title: "Solar radiation attribute", defaultValue: "solarRadiation"
-            input name: "attrAQI", type: "text", title: "Air quality index attribute", defaultValue: "aqi"
-            input name: "attrPM25", type: "text", title: "PM2.5 attribute", defaultValue: "pm25"
-            input name: "attrSunrise", type: "text", title: "Sunrise attribute", defaultValue: "sunrise"
-            input name: "attrSunset", type: "text", title: "Sunset attribute", defaultValue: "sunset"
+        def deviceOptions = weatherDeviceOptions()
+
+        section("Attribute mapping (choose a device and override attribute names if needed)") {
+            attributeInputs("Outdoor temperature", "attrOutdoorTemp", "temperature", deviceOptions)
+            attributeInputs("Feels like", "attrFeelsLike", "feelsLike", deviceOptions)
+            attributeInputs("Dew point", "attrDewPoint", "dewPoint", deviceOptions)
+            attributeInputs("Outdoor humidity", "attrOutdoorHumidity", "humidity", deviceOptions)
+            attributeInputs("Indoor temperature", "attrIndoorTemp", "temperatureIndoor", deviceOptions)
+            attributeInputs("Indoor humidity", "attrIndoorHumidity", "humidityIndoor", deviceOptions)
+            attributeInputs("Wind speed", "attrWindSpeed", "windSpeed", deviceOptions)
+            attributeInputs("Wind gust", "attrWindGust", "windGust", deviceOptions)
+            attributeInputs("Wind direction (cardinal)", "attrWindDirection", "windDirection", deviceOptions)
+            attributeInputs("Wind direction (degrees)", "attrWindDirectionDegrees", "windDirectionDegrees", deviceOptions)
+            attributeInputs("Relative pressure", "attrPressure", "pressure", deviceOptions)
+            attributeInputs("Absolute pressure", "attrAbsolutePressure", "pressureAbsolute", deviceOptions)
+            attributeInputs("Rain rate", "attrRainRate", "rainRate", deviceOptions)
+            attributeInputs("Daily rain", "attrRainDaily", "rainDaily", deviceOptions)
+            attributeInputs("Weekly rain", "attrRainWeekly", "rainWeekly", deviceOptions)
+            attributeInputs("Monthly rain", "attrRainMonthly", "rainMonthly", deviceOptions)
+            attributeInputs("UV index", "attrUVIndex", "uv", deviceOptions)
+            attributeInputs("Solar radiation", "attrSolarRadiation", "solarRadiation", deviceOptions)
+            attributeInputs("Air quality index", "attrAQI", "aqi", deviceOptions)
+            attributeInputs("PM2.5", "attrPM25", "pm25", deviceOptions)
+            attributeInputs("Sunrise", "attrSunrise", "sunrise", deviceOptions)
+            attributeInputs("Sunset", "attrSunset", "sunset", deviceOptions)
+        }
+
+        section("Ambient rotation sensors (optional)") {
+            input name: "ambientSensors", type: "capability.sensor", title: "Ambient temperature/humidity sensors", multiple: true, required: false, submitOnChange: true
+            if (settings.ambientSensors) {
+                input name: "ambientTempAttr", type: "text", title: "Ambient temperature attribute", defaultValue: "temperature"
+                input name: "ambientHumidityAttr", type: "text", title: "Ambient humidity attribute", defaultValue: "humidity"
+                input name: "ambientTemperatureUnit", type: "text", title: "Ambient temperature unit label", defaultValue: "°F"
+                input name: "ambientHumidityUnit", type: "text", title: "Ambient humidity unit label", defaultValue: "%"
+                input name: "ambientRotationSeconds", type: "number", title: "Rotation interval (seconds)", defaultValue: 12, range: "3..120"
+            }
         }
 
         section("Derived calculation settings") {
@@ -72,6 +88,18 @@ def mainPage() {
         section("Actions") {
             href "refreshNow", title: "Refresh data now", description: "Tap to recompute and push the dashboard payload"
         }
+    }
+}
+
+private void attributeInputs(String label, String attrSetting, String defaultAttr, Map options) {
+    input name: "${attrSetting}Device", type: "enum", title: "${label} device", options: options ?: [:], required: false
+    input name: attrSetting, type: "text", title: "${label} attribute", defaultValue: defaultAttr
+}
+
+private Map weatherDeviceOptions() {
+    def devices = getWeatherDevices()
+    devices.collectEntries { dev ->
+        [(dev.id?.toString()): dev.displayName]
     }
 }
 
@@ -97,8 +125,9 @@ def updated() {
 }
 
 def initialize() {
-    if (!settings.weatherDevice) {
-        log.warn "Weather device not configured yet"
+    def devices = getWeatherDevices()
+    if (!devices) {
+        log.warn "Weather devices not configured yet"
         return
     }
 
@@ -113,43 +142,146 @@ def initialize() {
 }
 
 private void subscribeToSource() {
-    def attrs = getConfiguredAttributes()
-    attrs.each { attr ->
+    def subscriptions = []
+    subscriptions.addAll(getAttributeSubscriptions())
+    subscriptions.addAll(getAmbientSubscriptions())
+
+    def seen = [] as Set
+    subscriptions.each { sub ->
+        def device = sub.device
+        def attr = sub.attribute
+        if (!device || !attr) return
+        def key = "${device.id}:${attr}"
+        if (seen.contains(key)) return
         try {
-            if (attr) {
-                subscribe(settings.weatherDevice, attr, "handleWeatherEvent")
-            }
+            subscribe(device, attr, "handleWeatherEvent")
+            seen << key
         } catch (Throwable t) {
-            log.debug "Unable to subscribe to ${attr}: ${t.message}"
+            log.debug "Unable to subscribe to ${device.displayName}.${attr}: ${t.message}"
         }
     }
 }
 
-private Set<String> getConfiguredAttributes() {
-    [
-        settings.attrOutdoorTemp,
-        settings.attrFeelsLike,
-        settings.attrDewPoint,
-        settings.attrOutdoorHumidity,
-        settings.attrIndoorTemp,
-        settings.attrIndoorHumidity,
-        settings.attrWindSpeed,
-        settings.attrWindGust,
-        settings.attrWindDirection,
-        settings.attrWindDirectionDegrees,
-        settings.attrPressure,
-        settings.attrAbsolutePressure,
-        settings.attrRainRate,
-        settings.attrRainDaily,
-        settings.attrRainWeekly,
-        settings.attrRainMonthly,
-        settings.attrUVIndex,
-        settings.attrSolarRadiation,
-        settings.attrAQI,
-        settings.attrPM25,
-        settings.attrSunrise,
-        settings.attrSunset
-    ].findAll { it }
+private List<Map> getAttributeSubscriptions() {
+    def attrs = [
+        "attrOutdoorTemp",
+        "attrFeelsLike",
+        "attrDewPoint",
+        "attrOutdoorHumidity",
+        "attrIndoorTemp",
+        "attrIndoorHumidity",
+        "attrWindSpeed",
+        "attrWindGust",
+        "attrWindDirection",
+        "attrWindDirectionDegrees",
+        "attrPressure",
+        "attrAbsolutePressure",
+        "attrRainRate",
+        "attrRainDaily",
+        "attrRainWeekly",
+        "attrRainMonthly",
+        "attrUVIndex",
+        "attrSolarRadiation",
+        "attrAQI",
+        "attrPM25",
+        "attrSunrise",
+        "attrSunset"
+    ]
+
+    attrs.collect { settingName ->
+        def config = attributeConfig(settingName)
+        if (config?.device && config?.attribute) {
+            [device: config.device, attribute: config.attribute]
+        }
+    }.findAll { it }
+}
+
+private List<Map> getAmbientSubscriptions() {
+    def sensors = getAmbientSensors()
+    if (!sensors) return []
+
+    def tempAttr = settings.ambientTempAttr ?: "temperature"
+    def humidityAttr = settings.ambientHumidityAttr ?: "humidity"
+
+    def subs = []
+    sensors.each { dev ->
+        if (tempAttr) {
+            subs << [device: dev, attribute: tempAttr]
+        }
+        if (humidityAttr) {
+            subs << [device: dev, attribute: humidityAttr]
+        }
+    }
+    subs
+}
+
+private List getWeatherDevices() {
+    def devices = []
+    def configured = settings.weatherDevices
+    if (configured instanceof Collection) {
+        configured.each { if (it) devices << it }
+    } else if (configured) {
+        devices << configured
+    }
+    if (!devices && settings.weatherDevice) {
+        devices << settings.weatherDevice
+    }
+    def unique = []
+    devices.each { dev ->
+        if (dev && !unique.any { it.id == dev.id }) {
+            unique << dev
+        }
+    }
+    unique
+}
+
+private List getAmbientSensors() {
+    def sensors = []
+    def configured = settings.ambientSensors
+    if (configured instanceof Collection) {
+        configured.each { if (it) sensors << it }
+    } else if (configured) {
+        sensors << configured
+    }
+    def unique = []
+    sensors.each { dev ->
+        if (dev && !unique.any { it.id == dev.id }) {
+            unique << dev
+        }
+    }
+    unique
+}
+
+private def resolveDevice(def deviceSettingValue) {
+    def devices = getWeatherDevices()
+    if (!deviceSettingValue) {
+        return devices ? devices.first() : null
+    }
+    devices.find { it.id?.toString() == deviceSettingValue.toString() }
+}
+
+private def primaryWeatherDevice() {
+    def devices = getWeatherDevices()
+    devices ? devices.first() : null
+}
+
+private Map attributeConfig(String attrSetting) {
+    def attrName = settings[attrSetting]
+    if (!attrName) return null
+    def deviceSetting = "${attrSetting}Device"
+    def device = resolveDevice(settings[deviceSetting]) ?: primaryWeatherDevice()
+    if (!device) return null
+    [device: device, attribute: attrName]
+}
+
+private BigDecimal readDecimalFor(String attrSetting) {
+    def config = attributeConfig(attrSetting)
+    readDecimal(config?.device, config?.attribute)
+}
+
+private String readStringFor(String attrSetting) {
+    def config = attributeConfig(attrSetting)
+    readString(config?.device, config?.attribute)
 }
 
 def handleWeatherEvent(evt) {
@@ -158,9 +290,9 @@ def handleWeatherEvent(evt) {
 }
 
 def refreshWeatherData() {
-    def weather = settings.weatherDevice
-    if (!weather) {
-        log.warn "No weather device configured"
+    def devices = getWeatherDevices()
+    if (!devices) {
+        log.warn "No weather devices configured"
         return
     }
 
@@ -170,7 +302,7 @@ def refreshWeatherData() {
     def payload = [:]
 
     def outdoor = [:]
-    def tempF = readDecimal(weather, settings.attrOutdoorTemp)
+    def tempF = readDecimalFor("attrOutdoorTemp")
     if (tempF != null) {
         outdoor.temperatureF = round(tempF, 1)
         def tempC = fahrenheitToCelsius(tempF)
@@ -182,42 +314,42 @@ def refreshWeatherData() {
         }
     }
 
-    def feels = readDecimal(weather, settings.attrFeelsLike)
+    def feels = readDecimalFor("attrFeelsLike")
     if (feels != null) outdoor.feelsLikeF = round(feels, 1)
 
-    def dew = readDecimal(weather, settings.attrDewPoint)
+    def dew = readDecimalFor("attrDewPoint")
     if (dew != null) outdoor.dewPointF = round(dew, 1)
 
-    def humidity = readDecimal(weather, settings.attrOutdoorHumidity)
+    def humidity = readDecimalFor("attrOutdoorHumidity")
     if (humidity != null) outdoor.humidity = round(humidity, 1)
 
     if (outdoor) payload.outdoor = outdoor
 
     def indoor = [:]
-    def indoorTemp = readDecimal(weather, settings.attrIndoorTemp)
+    def indoorTemp = readDecimalFor("attrIndoorTemp")
     if (indoorTemp != null) indoor.temperatureF = round(indoorTemp, 1)
-    def indoorHum = readDecimal(weather, settings.attrIndoorHumidity)
+    def indoorHum = readDecimalFor("attrIndoorHumidity")
     if (indoorHum != null) indoor.humidity = round(indoorHum, 1)
     if (indoor) payload.indoor = indoor
 
     def wind = [:]
-    def windSpeed = readDecimal(weather, settings.attrWindSpeed)
+    def windSpeed = readDecimalFor("attrWindSpeed")
     if (windSpeed != null) {
         wind.speedMph = round(windSpeed, 1)
     }
-    def windGust = readDecimal(weather, settings.attrWindGust)
+    def windGust = readDecimalFor("attrWindGust")
     if (windGust != null) {
         wind.gustMph = round(windGust, 1)
     }
 
-    def directionDegrees = readDecimal(weather, settings.attrWindDirectionDegrees)
-    def directionText = readString(weather, settings.attrWindDirection)
+    def directionDegrees = readDecimalFor("attrWindDirectionDegrees")
+    def directionText = readStringFor("attrWindDirection")
     if (directionDegrees == null && directionText) {
         directionDegrees = cardinalToDegrees(directionText)
     }
     if (directionDegrees != null) {
         wind.directionDegrees = round(directionDegrees, 1)
-        wind.directionCardinal = degreesToCardinal(directionDegrees)
+        wind.directionCardinal = degreesToCardinal(directionDegrees as double)
     } else if (directionText) {
         wind.directionCardinal = directionText
     }
@@ -231,11 +363,11 @@ def refreshWeatherData() {
     if (wind) payload.wind = wind
 
     def pressure = [:]
-    def relPressure = readDecimal(weather, settings.attrPressure)
+    def relPressure = readDecimalFor("attrPressure")
     if (relPressure != null) {
         pressure.relativeInHg = round(relPressure, 2)
     }
-    def absPressure = readDecimal(weather, settings.attrAbsolutePressure)
+    def absPressure = readDecimalFor("attrAbsolutePressure")
     if (absPressure != null) {
         pressure.absoluteInHg = round(absPressure, 2)
     }
@@ -251,34 +383,34 @@ def refreshWeatherData() {
     if (pressure) payload.pressure = pressure
 
     def rain = [:]
-    def rainRate = readDecimal(weather, settings.attrRainRate)
+    def rainRate = readDecimalFor("attrRainRate")
     if (rainRate != null) rain.rateInPerHour = round(rainRate, 2)
-    def rainDaily = readDecimal(weather, settings.attrRainDaily)
+    def rainDaily = readDecimalFor("attrRainDaily")
     if (rainDaily != null) rain.dailyIn = round(rainDaily, 2)
-    def rainWeekly = readDecimal(weather, settings.attrRainWeekly)
+    def rainWeekly = readDecimalFor("attrRainWeekly")
     if (rainWeekly != null) rain.weeklyIn = round(rainWeekly, 2)
-    def rainMonthly = readDecimal(weather, settings.attrRainMonthly)
+    def rainMonthly = readDecimalFor("attrRainMonthly")
     if (rainMonthly != null) rain.monthlyIn = round(rainMonthly, 2)
     if (rain) payload.rain = rain
 
     def solar = [:]
-    def uv = readDecimal(weather, settings.attrUVIndex)
+    def uv = readDecimalFor("attrUVIndex")
     if (uv != null) solar.uvIndex = round(uv, 1)
-    def solarRad = readDecimal(weather, settings.attrSolarRadiation)
+    def solarRad = readDecimalFor("attrSolarRadiation")
     if (solarRad != null) solar.solarRadiationWm2 = round(solarRad, 1)
     if (solar) payload.solar = solar
 
     def air = [:]
-    def aqi = readDecimal(weather, settings.attrAQI)
+    def aqi = readDecimalFor("attrAQI")
     if (aqi != null) air.aqi = Math.round(aqi)
-    def pm25 = readDecimal(weather, settings.attrPM25)
+    def pm25 = readDecimalFor("attrPM25")
     if (pm25 != null) air.pm25 = round(pm25, 1)
     if (air) payload.airQuality = air
 
     def sun = [:]
-    def sunrise = readString(weather, settings.attrSunrise)
+    def sunrise = readStringFor("attrSunrise")
     if (sunrise) sun.sunrise = sunrise
-    def sunset = readString(weather, settings.attrSunset)
+    def sunset = readStringFor("attrSunset")
     if (sunset) sun.sunset = sunset
     if (sun) payload.sun = sun
 
@@ -287,13 +419,24 @@ def refreshWeatherData() {
         if (outlook) payload.outlook24h = outlook
     }
 
-    payload.metadata = [
+    def ambient = buildAmbientSensorsPayload()
+    if (ambient?.sensors) {
+        payload.ambientSensors = ambient.sensors
+        if (ambient.rotationSeconds) payload.ambientRotationSeconds = ambient.rotationSeconds
+        if (ambient.temperatureUnit) payload.ambientTemperatureUnit = ambient.temperatureUnit
+        if (ambient.humidityUnit) payload.ambientHumidityUnit = ambient.humidityUnit
+    }
+
+    def metadata = [
         generatedAt: generated.format("yyyy-MM-dd'T'HH:mm:ssXXX", tz),
-        sourceDevice: [
-            id: weather.id,
-            name: weather.displayName
-        ]
+        sourceDevices: devices.collect { dev -> [id: dev.id, name: dev.displayName] }
     ]
+    def primary = primaryWeatherDevice()
+    if (primary) {
+        metadata.sourceDevice = [id: primary.id, name: primary.displayName]
+        metadata.primaryDeviceId = primary.id
+    }
+    payload.metadata = metadata
 
     def json = JsonOutput.toJson(payload)
     def pretty = JsonOutput.prettyPrint(json)
@@ -305,6 +448,49 @@ def refreshWeatherData() {
     if (child) {
         child.updateDashboardData(json, pretty)
     }
+}
+
+private Map buildAmbientSensorsPayload() {
+    def sensors = getAmbientSensors()
+    if (!sensors) return null
+
+    def tempAttr = settings.ambientTempAttr ?: "temperature"
+    def humidityAttr = settings.ambientHumidityAttr ?: "humidity"
+    Integer rotation = settings.ambientRotationSeconds ? (settings.ambientRotationSeconds as Integer) : 12
+    if (rotation < 3) {
+        rotation = 3
+    }
+    def tempUnit = settings.ambientTemperatureUnit ?: "°F"
+    def humidityUnit = settings.ambientHumidityUnit ?: "%"
+
+    def entries = []
+    sensors.each { dev ->
+        def entry = [
+            id  : dev.id,
+            name: dev.displayName
+        ]
+        def tempVal = tempAttr ? readDecimal(dev, tempAttr) : null
+        if (tempVal != null) {
+            entry.temperatureF = round(tempVal, 1)
+            entry.temperatureC = round(fahrenheitToCelsius(tempVal), 1)
+        }
+        def humidityVal = humidityAttr ? readDecimal(dev, humidityAttr) : null
+        if (humidityVal != null) {
+            entry.humidity = round(humidityVal, 1)
+        }
+        if (entry.temperatureF != null || entry.humidity != null) {
+            entries << entry
+        }
+    }
+
+    if (!entries) return null
+
+    [
+        sensors: entries,
+        rotationSeconds: rotation,
+        temperatureUnit: tempUnit,
+        humidityUnit: humidityUnit
+    ]
 }
 
 private void createOrUpdateChildDevice() {

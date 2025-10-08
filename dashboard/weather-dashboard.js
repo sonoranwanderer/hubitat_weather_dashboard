@@ -11,6 +11,8 @@
   const DATA_TILE_IDS = ['tile-2', 'tile-3', 'tile-4'];
   const CSS_ID = 'weather-dashboard-css';
   const TEMP_RANGE = { min: -40, max: 120 };
+  const AMBIENT_ROTATION_DEFAULT_SECONDS = 12;
+  const AMBIENT_ROTATION_MIN_SECONDS = 3;
 
   const TEMP_COLORS = [
     { max: -20, colors: ['#70a9ff', '#3c6aff'] },
@@ -35,6 +37,15 @@
     air: 'Air Quality',
     sun: 'Sun & Light',
     outlook: '24 Hour Outlook'
+  };
+
+  let ambientRotation = {
+    timer: null,
+    sensors: [],
+    index: 0,
+    interval: AMBIENT_ROTATION_DEFAULT_SECONDS * 1000,
+    tempUnit: '°F',
+    humidityUnit: '%'
   };
 
   init();
@@ -77,11 +88,13 @@
     if (!payload) {
       grid.dataset.empty = 'true';
       grid.innerHTML = `<div class="wdash-empty">Waiting for weather data…</div>`;
+      clearAmbientRotation();
       return;
     }
 
     grid.dataset.empty = 'false';
     grid.innerHTML = buildMarkup(payload);
+    setupAmbientRotation(payload);
   }
 
   function readPayloads() {
@@ -111,6 +124,8 @@
     const pieces = [];
     pieces.push(buildTemperatureCard(data));
     pieces.push(buildWindCard(data));
+    const ambient = buildAmbientSensorCard(data);
+    if (ambient) pieces.push(ambient);
     pieces.push(buildHumidityCard(data));
     pieces.push(buildRainCard(data));
     pieces.push(buildPressureCard(data));
@@ -191,6 +206,46 @@
           </div>
           <div class="wdash-compass">
             ${compassSvg(dirText, dirDegrees)}
+          </div>
+        </div>
+      </section>
+    `;
+  }
+
+  function buildAmbientSensorCard(data) {
+    const sensors = Array.isArray(data.ambientSensors) ? data.ambientSensors.filter(Boolean) : [];
+    if (!sensors.length) return '';
+
+    const sensor = sensors[0] || {};
+    const temp = toNumber(sensor.temperatureF);
+    const humidity = toNumber(sensor.humidity);
+    const tempUnit = data.ambientTemperatureUnit || '°F';
+    const humidityUnit = data.ambientHumidityUnit || '%';
+    const countLabel = sensors.length > 1 ? `${sensors.length} locations` : (sensor.name || '');
+    const rotationText = sensors.length > 1 ? `Sensor 1 of ${sensors.length}` : '';
+
+    return `
+      <section class="wdash-card wdash-card--ambient">
+        <header class="wdash-card-header">
+          <h3>Local Sensors</h3>
+          <span class="wdash-updated">${escapeHtml(countLabel)}</span>
+        </header>
+        <div class="wdash-ambient" data-count="${sensors.length}">
+          <div class="wdash-ambient-circles">
+            <div class="wdash-ambient-circle wdash-ambient-circle--temp">
+              <span class="wdash-ambient-value wdash-ambient-value--temp">${formatNumber(temp, 1)}</span>
+              <span class="wdash-ambient-unit wdash-ambient-unit--temp">${escapeHtml(tempUnit)}</span>
+              <span class="wdash-ambient-label">Temperature</span>
+            </div>
+            <div class="wdash-ambient-circle wdash-ambient-circle--humidity">
+              <span class="wdash-ambient-value wdash-ambient-value--humidity">${formatNumber(humidity, 0)}</span>
+              <span class="wdash-ambient-unit wdash-ambient-unit--humidity">${escapeHtml(humidityUnit)}</span>
+              <span class="wdash-ambient-label">Humidity</span>
+            </div>
+          </div>
+          <div class="wdash-ambient-footer">
+            <div class="wdash-ambient-name">${escapeHtml(sensor.name || '')}</div>
+            <div class="wdash-ambient-rotation">${escapeHtml(rotationText)}</div>
           </div>
         </div>
       </section>
@@ -354,6 +409,81 @@
 
   /* ---------- helpers ---------- */
 
+  function setupAmbientRotation(data) {
+    clearAmbientRotation();
+    const container = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-ambient');
+    if (!container) return;
+
+    const sensors = Array.isArray(data?.ambientSensors) ? data.ambientSensors.filter(Boolean) : [];
+    if (!sensors.length) {
+      ambientRotation.sensors = [];
+    } else {
+      ambientRotation.sensors = sensors;
+    }
+    ambientRotation.index = 0;
+    ambientRotation.tempUnit = data?.ambientTemperatureUnit || '°F';
+    ambientRotation.humidityUnit = data?.ambientHumidityUnit || '%';
+
+    const secondsRaw = Math.round(toNumber(data?.ambientRotationSeconds));
+    const seconds = Math.max(AMBIENT_ROTATION_MIN_SECONDS, Number.isFinite(secondsRaw) ? secondsRaw : AMBIENT_ROTATION_DEFAULT_SECONDS);
+    ambientRotation.interval = seconds * 1000;
+
+    updateAmbientDisplay();
+
+    if (ambientRotation.sensors.length > 1) {
+      ambientRotation.timer = setInterval(() => {
+        if (!ambientRotation.sensors.length) return;
+        ambientRotation.index = (ambientRotation.index + 1) % ambientRotation.sensors.length;
+        updateAmbientDisplay();
+      }, ambientRotation.interval);
+    }
+  }
+
+  function clearAmbientRotation() {
+    if (ambientRotation.timer) {
+      clearInterval(ambientRotation.timer);
+      ambientRotation.timer = null;
+    }
+    ambientRotation.sensors = [];
+    ambientRotation.index = 0;
+  }
+
+  function updateAmbientDisplay() {
+    const container = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-ambient');
+    if (!container) return;
+
+    const sensor = ambientRotation.sensors[ambientRotation.index];
+    const tempEl = container.querySelector('.wdash-ambient-value--temp');
+    const tempUnitEl = container.querySelector('.wdash-ambient-unit--temp');
+    const humidityEl = container.querySelector('.wdash-ambient-value--humidity');
+    const humidityUnitEl = container.querySelector('.wdash-ambient-unit--humidity');
+    const nameEl = container.querySelector('.wdash-ambient-name');
+    const rotationEl = container.querySelector('.wdash-ambient-rotation');
+
+    if (!sensor) {
+      if (tempEl) tempEl.textContent = '--';
+      if (tempUnitEl) tempUnitEl.textContent = ambientRotation.tempUnit;
+      if (humidityEl) humidityEl.textContent = '--';
+      if (humidityUnitEl) humidityUnitEl.textContent = ambientRotation.humidityUnit;
+      if (nameEl) nameEl.textContent = 'No data';
+      if (rotationEl) rotationEl.textContent = '';
+      container.classList.add('wdash-ambient--empty');
+      return;
+    }
+
+    container.classList.remove('wdash-ambient--empty');
+    if (tempEl) tempEl.textContent = formatNumber(toNumber(sensor.temperatureF), 1);
+    if (tempUnitEl) tempUnitEl.textContent = ambientRotation.tempUnit;
+    if (humidityEl) humidityEl.textContent = formatNumber(toNumber(sensor.humidity), 0);
+    if (humidityUnitEl) humidityUnitEl.textContent = ambientRotation.humidityUnit;
+    if (nameEl) nameEl.textContent = sensor.name || 'Sensor';
+    if (rotationEl) {
+      rotationEl.textContent = ambientRotation.sensors.length > 1
+        ? `Sensor ${ambientRotation.index + 1} of ${ambientRotation.sensors.length}`
+        : '';
+    }
+  }
+
   function cardHeader(title, data) {
     const generated = data.metadata?.generatedAt ? formatRelativeTime(data.metadata.generatedAt) : null;
     return `
@@ -405,6 +535,7 @@
       .wdash-updated { font-size: 0.68rem; opacity: 0.7; }
       .wdash-card--temp { grid-column: span 5; min-height: 260px; }
       .wdash-card--wind { grid-column: span 4; min-height: 260px; }
+      .wdash-card--ambient { grid-column: span 3; min-height: 260px; }
       .wdash-card--humidity { grid-column: span 3; }
       .wdash-card--rain { grid-column: span 4; }
       .wdash-card--pressure { grid-column: span 4; }
@@ -415,6 +546,7 @@
       @media (max-width: 1200px) {
         .wdash-card--temp { grid-column: span 12; }
         .wdash-card--wind { grid-column: span 6; }
+        .wdash-card--ambient { grid-column: span 6; }
         .wdash-card--humidity { grid-column: span 6; }
         .wdash-card--rain, .wdash-card--pressure, .wdash-card--solar, .wdash-card--air, .wdash-card--sun, .wdash-card--outlook { grid-column: span 12; }
       }
@@ -453,6 +585,20 @@
       .wdash-compass-svg .needle-tail { fill: rgba(255,123,58,0.35); }
       .wdash-compass-svg .hub { fill: rgba(12,18,32,0.9); stroke: rgba(255,255,255,0.7); stroke-width: 2; }
       .wdash-compass-svg .direction-label { fill: #fff; font-size: 12px; font-weight: 600; }
+      .wdash-ambient { display: flex; flex-direction: column; gap: 12px; justify-content: space-between; height: 100%; }
+      .wdash-ambient-circles { display: flex; gap: 12px; justify-content: space-between; }
+      .wdash-ambient-circle { flex: 1; aspect-ratio: 1; border-radius: 50%; display: grid; place-items: center; gap: 6px; position: relative; color: #fff; font-weight: 600; box-shadow: 0 8px 18px rgba(4, 9, 20, 0.35); }
+      .wdash-ambient-circle--temp { background: radial-gradient(circle at 30% 30%, rgba(255,158,89,0.9), rgba(242,91,44,0.6)); }
+      .wdash-ambient-circle--humidity { background: radial-gradient(circle at 30% 30%, rgba(90,160,255,0.88), rgba(51,96,255,0.55)); }
+      .wdash-ambient-value { font-size: clamp(1.8rem, 4vw, 2.4rem); font-weight: 700; }
+      .wdash-ambient-unit { font-size: 0.9rem; opacity: 0.85; }
+      .wdash-ambient-label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.75; }
+      .wdash-ambient-footer { display: flex; justify-content: space-between; align-items: baseline; font-size: 0.85rem; color: #c9d8ff; }
+      .wdash-ambient-name { font-weight: 700; }
+      .wdash-ambient-rotation { font-size: 0.75rem; color: #8ea0c8; }
+      .wdash-ambient.wdash-ambient--empty .wdash-ambient-value { opacity: 0.6; }
+      .wdash-ambient.wdash-ambient--empty .wdash-ambient-name { opacity: 0.7; }
+      @media (max-width: 800px) { .wdash-ambient-circles { flex-direction: row; } }
       .wdash-humidity, .wdash-solar, .wdash-air, .wdash-sun { display: grid; gap: 10px; font-size: 0.92rem; }
       .wdash-humidity-row, .wdash-solar-row, .wdash-air-row, .wdash-sun-row { display: flex; justify-content: space-between; }
       .wdash-rain { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; font-size: 0.9rem; }
@@ -600,6 +746,16 @@
       if (el) return el;
     }
     return tile;
+  }
+
+  function escapeHtml(value) {
+    if (value == null) return '';
+    return String(value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 
   function byId(id) {
