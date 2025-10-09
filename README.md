@@ -1,41 +1,43 @@
-Code and supporting configuration to build an Ecowitt HP2561 like hubitat Dashboard
+# Ecowitt Weather Dashboard (Hubitat)
 
-Each JavaScript file represents a tile to be used on the dashboard creating one of
-the core display elements of the Ecowitt HP2561. Notable tiles include:
+This repository contains a re-imagined weather dashboard solution for Hubitat Elevation.  The project focuses on providing a single, information-dense dashboard tile driven by JavaScript presentation while all data collection, aggregation, and forecasting is handled inside Hubitat via an app and companion device driver.
 
-* `wind-compass.js` — renders a compass-inspired visualization of current, gust, and averaged wind direction.
-* `wind-average-text.js` — provides a single-line readout of ten-minute averaged wind bearing, cardinal direction, and speed that other tiles can reference.
-* `rain-rate-summary.js` — combines readings from the rain-rate, event, and accumulation tiles into a single drop-themed summary with current rate, daily total, and interval table.
-* `pressure-forecast.js` — renders an Ecowitt-style barometer tile with toggleable absolute/relative pressure, calculated barometric tendency, and 24-hour forecast icon fed by the companion Hubitat app and virtual device.
+## Project layout
 
-The Javascript is brought into the dashboard by using the Dashboard JavaScript Injector:
-https://github.com/michaelbarone/hubitat/blob/master/drivers/dashboardJavaScriptInjector.groovy 
+```
+README.md                 Project overview (this file)
+hubitat/
+  WeatherDashboardApp.groovy      Hubitat app that aggregates weather data
+  WeatherDashboardDevice.groovy   Virtual device driver exposing dashboard payloads
+dashboard/
+  weather-dashboard.js            Dashboard presentation logic for the JavaScript injector tile
+v1/
+  ...                              Original experimental implementation retained for reference
+```
 
-The javscript reads data from other tiles on the dashboard that expose one of:
-* Weather device attribute
-* Hub variable
-* Collection of HTML formated data from a weather device (device driver specific)
-* Other useful information from non device or hub variable sources
+## Overview
 
-This code relies on the Ecowitt driver as maintained
-https://github.com/sburke781/ecowitt
+1. **WeatherDashboardApp** subscribes to a user-selected weather device, calculates derived statistics (10 minute wind average, pressure tendency, 24-hour outlook, etc.), and publishes a consolidated JSON payload.
+2. **WeatherDashboardDevice** is a lightweight virtual sensor that exposes the JSON payload (and a prettified variant) as device attributes, making the data available to Hubitat dashboards.
+3. **weather-dashboard.js** renders the JSON payload inside a single dashboard tile (the JavaScript injector tile), recreating the information-dense layout of the Ecowitt console.
 
-The documentation for the HTML templates on the Github sit above is incomplete, the
-full set of templates can be read directly here:
-https://sburke781.github.io/ecowitt/html/ecowitt.json
+## Hubitat Setup Summary
 
-## Pressure tendency virtual device & app
+1. Install the **Weather Dashboard Device** driver and **Weather Dashboard App** in Hubitat.
+2. Create a virtual device using the driver, or allow the app to create/manage it automatically.
+3. Configure the app by selecting your source weather device and mapping the attribute names that correspond to each data point.
+4. Add both the dashboard device (as an **Attribute** tile) and the JavaScript Injector tile to your Hubitat dashboard.
+   * Assign the injector to `tile-0`.
+   * Assign the dashboard device attribute(s) to `tile-1`, `tile-2`, and `tile-3` (all template **Attribute**). Select `dashboardData` on tile-1, `dashboardDataChunk2` on tile-2, and `dashboardDataChunk3` on tile-3. The renderer automatically reassembles the payload if the driver splits it across multiple attributes.
+5. Paste the contents of `dashboard/weather-dashboard.js` into the JavaScript Injector configuration.
 
-The repository now includes a simple Hubitat app/driver pair to accumulate the pressure history that the HP2561 console uses for its tendency/forecast display:
+The app publishes a consolidated JSON document to the dashboard device. Hubitat dashboard attributes are limited to ~1 KB, so the driver automatically splits large payloads into up to three chunks (`dashboardData`, `dashboardDataChunk2`, `dashboardDataChunk3`). The JavaScript presentation tile reassembles those chunks before rendering the rich dashboard view.
 
-* `hubitat/PressureTendencyDevice.groovy` — a virtual device driver that exposes calculated attributes (relative/absolute pressure, daily average, rolling 30-day average, tendency, and forecast meta data) along with a compact JSON payload (`pressureSummary`) for the dashboard tile.
-* `hubitat/PressureTendencyApp.groovy` — subscribes to the Ecowitt weather device, computes the running daily average and rolling 30-day average, derives a tendency delta and forecast classification, and pushes the consolidated values into the virtual device.
+> **Tip:** The original experimental scripts, apps, and drivers are preserved under `v1/` for reference.
 
-### Setup outline
+## Development notes
 
-1. In **Drivers Code**, add `PressureTendencyDevice.groovy`, then create a new Virtual Device using that driver (e.g., "Pressure Tendency Summary").
-2. In **Apps Code**, add `PressureTendencyApp.groovy`, install the app, select your Ecowitt source device, provide the attribute names for relative/absolute pressure, choose which attribute should be the reference for averaging, and select the virtual device created above.
-3. Add the virtual device's `pressureSummary` attribute to your dashboard as an *Attribute* tile, note its tile ID/title, and inject `pressure-forecast.js` with the matching configuration constants.
-   * The script now supports separate tiles for the rendered display and the raw data source. Provide the display tile's ID/title via `DISPLAY_TILE_ID`/`DISPLAY_TILE_TITLE`, and (optionally) point `SOURCE_TILE_ID`/`SOURCE_TILE_TITLE` at a different attribute tile if you want to keep the JSON visible for troubleshooting.
+* The JavaScript focuses purely on presentation—calculations live in the Hubitat app.
+* The JSON payload is designed to be compact but descriptive, minimizing the number of attributes required on the virtual device.
+* Derived metrics (wind averages, pressure tendency, outlook) are recalculated every minute or whenever the underlying weather attributes change.
 
-The app persists up to 30 daily averages so the 30-day baseline gradually becomes more accurate as data accumulates. Until enough history exists the tendency will gracefully fall back to the best available information.
