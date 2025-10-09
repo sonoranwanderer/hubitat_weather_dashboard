@@ -13,12 +13,12 @@ import java.util.TimeZone
 definition(
     name: "Weather Dashboard App",
     namespace: "ecowitt-dashboard",
-    author: "OpenAI",
+    author: "Gatewood Green",
     description: "Aggregates weather data for the JavaScript dashboard tile.",
     category: "Convenience",
-    importUrl: "https://raw.githubusercontent.com/<owner>/ecowitt_weather_hubitat_dashboard/main/hubitat/WeatherDashboardApp.groovy",
-    iconUrl: "https://raw.githubusercontent.com/<owner>/ecowitt_weather_hubitat_dashboard/main/assets/weather-dashboard-icon.svg",
-    iconX2Url: "https://raw.githubusercontent.com/<owner>/ecowitt_weather_hubitat_dashboard/main/assets/weather-dashboard-icon.svg"
+    importUrl: "https://raw.githubusercontent.com/sonoranwanderer/ecowitt_weather_hubitat_dashboard/main/hubitat/WeatherDashboardApp.groovy",
+    iconUrl: "https://raw.githubusercontent.com/sonoranwanderer/ecowitt_weather_hubitat_dashboard/main/assets/weather-dashboard-icon.svg",
+    iconX2Url: "https://raw.githubusercontent.com/sonoranwanderer/ecowitt_weather_hubitat_dashboard/main/assets/weather-dashboard-icon.svg"
 )
 
 preferences {
