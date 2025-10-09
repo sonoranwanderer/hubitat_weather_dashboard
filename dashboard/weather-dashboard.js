@@ -303,11 +303,11 @@
             </div>
           </div>
           ${buildMetricRow([
+            { label: 'Feels Like', value: feelsText },
             { label: 'Dew Point', value: dewText },
             { label: 'Humidity', value: humidityText },
-            { label: 'Trend', value: trendText },
-            { label: 'Feels Like', value: feelsText }
-          ], 'wdash-temp-details')}
+            { label: 'Trend', value: trendText }
+          ], 'wdash-temp-details', { variant: 'gauge', columns: 4 })}
         </div>
       </section>
     `;
@@ -327,6 +327,13 @@
 
     const bearingLabel = dirText || (Number.isFinite(dirDegrees) ? degreesToCardinal(dirDegrees) : '--');
     const compass = windCompassSvg(dirDegrees, avgDir);
+    const gustText = Number.isFinite(gust) ? `${formatNumber(gust, 1)} mph` : '--';
+    const avgSpeedText = Number.isFinite(avgSpeed) ? `${formatNumber(avgSpeed, 1)} mph` : '--';
+
+    const headingParts = [];
+    if (bearingLabel && bearingLabel !== '--') headingParts.push(bearingLabel);
+    headingParts.push(formatDegrees(dirDegrees));
+    const headingValue = headingParts.join(' ').trim();
 
     return `
       <section class="wdash-card wdash-card--wind">
@@ -344,10 +351,10 @@
             </div>
           </div>
           ${buildMetricRow([
-            { label: 'Speed', value: `${formatNumber(speed, 1)} mph` },
-            { label: 'Gust', value: `${formatNumber(gust, 1)} mph` },
-            { label: `${windowMins} min avg`, value: `${formatNumber(avgSpeed, 1)} mph`, sub: `${avgDirText || '--'} (${formatDegrees(avgDir)})` }
-          ], 'wdash-wind-metrics')}
+            { label: 'Gust', value: gustText },
+            { label: `${windowMins} min avg`, value: avgSpeedText, sub: `${avgDirText || '--'} (${formatDegrees(avgDir)})` },
+            { label: 'Heading', value: headingValue }
+          ], 'wdash-wind-metrics', { variant: 'gauge', columns: 3 })}
         </div>
       </section>
     `;
@@ -659,9 +666,8 @@
       .join('');
 
     const averageMarkup = avg === null ? '' : `
-        <g class="wdash-compass-needle wdash-compass-needle--avg" transform="rotate(${avg} 60 60)">
-          <polygon points="60,24 63,60 60,56 57,60"></polygon>
-          <polygon points="60,96 57,60 60,64 63,60"></polygon>
+        <g class="wdash-compass-arrow wdash-compass-arrow--avg" transform="rotate(${avg} 60 60)">
+          <path d="M60 10 L68 34 L60 28 L52 34 Z"></path>
         </g>`;
 
     return `
@@ -671,20 +677,26 @@
         ${ticks.join('')}
         ${cardinalMarkup}
         ${averageMarkup}
-        <g class="wdash-compass-needle wdash-compass-needle--current" transform="rotate(${dir} 60 60)">
-          <polygon points="60,20 66,60 60,54 54,60"></polygon>
-          <polygon points="60,100 54,60 60,66 66,60"></polygon>
+        <g class="wdash-compass-arrow wdash-compass-arrow--current" transform="rotate(${dir} 60 60)">
+          <path d="M60 6 L73 36 L60 30 L47 36 Z"></path>
         </g>
         <circle cx="60" cy="60" r="6" class="wdash-compass-hub" />
       </svg>
     `;
   }
 
-  function buildMetricRow(items, extraClass = '') {
+  function buildMetricRow(items, extraClass = '', options = {}) {
     if (!Array.isArray(items) || !items.length) return '';
-    const className = ['wdash-metric-row', extraClass].filter(Boolean).join(' ');
+    const { variant, columns } = options || {};
+    const classes = ['wdash-metric-row', extraClass];
+    if (variant) {
+      classes.push(`wdash-metric-row--${variant}`);
+    }
+    const className = classes.filter(Boolean).join(' ');
+    const columnValue = Number.isFinite(Number(columns)) ? Number(columns) : null;
+    const styleAttr = columnValue ? ` style="--wdash-columns:${columnValue}"` : '';
     return `
-      <div class="${className}">
+      <div class="${className}"${styleAttr}>
         ${items.map(item => `
           <div class="wdash-metric">
             <span class="wdash-metric-label">${escapeHtml(item.label || '')}</span>
@@ -707,7 +719,7 @@
 .wdash-root { position: relative; width: 100%; height: 100%; --wdash-base-width: 1200px; --wdash-base-height: 900px; --wdash-scale: 1; --wdash-render-width: var(--wdash-base-width); --wdash-render-height: var(--wdash-base-height); background: rgba(4, 9, 20, 0.85); border-radius: 12px; overflow: hidden; box-sizing: border-box; display: flex; align-items: center; justify-content: center; }
 .wdash-frame { position: relative; width: var(--wdash-render-width); height: var(--wdash-render-height); display: flex; align-items: center; justify-content: center; overflow: hidden; }
 .wdash { width: var(--wdash-base-width); height: var(--wdash-base-height); font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif; color: #f4f6ff; background: linear-gradient(145deg, rgba(27,35,58,0.95), rgba(13,18,32,0.95)); backdrop-filter: blur(4px); border-radius: 12px; padding: 18px; box-sizing: border-box; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05); transform-origin: top left; transform: scale(var(--wdash-scale)); }
-.wdash-grid { display: grid; gap: 14px; height: 100%; width: 100%; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: 330px 250px 250px; grid-template-areas:
+.wdash-grid { display: grid; gap: 14px; height: 100%; width: 100%; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: 360px 250px 250px; grid-template-areas:
   "temp wind ambient"
   "rain pressure pressure"
   "solar air air";
@@ -730,7 +742,7 @@
 .wdash-pressure { gap: 10px; }
 .wdash-temp { align-items: center; }
 .wdash-wind { align-items: center; }
-.wdash-gauge, .wdash-wind-compass { position: relative; width: min(100%, 205px); aspect-ratio: 1 / 1; margin: 0 auto; }
+.wdash-gauge, .wdash-wind-compass { position: relative; width: min(100%, 260px); aspect-ratio: 1 / 1; margin: 0 auto; }
 .wdash-gauge-ring { position: absolute; inset: 11%; border-radius: 50%; background: conic-gradient(from -90deg, var(--gauge-color-a), var(--gauge-color-mid) calc(var(--gauge-band-progress, 0.5) * 360deg), var(--gauge-color-b) 360deg); mask: radial-gradient(closest-side, transparent calc(100% - 10px), black calc(100% - 8px)); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.1); }
 .wdash-gauge-pointer { position: absolute; inset: 11%; display: flex; align-items: flex-start; justify-content: center; transform: rotate(calc(var(--gauge-indicator, 0deg) - 90deg)); transform-origin: 50% 50%; pointer-events: none; }
 .wdash-gauge-pointer::after { content: ''; width: 4px; height: 54%; border-radius: 999px; background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.85)); box-shadow: 0 6px 16px rgba(0,0,0,0.45); }
@@ -748,25 +760,26 @@
 .wdash-metric-label { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.08em; color: #8ea0c8; }
 .wdash-metric-value { font-size: 0.98rem; font-weight: 600; color: #f4f6ff; }
 .wdash-metric-sub { font-size: 0.68rem; color: #9badcf; }
-.wdash-temp-details, .wdash-wind-metrics { flex-wrap: nowrap; }
-.wdash-temp-details .wdash-metric, .wdash-wind-metrics .wdash-metric { min-width: 0; }
-.wdash-temp-details .wdash-metric-value, .wdash-wind-metrics .wdash-metric-value { font-size: 0.92rem; }
+.wdash-metric-row--gauge { display: grid; grid-template-columns: repeat(var(--wdash-columns, 3), minmax(0, 1fr)); width: 100%; max-width: 260px; margin: 0 auto; gap: 4px 12px; justify-items: center; align-items: end; }
+.wdash-metric-row--gauge .wdash-metric { background: transparent; box-shadow: none; padding: 0; gap: 3px; min-width: 0; align-items: center; }
+.wdash-metric-row--gauge .wdash-metric-label { font-size: 0.58rem; letter-spacing: 0.1em; color: #93a5d0; white-space: nowrap; }
+.wdash-metric-row--gauge .wdash-metric-value { font-size: 0.92rem; }
+.wdash-metric-row--gauge .wdash-metric-sub { font-size: 0.68rem; color: #a6b5d6; }
 .wdash-unit { font-size: 0.9rem; margin-left: 2px; opacity: 0.8; }
-.wdash-wind-overlay { position: absolute; inset: 26% 18%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; text-align: center; pointer-events: none; text-shadow: 0 2px 8px rgba(0,0,0,0.45); }
-.wdash-wind-bearing { font-size: 0.8rem; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: #dbe8ff; }
+.wdash-wind-overlay { position: absolute; inset: 24% 20%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; text-align: center; pointer-events: none; text-shadow: 0 2px 8px rgba(0,0,0,0.45); }
+.wdash-wind-bearing { font-size: 0.78rem; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: #dbe8ff; }
 .wdash-wind-speed { display: inline-flex; align-items: baseline; gap: 4px; font-weight: 700; }
-.wdash-wind-speed-value { font-size: 2rem; color: #5bd6ff; }
-.wdash-wind-heading { font-size: 0.78rem; color: #9badcf; }
+.wdash-wind-speed-value { font-size: 2.1rem; color: #5bd6ff; }
+.wdash-wind-heading { font-size: 0.78rem; color: #9badcf; letter-spacing: 0.08em; }
 .wdash-wind-compass svg { width: 100%; height: auto; display: block; filter: drop-shadow(0 8px 18px rgba(0,0,0,0.4)); }
 .wdash-compass-ring { fill: none; stroke: rgba(255,255,255,0.18); stroke-width: 3; }
 .wdash-compass-inner { fill: none; stroke: rgba(255,255,255,0.1); stroke-width: 1.4; stroke-dasharray: 6 8; }
 .wdash-compass-tick { stroke: rgba(255,255,255,0.2); stroke-width: 1.4; stroke-linecap: round; }
 .wdash-compass-tick--major { stroke-width: 2.2; }
 .wdash-compass-cardinal { fill: rgba(255,255,255,0.68); font-size: 12px; font-weight: 700; letter-spacing: 0.08em; }
-.wdash-compass-needle polygon { transition: fill 0.2s ease, stroke 0.2s ease; }
-.wdash-compass-needle--current polygon:first-child { fill: #4cc3ff; }
-.wdash-compass-needle--current polygon:last-child { fill: rgba(76,195,255,0.35); }
-.wdash-compass-needle--avg polygon { fill: none; stroke: #d0d5dc; stroke-width: 2; stroke-linejoin: round; }
+.wdash-compass-arrow path { transition: fill 0.2s ease, stroke 0.2s ease; stroke-linejoin: round; stroke-linecap: round; }
+.wdash-compass-arrow--current path { fill: #4cc3ff; stroke: rgba(76,195,255,0.55); stroke-width: 1.5; }
+.wdash-compass-arrow--avg path { fill: transparent; stroke: rgba(208,213,220,0.85); stroke-width: 2; }
 .wdash-compass-hub { fill: rgba(12,18,32,0.92); stroke: rgba(255,255,255,0.7); stroke-width: 2; }
 .wdash-ambient { display: flex; flex-direction: column; gap: 14px; flex: 1; }
 .wdash-ambient-circles { display: flex; gap: 12px; justify-content: center; }
@@ -779,7 +792,7 @@
 .wdash-ambient-name { font-weight: 700; }
 .wdash-ambient-rotation { font-size: 0.75rem; color: #8ea0c8; }
 .wdash-ambient--empty .wdash-ambient-reading { opacity: 0.6; }
-.wdash-rain-stats .wdash-metric, .wdash-air-metrics .wdash-metric, .wdash-solar-metrics .wdash-metric, .wdash-temp-details .wdash-metric, .wdash-wind-metrics .wdash-metric, .wdash-pressure-stats .wdash-metric { min-width: 120px; }
+.wdash-rain-stats .wdash-metric, .wdash-air-metrics .wdash-metric, .wdash-solar-metrics .wdash-metric, .wdash-pressure-stats .wdash-metric { min-width: 120px; }
 .wdash-pressure-main { display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .wdash-pressure-toggle { display: inline-flex; gap: 4px; padding: 4px; border-radius: 999px; background: rgba(255,255,255,0.05); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04); }
 .wdash-pressure-button { border: none; background: transparent; color: #9badcf; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.12em; padding: 5px 12px; border-radius: 999px; cursor: pointer; transition: all 0.2s ease; }
@@ -854,10 +867,11 @@
       if (temp <= bandMax) {
         const span = maxValue - previousMax || 1;
         const local = clamp((temp - previousMax) / span, 0, 1);
+        const gradientPosition = 0.2 + local * 0.6;
         return {
           colors: entry.colors,
           mid: mixColors(entry.colors[0], entry.colors[1], local),
-          progress: local
+          progress: gradientPosition
         };
       }
       previousMax = bandMax;
@@ -866,10 +880,11 @@
     const last = TEMP_COLORS[TEMP_COLORS.length - 1];
     const span = TEMP_RANGE.max - previousMax || 1;
     const local = clamp((temp - previousMax) / span, 0, 1);
+    const gradientPosition = 0.2 + local * 0.6;
     return {
       colors: last.colors,
       mid: mixColors(last.colors[0], last.colors[1], local),
-      progress: local
+      progress: gradientPosition
     };
   }
 
