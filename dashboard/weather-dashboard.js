@@ -249,19 +249,26 @@
   }
 
   function buildMarkup(data) {
-    const pieces = [];
-    pieces.push(buildTemperatureCard(data));
-    pieces.push(buildWindCard(data));
-    const ambient = buildAmbientSensorCard(data);
-    if (ambient) pieces.push(ambient);
-    pieces.push(buildHumidityCard(data));
-    pieces.push(buildRainCard(data));
-    pieces.push(buildPressureCard(data));
-    pieces.push(buildSolarCard(data));
-    pieces.push(buildAirQualityCard(data));
-    pieces.push(buildSunCard(data));
-    pieces.push(buildOutlookCard(data));
-    return pieces.join('');
+    return `
+      <div class="wdash-row wdash-row--top">
+        ${buildTemperatureCard(data)}
+        ${buildWindCard(data)}
+        ${buildAmbientSensorCard(data)}
+      </div>
+      <div class="wdash-row wdash-row--middle">
+        ${buildHumidityCard(data)}
+        ${buildRainCard(data)}
+        ${buildPressureCard(data)}
+      </div>
+      <div class="wdash-row wdash-row--lower">
+        ${buildSolarCard(data)}
+        ${buildAirQualityCard(data)}
+        ${buildSunCard(data)}
+      </div>
+      <div class="wdash-row wdash-row--bottom">
+        ${buildOutlookCard(data)}
+      </div>
+    `;
   }
 
   function buildTemperatureCard(data) {
@@ -363,18 +370,23 @@
 
   function buildAmbientSensorCard(data) {
     const sensors = Array.isArray(data.ambientSensors) ? data.ambientSensors.filter(Boolean) : [];
-    if (!sensors.length) return '';
-
+    const hasSensors = sensors.length > 0;
     const sensor = sensors[0] || {};
     const temp = toNumber(sensor.temperatureF);
     const humidity = toNumber(sensor.humidity);
     const tempUnit = data.ambientTemperatureUnit || '°F';
     const humidityUnit = data.ambientHumidityUnit || '%';
-    const countLabel = sensors.length > 1 ? `${sensors.length} locations` : (sensor.name || '');
-    const rotationText = sensors.length > 1 ? `Sensor 1 of ${sensors.length}` : '';
+    const countLabel = hasSensors
+      ? (sensors.length > 1 ? `${sensors.length} locations` : (sensor.name || ''))
+      : 'No sensors configured';
+    const rotationText = hasSensors && sensors.length > 1 ? `Sensor 1 of ${sensors.length}` : '';
+
+    const tempDisplay = Number.isFinite(temp) ? formatNumber(temp, 1) : '—';
+    const humidityDisplay = Number.isFinite(humidity) ? formatNumber(humidity, 0) : '—';
+    const nameDisplay = sensor.name || (hasSensors ? '' : 'No sensors configured');
 
     return `
-      <section class="wdash-card wdash-card--ambient">
+      <section class="wdash-card wdash-card--ambient${hasSensors ? '' : ' wdash-ambient--empty'}">
         <header class="wdash-card-header">
           <h3>Local Sensors</h3>
           <span class="wdash-updated">${escapeHtml(countLabel)}</span>
@@ -382,18 +394,18 @@
         <div class="wdash-ambient" data-count="${sensors.length}">
           <div class="wdash-ambient-circles">
             <div class="wdash-ambient-circle wdash-ambient-circle--temp">
-              <span class="wdash-ambient-value wdash-ambient-value--temp">${formatNumber(temp, 1)}</span>
+              <span class="wdash-ambient-value wdash-ambient-value--temp">${tempDisplay}</span>
               <span class="wdash-ambient-unit wdash-ambient-unit--temp">${escapeHtml(tempUnit)}</span>
               <span class="wdash-ambient-label">Temperature</span>
             </div>
             <div class="wdash-ambient-circle wdash-ambient-circle--humidity">
-              <span class="wdash-ambient-value wdash-ambient-value--humidity">${formatNumber(humidity, 0)}</span>
+              <span class="wdash-ambient-value wdash-ambient-value--humidity">${humidityDisplay}</span>
               <span class="wdash-ambient-unit wdash-ambient-unit--humidity">${escapeHtml(humidityUnit)}</span>
               <span class="wdash-ambient-label">Humidity</span>
             </div>
           </div>
           <div class="wdash-ambient-footer">
-            <div class="wdash-ambient-name">${escapeHtml(sensor.name || '')}</div>
+            <div class="wdash-ambient-name">${escapeHtml(nameDisplay)}</div>
             <div class="wdash-ambient-rotation">${escapeHtml(rotationText)}</div>
           </div>
         </div>
@@ -609,18 +621,22 @@
     const nameEl = container.querySelector('.wdash-ambient-name');
     const rotationEl = container.querySelector('.wdash-ambient-rotation');
 
+    const card = container.closest('.wdash-card--ambient');
+
     if (!sensor) {
-      if (tempEl) tempEl.textContent = '--';
+      if (tempEl) tempEl.textContent = '—';
       if (tempUnitEl) tempUnitEl.textContent = ambientRotation.tempUnit;
-      if (humidityEl) humidityEl.textContent = '--';
+      if (humidityEl) humidityEl.textContent = '—';
       if (humidityUnitEl) humidityUnitEl.textContent = ambientRotation.humidityUnit;
-      if (nameEl) nameEl.textContent = 'No data';
+      if (nameEl) nameEl.textContent = 'No sensors configured';
       if (rotationEl) rotationEl.textContent = '';
       container.classList.add('wdash-ambient--empty');
+      if (card) card.classList.add('wdash-ambient--empty');
       return;
     }
 
     container.classList.remove('wdash-ambient--empty');
+    if (card) card.classList.remove('wdash-ambient--empty');
     if (tempEl) tempEl.textContent = formatNumber(toNumber(sensor.temperatureF), 1);
     if (tempUnitEl) tempUnitEl.textContent = ambientRotation.tempUnit;
     if (humidityEl) humidityEl.textContent = formatNumber(toNumber(sensor.humidity), 0);
@@ -677,52 +693,45 @@
       .wdash-root { position: relative; width: 100%; height: 100%; --wdash-base-width: 1200px; --wdash-base-height: 900px; --wdash-scale: 1; --wdash-render-width: var(--wdash-base-width); --wdash-render-height: var(--wdash-base-height); background: rgba(4, 9, 20, 0.85); border-radius: 12px; overflow: hidden; box-sizing: border-box; display: flex; align-items: center; justify-content: center; }
       .wdash-frame { position: relative; width: var(--wdash-render-width); height: var(--wdash-render-height); display: flex; align-items: center; justify-content: center; overflow: hidden; }
       .wdash { width: var(--wdash-base-width); height: var(--wdash-base-height); font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif; color: #f4f6ff; background: linear-gradient(145deg, rgba(27,35,58,0.95), rgba(13,18,32,0.95)); backdrop-filter: blur(4px); border-radius: 12px; padding: 16px; box-sizing: border-box; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05); transform-origin: top left; transform: scale(var(--wdash-scale)); }
-      .wdash-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); grid-auto-rows: minmax(120px, auto); gap: 14px; height: 100%; }
-      .wdash-grid[data-empty="true"] { place-items: center; }
+      .wdash-grid { display: flex; flex-direction: column; gap: 14px; height: 100%; width: 100%; }
+      .wdash-grid[data-empty="true"] { align-items: center; justify-content: center; }
+      .wdash-grid > * { min-height: 0; }
       .wdash-empty { width: 100%; text-align: center; font-size: 1.1rem; opacity: 0.7; }
-      .wdash-card { background: linear-gradient(145deg, rgba(27,35,58,0.95), rgba(13,18,32,0.95)); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 10px; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05); }
+      .wdash-row { display: grid; gap: 14px; width: 100%; min-height: 0; }
+      .wdash-row--top { grid-template-columns: 5fr 4fr 3fr; flex: 4.2 1 0%; }
+      .wdash-row--middle { grid-template-columns: 3fr 4fr 5fr; flex: 2.2 1 0%; }
+      .wdash-row--lower { grid-template-columns: repeat(3, 1fr); flex: 2 1 0%; }
+      .wdash-row--bottom { grid-template-columns: 1fr; flex: 1.6 1 0%; }
+      .wdash-card { background: linear-gradient(145deg, rgba(27,35,58,0.95), rgba(13,18,32,0.95)); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 10px; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05); height: 100%; min-height: 0; }
       .wdash-card-header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.72rem; color: #8ea0c8; }
       .wdash-card-header h3 { margin: 0; font-size: 0.78rem; font-weight: 700; color: #c9d8ff; }
       .wdash-updated { font-size: 0.68rem; opacity: 0.7; }
-      .wdash-card--temp { grid-column: span 5; min-height: 260px; }
-      .wdash-card--wind { grid-column: span 4; min-height: 260px; }
-      .wdash-card--ambient { grid-column: span 3; min-height: 260px; }
-      .wdash-card--humidity { grid-column: span 3; }
-      .wdash-card--rain { grid-column: span 4; }
-      .wdash-card--pressure { grid-column: span 4; }
-      .wdash-card--solar { grid-column: span 4; }
-      .wdash-card--air { grid-column: span 4; }
-      .wdash-card--sun { grid-column: span 3; }
-      .wdash-card--outlook { grid-column: span 9; }
-      @media (max-width: 1200px) {
-        .wdash-card--temp { grid-column: span 12; }
-        .wdash-card--wind { grid-column: span 6; }
-        .wdash-card--ambient { grid-column: span 6; }
-        .wdash-card--humidity { grid-column: span 6; }
-        .wdash-card--rain, .wdash-card--pressure, .wdash-card--solar, .wdash-card--air, .wdash-card--sun, .wdash-card--outlook { grid-column: span 12; }
+      @media (max-width: 1180px) {
+        .wdash-row--top { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .wdash-row--middle { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .wdash-row--lower { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       }
-      @media (max-width: 800px) {
+      @media (max-width: 900px) {
         .wdash { padding: 12px; }
-        .wdash-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
-        .wdash-card { grid-column: span 6 !important; }
+        .wdash-row { grid-template-columns: 1fr !important; }
       }
-      .wdash-temp { display: grid; grid-template-rows: auto auto; gap: 18px; align-items: center; justify-items: center; }
-      .wdash-gauge { position: relative; width: 100%; max-width: 320px; margin: 0 auto; border-radius: 50%; aspect-ratio: 1 / 1; }
-      .wdash-gauge-ring { position: absolute; inset: 6%; border-radius: 50%; background: conic-gradient(var(--gauge-color-a), var(--gauge-color-b) var(--gauge-angle), rgba(255,255,255,0.12) var(--gauge-angle), rgba(255,255,255,0.05)); mask: radial-gradient(closest-side, transparent calc(100% - 16px), black calc(100% - 15px)); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08); }
-      .wdash-gauge-center { position: absolute; inset: 20%; border-radius: 50%; background: rgba(5,10,20,0.85); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 12px 10px; gap: 6px; }
-      .wdash-gauge-value { font-size: 3.3rem; font-weight: 800; letter-spacing: -0.02em; }
-      .wdash-gauge-label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.12em; color: #9badcf; }
+      .wdash-temp { display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: 16px; align-items: center; justify-items: center; }
+      .wdash-gauge { position: relative; width: 100%; max-width: 280px; margin: 0 auto; border-radius: 50%; aspect-ratio: 1 / 1; }
+      .wdash-gauge-ring { position: absolute; inset: 7%; border-radius: 50%; background: conic-gradient(var(--gauge-color-a), var(--gauge-color-b) var(--gauge-angle), rgba(255,255,255,0.12) var(--gauge-angle), rgba(255,255,255,0.05)); mask: radial-gradient(closest-side, transparent calc(100% - 16px), black calc(100% - 15px)); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08); }
+      .wdash-gauge-center { position: absolute; inset: 19%; border-radius: 50%; background: rgba(5,10,20,0.85); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 12px 10px; gap: 6px; }
+      .wdash-gauge-value { font-size: 3.1rem; font-weight: 800; letter-spacing: -0.02em; }
+      .wdash-gauge-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.12em; color: #9badcf; }
       .wdash-temp-extrema { display: flex; flex-direction: column; align-items: center; gap: 2px; }
-      .wdash-temp-extrema-label { font-size: 0.65rem; letter-spacing: 0.12em; text-transform: uppercase; color: #8ea0c8; }
-      .wdash-temp-extrema-value { font-size: 1.05rem; font-weight: 600; color: #dce8ff; }
+      .wdash-temp-extrema-label { font-size: 0.62rem; letter-spacing: 0.12em; text-transform: uppercase; color: #8ea0c8; }
+      .wdash-temp-extrema-value { font-size: 1rem; font-weight: 600; color: #dce8ff; }
       .wdash-temp-extrema--high .wdash-temp-extrema-value { color: #ffb95a; }
       .wdash-temp-extrema--low .wdash-temp-extrema-value { color: #7cc5ff; }
       .wdash-temp-stats { width: 100%; background: rgba(255,255,255,0.06); border-radius: 12px; padding: 12px 16px; display: grid; gap: 8px; }
       .wdash-temp-stats-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; text-align: center; }
-      .wdash-temp-stats-row--labels span { text-transform: uppercase; font-size: 0.68rem; letter-spacing: 0.1em; color: #8ea0c8; }
-      .wdash-temp-stats-row--values span { font-size: 1.05rem; font-weight: 600; }
+      .wdash-temp-stats-row--labels span { text-transform: uppercase; font-size: 0.66rem; letter-spacing: 0.1em; color: #8ea0c8; }
+      .wdash-temp-stats-row--values span { font-size: 1rem; font-weight: 600; }
       @media (max-width: 700px) { .wdash-temp-stats-row { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-      .wdash-wind { display: grid; grid-template-columns: 1fr 160px; gap: 16px; align-items: center; }
+      .wdash-wind { display: grid; grid-template-columns: 1fr 160px; gap: 16px; align-items: center; min-height: 0; }
       @media (max-width: 800px) { .wdash-wind { grid-template-columns: 1fr; } }
       .wdash-wind-primary { display: grid; gap: 12px; }
       .wdash-wind-speed { display: flex; align-items: baseline; gap: 6px; }
@@ -740,7 +749,7 @@
       .wdash-compass-svg .needle-tail { fill: rgba(255,123,58,0.35); }
       .wdash-compass-svg .hub { fill: rgba(12,18,32,0.9); stroke: rgba(255,255,255,0.7); stroke-width: 2; }
       .wdash-compass-svg .direction-label { fill: #fff; font-size: 12px; font-weight: 600; }
-      .wdash-ambient { display: flex; flex-direction: column; gap: 12px; justify-content: space-between; height: 100%; }
+      .wdash-ambient { display: flex; flex-direction: column; gap: 12px; justify-content: space-between; height: 100%; min-height: 0; }
       .wdash-ambient-circles { display: flex; gap: 12px; justify-content: space-between; }
       .wdash-ambient-circle { flex: 1; aspect-ratio: 1; border-radius: 50%; display: grid; place-items: center; gap: 6px; position: relative; color: #fff; font-weight: 600; box-shadow: 0 8px 18px rgba(4, 9, 20, 0.35); }
       .wdash-ambient-circle--temp { background: radial-gradient(circle at 30% 30%, rgba(255,158,89,0.9), rgba(242,91,44,0.6)); }
@@ -751,20 +760,22 @@
       .wdash-ambient-footer { display: flex; justify-content: space-between; align-items: baseline; font-size: 0.85rem; color: #c9d8ff; }
       .wdash-ambient-name { font-weight: 700; }
       .wdash-ambient-rotation { font-size: 0.75rem; color: #8ea0c8; }
-      .wdash-ambient.wdash-ambient--empty .wdash-ambient-value { opacity: 0.6; }
-      .wdash-ambient.wdash-ambient--empty .wdash-ambient-name { opacity: 0.7; }
+      .wdash-ambient.wdash-ambient--empty .wdash-ambient-value,
+      .wdash-card--ambient.wdash-ambient--empty .wdash-ambient-value { opacity: 0.6; }
+      .wdash-ambient.wdash-ambient--empty .wdash-ambient-name,
+      .wdash-card--ambient.wdash-ambient--empty .wdash-ambient-name { opacity: 0.7; }
       @media (max-width: 800px) { .wdash-ambient-circles { flex-direction: row; } }
-      .wdash-humidity, .wdash-solar, .wdash-air, .wdash-sun { display: grid; gap: 10px; font-size: 0.92rem; }
+      .wdash-humidity, .wdash-solar, .wdash-air, .wdash-sun { display: grid; gap: 10px; font-size: 0.92rem; min-height: 0; }
       .wdash-humidity-row, .wdash-solar-row, .wdash-air-row, .wdash-sun-row { display: flex; justify-content: space-between; }
-      .wdash-rain { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; font-size: 0.9rem; }
+      .wdash-rain { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; font-size: 0.9rem; min-height: 0; }
       .wdash-rain dt { color: #8ea0c8; font-weight: 600; }
       .wdash-rain dd { margin: 0; font-weight: 600; }
-      .wdash-pressure { display: grid; gap: 8px; font-size: 0.9rem; }
+      .wdash-pressure { display: grid; gap: 8px; font-size: 0.9rem; min-height: 0; }
       .wdash-pressure-row { display: flex; justify-content: space-between; }
       .wdash-pressure-outlook { margin-top: auto; background: rgba(255,255,255,0.06); border-radius: 8px; padding: 10px; font-size: 0.82rem; display: grid; gap: 6px; }
       .wdash-outlook-label { font-weight: 700; color: #ffb95a; text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.75rem; }
       .wdash-outlook-text { line-height: 1.3; }
-      .wdash-outlook { display: grid; gap: 10px; font-size: 0.95rem; }
+      .wdash-outlook { display: grid; gap: 10px; font-size: 0.95rem; min-height: 0; }
       .wdash-outlook-category { font-size: 1.2rem; font-weight: 700; }
       .wdash-outlook-summary { line-height: 1.4; opacity: 0.85; }
     `;
