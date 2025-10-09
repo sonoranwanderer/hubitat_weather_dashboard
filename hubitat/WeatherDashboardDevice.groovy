@@ -11,8 +11,8 @@ import groovy.transform.Field
 definition(
     name: "Weather Dashboard Device",
     namespace: "ecowitt-dashboard",
-    author: "OpenAI",
-    importUrl: "https://raw.githubusercontent.com/<owner>/ecowitt_weather_hubitat_dashboard/main/hubitat/WeatherDashboardDevice.groovy"
+    author: "Gatewood Green",
+    importUrl: "https://raw.githubusercontent.com/sonoranwanderer/ecowitt_weather_hubitat_dashboard/main/hubitat/WeatherDashboardDevice.groovy"
 ) {
     capability "Sensor"
     capability "Refresh"
