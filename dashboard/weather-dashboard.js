@@ -12,8 +12,7 @@
   const CHUNK_NAMESPACE = 'weather-dashboard';
   const CSS_ID = 'weather-dashboard-css';
   const TEMP_RANGE = { min: -40, max: 120 };
-  const AMBIENT_ROTATION_DEFAULT_SECONDS = 12;
-  const AMBIENT_ROTATION_MIN_SECONDS = 3;
+  const AMBIENT_ROTATION_INTERVAL_MS = 5000;
   const INIT_RETRY_LIMIT = 40;
   const INIT_RETRY_DELAY = 250;
   const DATA_REFRESH_INTERVAL = 5000;
@@ -46,9 +45,12 @@
     timer: null,
     sensors: [],
     index: 0,
-    interval: AMBIENT_ROTATION_DEFAULT_SECONDS * 1000,
+    interval: AMBIENT_ROTATION_INTERVAL_MS,
     tempUnit: '°F',
-    humidityUnit: '%'
+    humidityUnit: '%',
+    countdownTimer: null,
+    nextSwitchAt: null,
+    paused: false
   };
 
   const dataTileObservers = new Map();
@@ -379,6 +381,8 @@
     const tempDisplay = formatAmbientValue(sensor.temperatureF, tempUnit, 1);
     const humidityDisplay = formatAmbientValue(sensor.humidity, humidityUnit, 0);
     const nameDisplay = sensor.name || (hasSensors ? '' : 'No sensors configured');
+    const timerDisabledAttr = sensors.length > 1 ? '' : ' disabled';
+    const timerLabel = sensors.length > 1 ? 'Pause local sensor rotation' : 'Local sensor rotation unavailable';
 
     return `
       <section class="wdash-card wdash-card--ambient${hasSensors ? '' : ' wdash-ambient--empty'}">
@@ -395,6 +399,12 @@
             <div class="wdash-ambient-circle wdash-ambient-circle--humidity">
               <span class="wdash-ambient-reading wdash-ambient-reading--humidity">${escapeHtml(humidityDisplay)}</span>
               <span class="wdash-ambient-label">Humidity</span>
+              <button type="button" class="wdash-ambient-timer" aria-label="${escapeHtml(timerLabel)}" aria-pressed="false"${timerDisabledAttr}>
+                <svg class="wdash-ambient-timer-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <path d="M12 5V2L7 7l5 5V8c2.76 0 5 2.24 5 5 0 .34-.03.67-.08 1h2.02c.04-.33.06-.66.06-1 0-3.87-3.13-7-7-7zm-5 6c0-.34.03-.67.08-1H5.06c-.04.33-.06.66-.06 1 0 3.87 3.13 7 7 7v3l5-5-5-5v3c-2.76 0-5-2.24-5-5z"></path>
+                </svg>
+                <span class="wdash-ambient-timer-countdown">--</span>
+              </button>
             </div>
           </div>
           <div class="wdash-ambient-footer">
@@ -532,6 +542,7 @@
 
   function setupInteractiveComponents(container) {
     setupPressureToggle(container);
+    setupAmbientControls(container);
   }
 
   function setupPressureToggle(container) {
@@ -562,43 +573,158 @@
     });
   }
 
+  function setupAmbientControls(container) {
+    const button = container.querySelector('.wdash-ambient-timer');
+    if (!button) return;
+
+    button.addEventListener('click', () => {
+      if (ambientRotation.sensors.length <= 1) return;
+      toggleAmbientRotationPause();
+    });
+
+    updateAmbientTimerDisplay();
+  }
+
+  function toggleAmbientRotationPause(force) {
+    const desired = typeof force === 'boolean' ? force : !ambientRotation.paused;
+    if (desired === ambientRotation.paused) {
+      updateAmbientTimerDisplay();
+      return;
+    }
+
+    ambientRotation.paused = desired;
+    if (ambientRotation.paused) {
+      stopAmbientRotationTimer();
+    } else if (ambientRotation.sensors.length > 1) {
+      scheduleAmbientRotation();
+    }
+
+    updateAmbientTimerDisplay();
+  }
+
+  function scheduleAmbientRotation() {
+    resetAmbientTimerState();
+
+    if (ambientRotation.paused || ambientRotation.sensors.length <= 1) {
+      ambientRotation.nextSwitchAt = null;
+      clearAmbientCountdownTimer();
+      updateAmbientTimerDisplay();
+      return;
+    }
+
+    ambientRotation.nextSwitchAt = Date.now() + ambientRotation.interval;
+    ambientRotation.timer = setTimeout(() => {
+      ambientRotation.timer = null;
+      advanceAmbientSensor();
+    }, ambientRotation.interval);
+
+    ensureAmbientCountdownTimer();
+    updateAmbientTimerDisplay();
+  }
+
+  function advanceAmbientSensor() {
+    if (!ambientRotation.sensors.length) {
+      stopAmbientRotationTimer();
+      return;
+    }
+
+    ambientRotation.index = (ambientRotation.index + 1) % ambientRotation.sensors.length;
+    updateAmbientDisplay();
+
+    if (!ambientRotation.paused && ambientRotation.sensors.length > 1) {
+      scheduleAmbientRotation();
+    }
+  }
+
+  function resetAmbientTimerState() {
+    if (ambientRotation.timer) {
+      clearTimeout(ambientRotation.timer);
+      ambientRotation.timer = null;
+    }
+  }
+
+  function stopAmbientRotationTimer() {
+    resetAmbientTimerState();
+    ambientRotation.nextSwitchAt = null;
+    clearAmbientCountdownTimer();
+  }
+
+  function ensureAmbientCountdownTimer() {
+    if (ambientRotation.countdownTimer) return;
+    ambientRotation.countdownTimer = setInterval(() => {
+      updateAmbientTimerDisplay();
+    }, 250);
+  }
+
+  function clearAmbientCountdownTimer() {
+    if (!ambientRotation.countdownTimer) return;
+    clearInterval(ambientRotation.countdownTimer);
+    ambientRotation.countdownTimer = null;
+  }
+
+  function updateAmbientTimerDisplay() {
+    const button = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-ambient-timer');
+    if (!button) return;
+
+    const disabled = ambientRotation.sensors.length <= 1;
+    if (button.disabled !== disabled) {
+      button.disabled = disabled;
+    }
+
+    button.classList.toggle('is-paused', ambientRotation.paused && !disabled);
+    const label = ambientRotation.sensors.length > 1
+      ? (ambientRotation.paused ? 'Resume local sensor rotation' : 'Pause local sensor rotation')
+      : 'Local sensor rotation unavailable';
+    button.setAttribute('aria-label', label);
+    button.setAttribute('aria-pressed', disabled ? 'false' : String(ambientRotation.paused));
+
+    const countdownEl = button.querySelector('.wdash-ambient-timer-countdown');
+    if (countdownEl) {
+      if (disabled) {
+        countdownEl.textContent = '--';
+      } else if (ambientRotation.paused || !ambientRotation.nextSwitchAt) {
+        countdownEl.textContent = '--';
+      } else {
+        const remainingMs = ambientRotation.nextSwitchAt - Date.now();
+        const remaining = Math.max(0, Math.ceil(remainingMs / 1000));
+        countdownEl.textContent = String(remaining);
+      }
+    }
+  }
+
   function setupAmbientRotation(data) {
-    clearAmbientRotation();
     const container = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-ambient');
     if (!container) return;
 
     const sensors = Array.isArray(data?.ambientSensors) ? data.ambientSensors.filter(Boolean) : [];
-    if (!sensors.length) {
-      ambientRotation.sensors = [];
-    } else {
-      ambientRotation.sensors = sensors;
-    }
-    ambientRotation.index = 0;
+    ambientRotation.sensors = sensors;
     ambientRotation.tempUnit = data?.ambientTemperatureUnit || '°F';
     ambientRotation.humidityUnit = data?.ambientHumidityUnit || '%';
+    ambientRotation.interval = AMBIENT_ROTATION_INTERVAL_MS;
 
-    const secondsRaw = Math.round(toNumber(data?.ambientRotationSeconds));
-    const seconds = Math.max(AMBIENT_ROTATION_MIN_SECONDS, Number.isFinite(secondsRaw) ? secondsRaw : AMBIENT_ROTATION_DEFAULT_SECONDS);
-    ambientRotation.interval = seconds * 1000;
+    if (ambientRotation.index >= ambientRotation.sensors.length) {
+      ambientRotation.index = ambientRotation.sensors.length ? ambientRotation.sensors.length - 1 : 0;
+    }
 
     updateAmbientDisplay();
 
-    if (ambientRotation.sensors.length > 1) {
-      ambientRotation.timer = setInterval(() => {
-        if (!ambientRotation.sensors.length) return;
-        ambientRotation.index = (ambientRotation.index + 1) % ambientRotation.sensors.length;
-        updateAmbientDisplay();
-      }, ambientRotation.interval);
+    if (ambientRotation.sensors.length <= 1) {
+      ambientRotation.index = 0;
+      stopAmbientRotationTimer();
+    } else if (ambientRotation.paused) {
+      stopAmbientRotationTimer();
+    } else if (!ambientRotation.timer) {
+      scheduleAmbientRotation();
     }
+
+    updateAmbientTimerDisplay();
   }
 
   function clearAmbientRotation() {
-    if (ambientRotation.timer) {
-      clearInterval(ambientRotation.timer);
-      ambientRotation.timer = null;
-    }
+    stopAmbientRotationTimer();
     ambientRotation.sensors = [];
     ambientRotation.index = 0;
+    ambientRotation.paused = false;
   }
 
   function updateAmbientDisplay() {
@@ -633,6 +759,8 @@
         ? `Sensor ${ambientRotation.index + 1} of ${ambientRotation.sensors.length}`
         : '';
     }
+
+    updateAmbientTimerDisplay();
   }
 
   function cardHeader(title, data) {
@@ -793,7 +921,14 @@
 .wdash-ambient-circles { display: flex; gap: 12px; justify-content: center; }
 .wdash-ambient-circle { flex: 0 0 130px; width: 130px; aspect-ratio: 1; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: #fff; font-weight: 600; box-shadow: 0 10px 22px rgba(4,9,20,0.4); text-align: center; padding: 12px; }
 .wdash-ambient-circle--temp { background: radial-gradient(circle at 30% 30%, rgba(255,158,89,0.9), rgba(242,91,44,0.65)); }
-.wdash-ambient-circle--humidity { background: radial-gradient(circle at 30% 30%, rgba(90,160,255,0.9), rgba(51,96,255,0.6)); }
+.wdash-ambient-circle--humidity { background: radial-gradient(circle at 30% 30%, rgba(90,160,255,0.9), rgba(51,96,255,0.6)); position: relative; }
+.wdash-ambient-timer { position: absolute; bottom: -14px; right: -14px; width: 58px; height: 58px; border-radius: 50%; border: none; background: linear-gradient(145deg, #1fbf75, #18a55f); color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 10px 20px rgba(0,0,0,0.35); transition: background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease; }
+.wdash-ambient-timer:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 12px 24px rgba(0,0,0,0.4); }
+.wdash-ambient-timer:active:not(:disabled) { transform: translateY(1px); box-shadow: 0 8px 16px rgba(0,0,0,0.35); }
+.wdash-ambient-timer.is-paused { background: linear-gradient(145deg, #d9534f, #c24542); }
+.wdash-ambient-timer:disabled { cursor: not-allowed; opacity: 0.6; box-shadow: 0 6px 12px rgba(0,0,0,0.2); }
+.wdash-ambient-timer-icon { position: absolute; inset: 12px; fill: rgba(255,255,255,0.7); }
+.wdash-ambient-timer-countdown { position: relative; font-size: 0.95rem; font-weight: 700; text-shadow: 0 2px 6px rgba(0,0,0,0.45); }
 .wdash-ambient-reading { font-size: 1.8rem; font-weight: 700; }
 .wdash-ambient-label { font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.8; }
 .wdash-ambient-footer { display: flex; justify-content: space-between; align-items: baseline; font-size: 0.76rem; color: #c9d8ff; }
