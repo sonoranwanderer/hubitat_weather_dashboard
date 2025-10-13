@@ -392,11 +392,21 @@
         </header>
         <div class="wdash-ambient" data-count="${sensors.length}">
           <div class="wdash-ambient-circles">
-            <div class="wdash-ambient-circle wdash-ambient-circle--temp">
+                <div class="wdash-ambient-circle wdash-ambient-circle--temp" style="position: relative;">
+                <svg class="wdash-ambient-svg wdash-ambient-svg--temp" viewBox="0 0 100 100" aria-hidden="true">
+                <circle class="wdash-ambient-track" cx="50" cy="50" r="45" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="10" />
+                <circle class="wdash-ambient-fill" cx="50" cy="50" r="45" fill="none" stroke="#6bc3ff" stroke-width="10" stroke-linecap="round" stroke-dasharray="282.74" stroke-dashoffset="0" />
+              </svg>
+              <div class="wdash-ambient-inner" aria-hidden="true"></div>
               <span class="wdash-ambient-reading wdash-ambient-reading--temp">${escapeHtml(tempDisplay)}</span>
               <span class="wdash-ambient-label">Temperature</span>
             </div>
             <div class="wdash-ambient-circle wdash-ambient-circle--humidity">
+              <svg class="wdash-ambient-svg wdash-ambient-svg--humidity" viewBox="0 0 100 100" aria-hidden="true">
+                <circle class="wdash-ambient-track" cx="50" cy="50" r="45" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="10" />
+                <circle class="wdash-ambient-fill" cx="50" cy="50" r="45" fill="none" stroke="#5b2fe6" stroke-width="10" stroke-linecap="round" stroke-dasharray="282.74" stroke-dashoffset="282.74" />
+              </svg>
+              <div class="wdash-ambient-inner" aria-hidden="true"></div>
               <span class="wdash-ambient-reading wdash-ambient-reading--humidity">${escapeHtml(humidityDisplay)}</span>
               <span class="wdash-ambient-label">Humidity</span>
               <button type="button" class="wdash-ambient-timer" aria-label="${escapeHtml(timerLabel)}" aria-pressed="false"${timerDisabledAttr}>
@@ -769,6 +779,40 @@
     }
 
     updateAmbientTimerDisplay();
+
+    // Draw rings for temperature and humidity using inline SVG for better compatibility
+    try {
+      const tempFill = container.querySelector('.wdash-ambient-circle--temp .wdash-ambient-svg .wdash-ambient-fill');
+      const tempTrack = container.querySelector('.wdash-ambient-circle--temp .wdash-ambient-svg .wdash-ambient-track');
+      const humFill = container.querySelector('.wdash-ambient-circle--humidity .wdash-ambient-svg .wdash-ambient-fill');
+      const humTrack = container.querySelector('.wdash-ambient-circle--humidity .wdash-ambient-svg .wdash-ambient-track');
+
+      // Temperature: set stroke color to a blended mid color from the temperature band
+      if (tempFill && tempTrack) {
+        const t = toNumber(sensor.temperatureF);
+        const tempColors = colorForTemp(t);
+        const mid = tempColors.mid || mixColors(tempColors.colors[0], tempColors.colors[1], 0.5);
+        tempFill.setAttribute('stroke', mid);
+        tempTrack.setAttribute('stroke', 'rgba(255,255,255,0.06)');
+      }
+
+      // Humidity: use stroke-dashoffset on the circle to show percentage (counter-clockwise from top)
+      if (humFill && humTrack) {
+        const rawHum = toNumber(sensor.humidity);
+        const hum = Number.isFinite(rawHum) ? clamp(rawHum, 0, 100) : 0;
+  const r = 45;
+        const circumference = 2 * Math.PI * r;
+        const fillFraction = hum / 100;
+        const dash = Math.max(0, Math.min(1, fillFraction)) * circumference;
+        const offset = Math.round(circumference - dash);
+        humFill.setAttribute('stroke-dasharray', String(Math.round(circumference)));
+        humFill.setAttribute('stroke-dashoffset', String(Math.round(offset)));
+        humFill.setAttribute('stroke', '#5b2fe6');
+        humTrack.setAttribute('stroke', 'rgba(255,255,255,0.12)');
+      }
+    } catch (err) {
+      console.warn('[WeatherDashboard] ambient ring draw failed', err);
+    }
   }
 
   function cardHeader(title, data) {
@@ -927,9 +971,20 @@
 .wdash-compass-arrow--avg path { fill: transparent; stroke: rgba(208,213,220,0.85); stroke-width: 2; }
 .wdash-ambient { display: flex; flex-direction: column; gap: 14px; flex: 1; }
 .wdash-ambient-circles { display: flex; gap: 12px; justify-content: center; }
-.wdash-ambient-circle { flex: 0 0 130px; width: 130px; aspect-ratio: 1; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: #fff; font-weight: 600; box-shadow: 0 10px 22px rgba(4,9,20,0.4); text-align: center; padding: 12px; }
-.wdash-ambient-circle--temp { background: radial-gradient(circle at 30% 30%, rgba(255,158,89,0.9), rgba(242,91,44,0.65)); }
-.wdash-ambient-circle--humidity { background: radial-gradient(circle at 30% 30%, rgba(90,160,255,0.9), rgba(51,96,255,0.6)); position: relative; }
+.wdash-ambient-circle { flex: 0 0 130px; width: 130px; aspect-ratio: 1; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: #fff; font-weight: 600; box-shadow: 0 10px 22px rgba(4,9,20,0.4); text-align: center; padding: 12px; position: relative; background: rgba(5,10,20,0.9); }
+.wdash-ambient-svg { position: absolute; inset: 4px; width: calc(100% - 8px); height: calc(100% - 8px); z-index: 1; pointer-events: none; }
+.wdash-ambient-svg .wdash-ambient-track { transition: stroke 200ms ease; }
+.wdash-ambient-svg .wdash-ambient-fill { transition: stroke 300ms ease, stroke-dashoffset 400ms cubic-bezier(.2,.9,.2,1); transform-origin: 50% 50%; transform: rotate(-90deg); }
+.wdash-ambient-inner { position: absolute; inset: 22px; border-radius: 50%; background: rgba(5,10,20,0.95); z-index: 0; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.02); }
+.wdash-ambient-inner { pointer-events: none; }
+.wdash-ambient-circle > .wdash-ambient-inner + .wdash-ambient-reading,
+.wdash-ambient-circle > .wdash-ambient-inner + .wdash-ambient-reading + .wdash-ambient-label,
+.wdash-ambient-circle > .wdash-ambient-reading,
+.wdash-ambient-circle > .wdash-ambient-label { position: relative; z-index: 2; }
+.wdash-ambient-reading { font-size: 1.8rem; font-weight: 700; }
+.wdash-ambient-label { font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.8; }
+.wdash-ambient-circle--temp { background: rgba(5,10,20,0.9); }
+.wdash-ambient-circle--humidity { background: rgba(5,10,20,0.9); }
 .wdash-ambient-timer { --wdash-timer-color: #29d88b; position: absolute; top: 92px; right: -36px; width: 40px; height: 40px; border: none; padding: 0; border-radius: 50%; background: transparent; color: var(--wdash-timer-color); display: grid; place-items: center; cursor: pointer; filter: drop-shadow(0 8px 16px rgba(0,0,0,0.45)); transition: transform 0.2s ease, filter 0.2s ease, color 0.2s ease; }
 .wdash-ambient-timer:hover:not(:disabled) { transform: translateY(-1px); filter: drop-shadow(0 16px 26px rgba(0,0,0,0.55)); }
 .wdash-ambient-timer:active:not(:disabled) { transform: translateY(1px); filter: drop-shadow(0 10px 18px rgba(0,0,0,0.45)); }
