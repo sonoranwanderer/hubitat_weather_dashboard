@@ -342,12 +342,18 @@
           <div class="wdash-wind-compass" aria-label="Wind direction ${bearingLabel} ${formatDegrees(dirDegrees)}">
             ${compass}
             <div class="wdash-wind-overlay">
-              <span class="wdash-wind-bearing">${bearingLabel}</span>
+              <span class="wdash-wind-bearing-line">
+                <span class="wdash-wind-bearing">${bearingLabel}</span>
+                <span class="wdash-wind-heading"> ${formatDegrees(dirDegrees)}</span>
+              </span>
               <span class="wdash-wind-speed">
                 <span class="wdash-wind-speed-value">${formatNumber(speed, 1)}</span>
                 <span class="wdash-unit">mph</span>
               </span>
-              <span class="wdash-wind-heading">${formatDegrees(dirDegrees)}</span>
+              <span class="wdash-wind-gust">
+                <span class="wdash-wind-gust-label">Gust: </span>
+                <span class="wdash-wind-gust-value">${gustText}</span>
+              </span>
             </div>
           </div>
           ${buildMetricRow([
@@ -667,7 +673,7 @@
 
     const averageMarkup = avg === null ? '' : `
         <g class="wdash-compass-arrow wdash-compass-arrow--avg" transform="rotate(${avg} 60 60)">
-          <path d="M60 10 L68 34 L60 28 L52 34 Z"></path>
+          <path d="M60 26 L68 0 L60 6 L52 0 Z"></path>
         </g>`;
 
     return `
@@ -678,9 +684,8 @@
         ${cardinalMarkup}
         ${averageMarkup}
         <g class="wdash-compass-arrow wdash-compass-arrow--current" transform="rotate(${dir} 60 60)">
-          <path d="M60 6 L73 36 L60 30 L47 36 Z"></path>
+          <path d="M60 24 L66 2 L60 8 L54 2 Z"></path>
         </g>
-        <circle cx="60" cy="60" r="6" class="wdash-compass-hub" />
       </svg>
     `;
   }
@@ -767,11 +772,15 @@
 .wdash-metric-row--gauge .wdash-metric-sub { font-size: 0.68rem; color: #a6b5d6; }
 .wdash-unit { font-size: 0.9rem; margin-left: 2px; opacity: 0.8; }
 .wdash-wind-overlay { position: absolute; inset: 24% 20%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; text-align: center; pointer-events: none; text-shadow: 0 2px 8px rgba(0,0,0,0.45); }
+.wdash-wind-bearing-line { display: inline-flex; align-items: baseline; gap: 4px; font-weight: 700; }
 .wdash-wind-bearing { font-size: 0.78rem; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: #dbe8ff; }
 .wdash-wind-speed { display: inline-flex; align-items: baseline; gap: 4px; font-weight: 700; }
 .wdash-wind-speed-value { font-size: 2.1rem; color: #5bd6ff; }
 .wdash-wind-heading { font-size: 0.78rem; color: #9badcf; letter-spacing: 0.08em; }
 .wdash-wind-compass svg { width: 100%; height: auto; display: block; filter: drop-shadow(0 8px 18px rgba(0,0,0,0.4)); }
+.wdash-wind-gust { display: inline-flex; align-items: baseline; gap: 4px; font-weight: 700; }
+.wdash-wind-gust-value { font-size: 0.98rem; font-weight: 600; color: #f4f6ff; }
+.wdash-wind-gust-label { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.08em; color: #8ea0c8; }
 .wdash-compass-ring { fill: none; stroke: rgba(255,255,255,0.18); stroke-width: 3; }
 .wdash-compass-inner { fill: none; stroke: rgba(255,255,255,0.1); stroke-width: 1.4; stroke-dasharray: 6 8; }
 .wdash-compass-tick { stroke: rgba(255,255,255,0.2); stroke-width: 1.4; stroke-linecap: round; }
@@ -780,7 +789,6 @@
 .wdash-compass-arrow path { transition: fill 0.2s ease, stroke 0.2s ease; stroke-linejoin: round; stroke-linecap: round; }
 .wdash-compass-arrow--current path { fill: #4cc3ff; stroke: rgba(76,195,255,0.55); stroke-width: 1.5; }
 .wdash-compass-arrow--avg path { fill: transparent; stroke: rgba(208,213,220,0.85); stroke-width: 2; }
-.wdash-compass-hub { fill: rgba(12,18,32,0.92); stroke: rgba(255,255,255,0.7); stroke-width: 2; }
 .wdash-ambient { display: flex; flex-direction: column; gap: 14px; flex: 1; }
 .wdash-ambient-circles { display: flex; gap: 12px; justify-content: center; }
 .wdash-ambient-circle { flex: 0 0 130px; width: 130px; aspect-ratio: 1; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: #fff; font-weight: 600; box-shadow: 0 10px 22px rgba(4,9,20,0.4); text-align: center; padding: 12px; }
