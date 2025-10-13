@@ -32,6 +32,11 @@
     { max: Infinity, colors: ['#d83a2a', '#a52222'] }
   ];
 
+  // Ambient ring geometry (single source of truth)
+  const AMBIENT_RING = { r: 45, stroke: 10 };
+  // separate ring geometry for outdoor gauge and wind compass
+  const OUTDOOR_RING = { r: 45, stroke: 10 };
+
   const CARD_TITLES = {
     temperature: 'Outdoor Temperature',
     wind: 'Wind',
@@ -52,6 +57,14 @@
     nextSwitchAt: null,
     paused: false
   };
+
+  // remember last shown humidity per sensor (keyed by sensor name when available)
+  const ambientLastHumidity = new Map();
+  // remember the last displayed humidity value (single source) so when the card is
+  // rebuilt for a new sensor we can animate from the last visual state rather than 0%
+  let ambientLastDisplayedHumidity = null;
+  // track which ambient index we've initialized into the DOM to avoid re-init loops
+  let ambientLastInitIndex = null;
 
   const dataTileObservers = new Map();
   let domObserver = null;
@@ -133,9 +146,33 @@
     }
 
     grid.dataset.empty = 'false';
-    grid.innerHTML = buildMarkup(payload);
+    const newMarkup = buildMarkup(payload);
+    // Only replace the grid contents when markup actually changes to avoid
+    // spurious DOM rebuilds (which can make the ambient rings redraw)
+    if (grid.innerHTML !== newMarkup) {
+      grid.innerHTML = newMarkup;
+      // initialize ambient humidity circle from any remembered last value so it
+      // doesn't animate from 0% when the card is first built or when switching sensors
+      try {
+        const ambientContainer = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-ambient');
+        if (ambientContainer) initAmbientLastHum(ambientContainer);
+      } catch (e) { /* ignore */ }
+    }
     setupAmbientRotation(payload);
     setupInteractiveComponents(grid);
+    // observe ambient container for size changes to keep ring geometry synchronized
+    try {
+      const ambientContainer = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-ambient');
+      if (ambientContainer && typeof ResizeObserver !== 'undefined') {
+        const ro = new ResizeObserver(() => { applyAmbientRingSizing(); applyOutdoorRingSizing(); });
+        ro.observe(ambientContainer);
+      } else {
+        // fallback: window resize
+        window.addEventListener('resize', () => { applyAmbientRingSizing(); applyOutdoorRingSizing(); });
+      }
+    } catch (e) {
+      // ignore observer setup failures in constrained environments
+    }
     toggleSourceTileMask(true);
   }
 
@@ -287,8 +324,23 @@
         ${cardHeader(CARD_TITLES.temperature, data)}
         <div class="wdash-temp">
           <div class="wdash-gauge" style="--gauge-indicator:${indicator};--gauge-color-a:${tempColor.colors[0]};--gauge-color-b:${tempColor.colors[1]};--gauge-color-mid:${tempColor.mid};--gauge-band-progress:${tempColor.progress};">
-            <div class="wdash-gauge-ring"></div>
-            <div class="wdash-gauge-pointer"></div>
+            <svg class="wdash-gauge-svg" viewBox="0 0 100 100" aria-hidden="true">
+              <defs>
+                <linearGradient id="wdash-temp-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" stop-color="${tempColor.colors[0]}" />
+                  <stop offset="50%" stop-color="${tempColor.colors[1]}" />
+                  <stop offset="100%" stop-color="${tempColor.colors[1]}" />
+                </linearGradient>
+              </defs>
+              <!-- outer solid edge (no interior fill) -->
+              <circle class="wdash-gauge-track" cx="50" cy="50" r="${OUTDOOR_RING.r + OUTDOOR_RING.stroke/2}" fill="transparent" stroke="rgba(255,255,255,0.12)" stroke-width="1" />
+              <!-- inner dashed edge (drawn at inner radius) -->
+              <circle cx="50" cy="50" r="${OUTDOOR_RING.r - OUTDOOR_RING.stroke/2}" class="wdash-gauge-inner-edge" fill="transparent" stroke="rgba(255,255,255,0.08)" stroke-width="1.4" stroke-dasharray="6 6" />
+              <!-- inner filled core (matches center background) -->
+              <circle class="wdash-gauge-inner-fill" cx="50" cy="50" r="${OUTDOOR_RING.r - OUTDOOR_RING.stroke/2}" fill="rgba(5,10,20,0.85)" />
+              <!-- colored band (stroke) -->
+              <circle class="wdash-gauge-fill" cx="50" cy="50" r="${OUTDOOR_RING.r}" fill="none" stroke="url(#wdash-temp-gradient)" stroke-width="${OUTDOOR_RING.stroke}" stroke-linecap="round" transform="rotate(-90 50 50)" stroke-dasharray="${Math.round(2*Math.PI*OUTDOOR_RING.r)}" stroke-dashoffset="0" />
+            </svg>
             <div class="wdash-gauge-center">
               <div class="wdash-temp-extrema wdash-temp-extrema--high">
                 <span class="wdash-temp-extrema-label">High</span>
@@ -313,6 +365,26 @@
         </div>
       </section>
     `;
+  }
+
+  // after building the ambient card markup, if we have a remembered humidity for
+  // the first sensor, store it into the DOM element's data attribute so subsequent
+  // updateAmbientDisplay can animate from that value instead of from 0%.
+  function initAmbientLastHum(container) {
+    try {
+      const circle = container.querySelector('.wdash-ambient-circle--humidity .wdash-ambient-fill');
+      if (!circle) return;
+      const sensorName = container.querySelector('.wdash-ambient-name')?.textContent || '';
+      const last = ambientLastHumidity.get(sensorName);
+      if (last != null) {
+        const r = AMBIENT_RING.r;
+        const circumference = Math.round(2 * Math.PI * r);
+        const dash = Math.max(0, Math.min(1, last / 100)) * circumference;
+        const offset = Math.round(circumference - dash);
+        circle.setAttribute('stroke-dashoffset', String(offset));
+        circle.dataset.lastHum = String(last);
+      }
+    } catch (e) { /* ignore */ }
   }
 
   function buildWindCard(data) {
@@ -382,31 +454,39 @@
     const humidityDisplay = formatAmbientValue(sensor.humidity, humidityUnit, 0);
     const nameDisplay = sensor.name || (hasSensors ? '' : 'No sensors configured');
     const timerDisabledAttr = sensors.length > 1 ? '' : ' disabled';
-    const timerLabel = sensors.length > 1 ? 'Pause local sensor rotation' : 'Local sensor rotation unavailable';
+    const timerLabel = sensors.length > 1 ? 'Pause ambient sensor rotation' : 'Ambient sensor rotation unavailable';
 
     return `
       <section class="wdash-card wdash-card--ambient${hasSensors ? '' : ' wdash-ambient--empty'}">
         <header class="wdash-card-header">
-          <h3>Local Sensors</h3>
+          <h3>Ambient Sensors</h3>
           <span class="wdash-updated">${escapeHtml(countLabel)}</span>
         </header>
         <div class="wdash-ambient" data-count="${sensors.length}">
           <div class="wdash-ambient-circles">
                 <div class="wdash-ambient-circle wdash-ambient-circle--temp" style="position: relative;">
                 <svg class="wdash-ambient-svg wdash-ambient-svg--temp" viewBox="0 0 100 100" aria-hidden="true">
-                <circle class="wdash-ambient-track" cx="50" cy="50" r="45" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="10" />
-                <circle class="wdash-ambient-fill" cx="50" cy="50" r="45" fill="none" stroke="#6bc3ff" stroke-width="10" stroke-linecap="round" stroke-dasharray="282.74" stroke-dashoffset="0" />
+                <defs>
+                  <linearGradient id="wdash-ambient-temp-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop class="wdash-svg-stop" offset="0%" stop-color="#4aa3ff" />
+                      <stop class="wdash-svg-stop" offset="50%" stop-color="#6bc3ff" />
+                      <stop class="wdash-svg-stop" offset="100%" stop-color="#6bc3ff" />
+                  </linearGradient>
+                </defs>
+                <!-- inner filled background circle sized to match ring inner edge -->
+                <circle class="wdash-ambient-inner-circle" cx="50" cy="50" r="${AMBIENT_RING.r - AMBIENT_RING.stroke/2 + 0.5}" fill="rgba(5,10,20,0.95)" />
+                <circle class="wdash-ambient-track" cx="50" cy="50" r="${AMBIENT_RING.r}" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="${AMBIENT_RING.stroke}" stroke-linecap="butt" />
+                <circle class="wdash-ambient-fill" cx="50" cy="50" r="${AMBIENT_RING.r}" fill="none" stroke="url(#wdash-ambient-temp-gradient)" stroke-width="${AMBIENT_RING.stroke}" stroke-linecap="round" stroke-dasharray="${Math.round(2*Math.PI*AMBIENT_RING.r)}" stroke-dashoffset="0" />
               </svg>
-              <div class="wdash-ambient-inner" aria-hidden="true"></div>
               <span class="wdash-ambient-reading wdash-ambient-reading--temp">${escapeHtml(tempDisplay)}</span>
               <span class="wdash-ambient-label">Temperature</span>
             </div>
             <div class="wdash-ambient-circle wdash-ambient-circle--humidity">
               <svg class="wdash-ambient-svg wdash-ambient-svg--humidity" viewBox="0 0 100 100" aria-hidden="true">
-                <circle class="wdash-ambient-track" cx="50" cy="50" r="45" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="10" />
-                <circle class="wdash-ambient-fill" cx="50" cy="50" r="45" fill="none" stroke="#5b2fe6" stroke-width="10" stroke-linecap="round" stroke-dasharray="282.74" stroke-dashoffset="282.74" />
+                <circle class="wdash-ambient-inner-circle" cx="50" cy="50" r="${AMBIENT_RING.r - AMBIENT_RING.stroke/2 + 0.5}" fill="rgba(5,10,20,0.95)" />
+                <circle class="wdash-ambient-track" cx="50" cy="50" r="${AMBIENT_RING.r}" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="${AMBIENT_RING.stroke}" stroke-linecap="butt" />
+                <circle class="wdash-ambient-fill" cx="50" cy="50" r="${AMBIENT_RING.r}" fill="none" stroke="#5b2fe6" stroke-width="${AMBIENT_RING.stroke}" stroke-linecap="round" stroke-dasharray="${Math.round(2*Math.PI*AMBIENT_RING.r)}" data-last-hum="" stroke-dashoffset="${Math.round(2*Math.PI*AMBIENT_RING.r)}" />
               </svg>
-              <div class="wdash-ambient-inner" aria-hidden="true"></div>
               <span class="wdash-ambient-reading wdash-ambient-reading--humidity">${escapeHtml(humidityDisplay)}</span>
               <span class="wdash-ambient-label">Humidity</span>
               <button type="button" class="wdash-ambient-timer" aria-label="${escapeHtml(timerLabel)}" aria-pressed="false"${timerDisabledAttr}>
@@ -561,6 +641,97 @@
   function setupInteractiveComponents(container) {
     setupPressureToggle(container);
     setupAmbientControls(container);
+    // ensure ambient ring sizing is applied on setup
+    applyAmbientRingSizing();
+    // also size outdoor gauge/compass
+    applyOutdoorRingSizing();
+  }
+
+  // Ensure ambient SVG rings use unified sizing derived from CSS variables
+  function applyAmbientRingSizing() {
+    const container = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-ambient');
+    if (!container) return;
+
+    const svgTemp = container.querySelector('.wdash-ambient-svg--temp');
+    const svgHum = container.querySelector('.wdash-ambient-svg--humidity');
+    const computed = getComputedStyle(container);
+    const rVar = Number(computed.getPropertyValue('--ambient-ring-r')) || AMBIENT_RING.r;
+    const strokeVar = Number(computed.getPropertyValue('--ambient-ring-stroke')) || AMBIENT_RING.stroke;
+
+    // Update AMBIENT_RING to reflect CSS-driven defaults so JS math can continue to use it
+    AMBIENT_RING.r = Number.isFinite(rVar) ? rVar : AMBIENT_RING.r;
+    AMBIENT_RING.stroke = Number.isFinite(strokeVar) ? strokeVar : AMBIENT_RING.stroke;
+
+    [svgTemp, svgHum].forEach(svg => {
+      if (!svg) return;
+      const viewBoxSize = 100; // our SVG uses 0..100
+      const px = svg.clientWidth || svg.getBoundingClientRect().width || viewBoxSize;
+      const scale = px / viewBoxSize;
+      const r = AMBIENT_RING.r;
+      const stroke = AMBIENT_RING.stroke;
+      const innerR = r - stroke/2 + 0.5; // small overlap for anti-alias
+
+      const track = svg.querySelector('.wdash-ambient-track');
+      const fill = svg.querySelector('.wdash-ambient-fill');
+      const inner = svg.querySelector('.wdash-ambient-inner-circle');
+
+      applyRingSizing(svg, AMBIENT_RING);
+    });
+  }
+
+  // Generic helper: update an SVG ring given a ring definition { r, stroke }
+  function applyRingSizing(svg, ringDef) {
+    if (!svg || !ringDef) return;
+    const r = ringDef.r;
+    const stroke = ringDef.stroke;
+    const outer = svg.querySelector('.wdash-gauge-outer, .wdash-gauge-track');
+  const fill = svg.querySelector('.wdash-ambient-fill, .wdash-gauge-fill');
+  const inner = svg.querySelector('.wdash-ambient-inner-circle, .wdash-gauge-inner, .wdash-gauge-inner-edge');
+  const innerFill = svg.querySelector('.wdash-gauge-inner-fill');
+
+    // compute edge radii (band centered at r, stroke spans r-stroke/2 .. r+stroke/2)
+    const outerEdge = r + stroke / 2;
+    const innerEdge = r - stroke / 2;
+
+    if (outer) {
+      outer.setAttribute('r', String(outerEdge));
+      // outer edge stroke is thin (1px visual) but keep attribute for potential theming
+      outer.setAttribute('stroke-width', String(1));
+    }
+    if (fill) {
+      // colored band (optional) remains centered at r
+      fill.setAttribute('r', String(r));
+      fill.setAttribute('stroke-width', String(stroke));
+      const circumference = Math.round(2 * Math.PI * r);
+      fill.setAttribute('stroke-dasharray', String(circumference));
+    }
+    if (inner) {
+      inner.setAttribute('r', String(innerEdge));
+      if (inner.classList && inner.classList.contains('wdash-gauge-inner')) {
+        // dashed inner edge uses a small stroke width
+        inner.setAttribute('stroke-width', String(1.4));
+      }
+    }
+      if (innerFill) {
+        innerFill.setAttribute('r', String(innerEdge));
+        // keep inner fill matching the dashboard center background; attribute left for theming
+        innerFill.setAttribute('fill', 'rgba(5,10,20,0.85)');
+      }
+  }
+
+  // Apply sizing for outdoor gauge and wind compass SVGs
+  function applyOutdoorRingSizing() {
+    const container = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-temp');
+    if (!container) return;
+    const gaugeSvg = container.querySelector('.wdash-gauge-svg');
+    if (gaugeSvg) applyRingSizing(gaugeSvg, OUTDOOR_RING);
+
+    // wind compass SVG(s)
+    const windContainer = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-wind');
+    if (windContainer) {
+      const compassSvgs = windContainer.querySelectorAll('svg.wdash-compass-svg');
+      compassSvgs.forEach(svg => applyRingSizing(svg, OUTDOOR_RING));
+    }
   }
 
   function setupPressureToggle(container) {
@@ -691,8 +862,8 @@
 
     button.classList.toggle('is-paused', ambientRotation.paused && !disabled);
     const label = ambientRotation.sensors.length > 1
-      ? (ambientRotation.paused ? 'Resume local sensor rotation' : 'Pause local sensor rotation')
-      : 'Local sensor rotation unavailable';
+      ? (ambientRotation.paused ? 'Resume ambient sensor rotation' : 'Pause ambient sensor rotation')
+      : 'Ambient sensor rotation unavailable';
     button.setAttribute('aria-label', label);
     button.setAttribute('aria-pressed', disabled ? 'false' : String(ambientRotation.paused));
 
@@ -749,6 +920,20 @@
     const container = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-ambient');
     if (!container) return;
 
+    // If the ambient index changed since last init, (re)initialize the
+    // humidity circle from remembered values so the transition starts from the
+    // current visual state rather than empty.
+    try {
+      if (ambientLastInitIndex !== ambientRotation.index) {
+        initAmbientLastHum(container);
+        ambientLastInitIndex = ambientRotation.index;
+      }
+    } catch (e) { /* ignore */ }
+
+  // keep SVG ring sizing in sync with container scale
+  applyAmbientRingSizing();
+  applyOutdoorRingSizing();
+
     const sensor = ambientRotation.sensors[ambientRotation.index];
     const tempEl = container.querySelector('.wdash-ambient-reading--temp');
     const humidityEl = container.querySelector('.wdash-ambient-reading--humidity');
@@ -792,21 +977,95 @@
         const t = toNumber(sensor.temperatureF);
         const tempColors = colorForTemp(t);
         const mid = tempColors.mid || mixColors(tempColors.colors[0], tempColors.colors[1], 0.5);
-        tempFill.setAttribute('stroke', mid);
+        // If the temp fill uses a gradient, attempt to update its stops; otherwise fall back to mid color
+        const svg = tempFill.ownerSVGElement;
+        if (svg) {
+    const grad = svg.querySelector('#wdash-ambient-temp-gradient') || svg.querySelector('linearGradient');
+          if (grad) {
+            const stops = grad.querySelectorAll('stop');
+            if (stops[0]) stops[0].setAttribute('stop-color', tempColors.colors[0]);
+            if (stops[1]) stops[1].setAttribute('stop-color', tempColors.mid);
+            if (stops[2]) stops[2].setAttribute('stop-color', tempColors.colors[1]);
+          } else {
+            tempFill.setAttribute('stroke', tempColors.mid);
+          }
+        } else {
+          tempFill.setAttribute('stroke', tempColors.mid);
+        }
         tempTrack.setAttribute('stroke', 'rgba(255,255,255,0.06)');
+        // prepare for potential arc animation by ensuring stroke-dasharray covers full circumference
+        try {
+          const r = AMBIENT_RING.r;
+          const circumference = Math.round(2 * Math.PI * r);
+          tempFill.setAttribute('stroke-dasharray', String(circumference));
+          // default to fully drawn (no offset) — we may animate this in future edits
+          tempFill.setAttribute('stroke-dashoffset', '0');
+          tempFill.setAttribute('stroke-linecap', 'round');
+        } catch (e) {/* ignore */}
       }
 
       // Humidity: use stroke-dashoffset on the circle to show percentage (counter-clockwise from top)
       if (humFill && humTrack) {
         const rawHum = toNumber(sensor.humidity);
         const hum = Number.isFinite(rawHum) ? clamp(rawHum, 0, 100) : 0;
-  const r = 45;
-        const circumference = 2 * Math.PI * r;
+        const r = AMBIENT_RING.r;
+        const circumference = Math.round(2 * Math.PI * r);
         const fillFraction = hum / 100;
         const dash = Math.max(0, Math.min(1, fillFraction)) * circumference;
         const offset = Math.round(circumference - dash);
-        humFill.setAttribute('stroke-dasharray', String(Math.round(circumference)));
-        humFill.setAttribute('stroke-dashoffset', String(Math.round(offset)));
+
+        // Determine previous offset to animate from. Preference order:
+        // 1) explicit data-last-hum on the circle (set during build or previous update)
+        // 2) remembered in ambientLastHumidity map keyed by sensor name
+        // 3) fallback to current circle stroke-dashoffset (if present)
+        // 4) fallback to circumference (empty)
+        let prevHum = null;
+        try {
+          const sensorName = (container.querySelector('.wdash-ambient-name')?.textContent || '').trim();
+          if (humFill.dataset && humFill.dataset.lastHum) {
+            prevHum = Number(humFill.dataset.lastHum);
+          } else if (sensorName && ambientLastHumidity.has(sensorName)) {
+            prevHum = ambientLastHumidity.get(sensorName);
+          } else if (Number.isFinite(ambientLastDisplayedHumidity)) {
+            // fallback to the last displayed humidity value (across sensors)
+            prevHum = ambientLastDisplayedHumidity;
+          } else {
+            const existing = humFill.getAttribute('stroke-dashoffset');
+            if (existing != null) {
+              const cur = Number(existing);
+              if (!isNaN(cur)) {
+                // compute approximate previous hum fraction
+                const prevDash = Math.max(0, Math.min(circumference, cur));
+                prevHum = Math.round(((circumference - prevDash) / circumference) * 100);
+              }
+            }
+          }
+        } catch (e) { prevHum = null; }
+
+        // If prevHum is still null, animate from 0% (circumference offset)
+        const prevFraction = Number.isFinite(prevHum) ? clamp(prevHum / 100, 0, 1) : null;
+        const prevOffset = prevFraction != null ? Math.round(circumference - (prevFraction * circumference)) : circumference;
+
+        humFill.setAttribute('stroke-dasharray', String(circumference));
+        // Set starting offset only when it differs — this avoids jumping from 0 on every refresh
+        if (String(humFill.getAttribute('stroke-dashoffset')) !== String(offset)) {
+          // initialize from previous offset so CSS transition runs from previous→new
+          humFill.setAttribute('stroke-dashoffset', String(prevOffset));
+          // force a paint so the browser acknowledges the start value before we set the target
+          // using requestAnimationFrame to ensure transition triggers
+          window.requestAnimationFrame(() => {
+            try { humFill.setAttribute('stroke-dashoffset', String(offset)); } catch (e) {}
+          });
+        }
+
+        // persist latest humidity for next refresh/sensor reselect
+        try {
+          const sensorName = (container.querySelector('.wdash-ambient-name')?.textContent || '').trim();
+          if (sensorName) ambientLastHumidity.set(sensorName, hum);
+          if (humFill.dataset) humFill.dataset.lastHum = String(hum);
+          ambientLastDisplayedHumidity = hum;
+        } catch (e) { /* ignore */ }
+
         humFill.setAttribute('stroke', '#5b2fe6');
         humTrack.setAttribute('stroke', 'rgba(255,255,255,0.12)');
       }
@@ -829,43 +1088,109 @@
     const dir = Number.isFinite(directionDegrees) ? ((directionDegrees % 360) + 360) % 360 : 0;
     const avg = Number.isFinite(averageDegrees) ? ((averageDegrees % 360) + 360) % 360 : null;
 
+    // Use same central geometry as gauges
+    const cx = 50;
+    const cy = 50;
+    const r = OUTDOOR_RING.r;
+    const stroke = OUTDOOR_RING.stroke;
+    const innerR = r - stroke / 2 + 0.5;
+  // Position ticks so they stay inside the ring stroke (between innerR and outer ring inner edge)
+  const outerEdge = r + stroke / 2; // absolute outer edge of band
+  const outerTick = r - (stroke / 4); // tick positions (inside band)
+  const minorInnerTick = innerR + (r - innerR) * 0.35;
+  const majorInnerTick = innerR + (r - innerR) * 0.15;
+
+    // Build 16 ticks (every 22.5deg)
     const ticks = [];
-    for (let d = 0; d < 360; d += 30) {
+    for (let i = 0; i < 16; i++) {
+      const d = i * (360 / 16);
       const rad = (d - 90) * Math.PI / 180;
-      const inner = d % 90 === 0 ? 38 : 44;
-      const outer = 52;
-      const x1 = 60 + inner * Math.cos(rad);
-      const y1 = 60 + inner * Math.sin(rad);
-      const x2 = 60 + outer * Math.cos(rad);
-      const y2 = 60 + outer * Math.sin(rad);
-      ticks.push(`<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" class="wdash-compass-tick${d % 90 === 0 ? ' wdash-compass-tick--major' : ''}" />`);
+      const isMajor = d % 90 === 0;
+      const inner = isMajor ? majorInnerTick : minorInnerTick;
+      const x1 = cx + inner * Math.cos(rad);
+      const y1 = cy + inner * Math.sin(rad);
+      const x2 = cx + outerTick * Math.cos(rad);
+      const y2 = cy + outerTick * Math.sin(rad);
+      ticks.push(`<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" class="wdash-compass-tick${isMajor ? ' wdash-compass-tick--major' : ''}" />`);
     }
 
-    const cardinals = [
-      { label: 'N', x: 60, y: 14 },
-      { label: 'E', x: 108, y: 64 },
-      { label: 'S', x: 60, y: 114 },
-      { label: 'W', x: 12, y: 64 }
-    ];
-    const cardinalMarkup = cardinals
-      .map(c => `<text x="${c.x}" y="${c.y}" text-anchor="middle" class="wdash-compass-cardinal">${c.label}</text>`)
-      .join('');
+    // Only label main cardinals N E S W placed between inner and outer rings
+    const cardinals = [ { label: 'N', deg: 0 }, { label: 'E', deg: 90 }, { label: 'S', deg: 180 }, { label: 'W', deg: 270 } ];
+    const labelRadius = innerR + (r - innerR) * 0.5; // midway between inner and outer
+    const fontSize = Math.max(8, Math.min(12, Math.floor((r - innerR) * 0.55)));
+    const cardinalMarkup = cardinals.map(c => {
+      const rad = (c.deg - 90) * Math.PI / 180;
+      const x = cx + labelRadius * Math.cos(rad);
+      const y = cy + labelRadius * Math.sin(rad);
+      // center text both horizontally and vertically inside the ring
+      return `<text x="${x.toFixed(2)}" y="${y.toFixed(2)}" text-anchor="middle" dominant-baseline="middle" font-size="${fontSize}" class="wdash-compass-cardinal">${c.label}</text>`;
+    }).join('');
 
-    const averageMarkup = avg === null ? '' : `
-        <g class="wdash-compass-arrow wdash-compass-arrow--avg" transform="rotate(${avg} 60 60)">
-          <path d="M60 26 L68 0 L60 6 L52 0 Z"></path>
-        </g>`;
+    // Compute triangle pointer geometry (isosceles with tip on innerR and base on outerTick)
+    // We need delta such that base B == s/2 where B = 2*outerR*sin(delta) and s is equal side length
+    function solveDelta(innerR, outerR) {
+      // Solve for alpha (degrees) where base B == s/2
+      const toRad = deg => deg * Math.PI / 180;
+      const f = (deg) => {
+        const a = toRad(deg);
+        const B = 2 * outerR * Math.sin(a);
+        const s = Math.sqrt(innerR*innerR + outerR*outerR - 2*innerR*outerR*Math.cos(a));
+        return B - s/2;
+      };
+      let lo = 1; let hi = 60;
+      let flo = f(lo); let fhi = f(hi);
+      if (isNaN(flo) || isNaN(fhi)) return toRad(15);
+      // If signs are same, expand range up to 89 degrees
+      let expand = 0;
+      while (flo * fhi > 0 && expand < 5) {
+        hi = Math.min(89, hi * 2);
+        fhi = f(hi);
+        expand++;
+      }
+      if (flo * fhi > 0) return toRad(15);
+      let bestDeg = (lo + hi)/2;
+      for (let iter = 0; iter < 40; iter++) {
+        const mid = (lo + hi) / 2;
+        const fm = f(mid);
+        if (Math.abs(fm) < 1e-4) { bestDeg = mid; break; }
+        if (flo * fm <= 0) {
+          hi = mid; fhi = fm;
+        } else {
+          lo = mid; flo = fm;
+        }
+        bestDeg = mid;
+      }
+      return toRad(bestDeg);
+    }
 
+    // Solve delta using outerEdge for pointer base so triangle spans full band depth
+  const delta = solveDelta(innerR, outerEdge);
+  // defensive fallback: if solver returns NaN or extremely small, use 15deg
+  const safeDelta = Number.isFinite(delta) && Math.abs(delta) > 1e-6 ? delta : (15 * Math.PI / 180);
+  // delta is already in radians; subtract PI/2 to rotate from up (-90deg)
+  const radL = safeDelta - (Math.PI / 2);
+  const radR = -safeDelta - (Math.PI / 2);
+  const tipX = cx;
+  const tipY = cy - innerR;
+  const leftBaseX = cx + outerEdge * Math.cos(radL);
+  const leftBaseY = cy + outerEdge * Math.sin(radL);
+  const rightBaseX = cx + outerEdge * Math.cos(radR);
+  const rightBaseY = cy + outerEdge * Math.sin(radR);
+    const currentPath = `M ${tipX.toFixed(2)} ${tipY.toFixed(2)} L ${rightBaseX.toFixed(2)} ${rightBaseY.toFixed(2)} L ${leftBaseX.toFixed(2)} ${leftBaseY.toFixed(2)} Z`;
+    const avgPath = currentPath;
+
+    // Render: current (filled) then avg (hollow stroke) on top
+    // Use CSS rotation (style) on the group so transitions animate the group transform and do not trigger SVG paint flashes
     return `
-      <svg viewBox="0 0 120 120" class="wdash-compass-svg" role="presentation">
-        <circle cx="60" cy="60" r="54" class="wdash-compass-ring" />
-        <circle cx="60" cy="60" r="44" class="wdash-compass-inner" />
+      <svg viewBox="0 0 100 100" class="wdash-compass-svg" role="presentation">
+        <circle cx="${cx}" cy="${cy}" r="${r}" class="wdash-gauge-track" fill="none" stroke="rgba(255,255,255,0.18)" stroke-width="${stroke}" stroke-linecap="butt" />
+        <circle cx="${cx}" cy="${cy}" r="${innerR}" class="wdash-gauge-inner" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="1.4" stroke-dasharray="6 8" />
         ${ticks.join('')}
         ${cardinalMarkup}
-        ${averageMarkup}
-        <g class="wdash-compass-arrow wdash-compass-arrow--current" transform="rotate(${dir} 60 60)">
-          <path d="M60 24 L66 2 L60 8 L54 2 Z"></path>
+        <g class="wdash-compass-arrow wdash-compass-arrow--current" style="transform: rotate(${dir}deg);">
+          <path d="${currentPath}" class="wdash-compass-current" fill="#4cc3ff" stroke="rgba(76,195,255,0.55)" stroke-width="0.8" stroke-linejoin="round" />
         </g>
+  ${avg === null ? '' : `<g class="wdash-compass-arrow wdash-compass-arrow--avg" style="transform: rotate(${avg}deg);"><path d="${avgPath}" class="wdash-compass-avg" fill="none" stroke="rgba(208,213,220,0.95)" stroke-width="1.0" stroke-linejoin="round" /></g>`}
       </svg>
     `;
   }
@@ -928,8 +1253,8 @@
 .wdash-temp { align-items: center; }
 .wdash-wind { align-items: center; }
 .wdash-gauge, .wdash-wind-compass { position: relative; width: min(100%, 260px); aspect-ratio: 1 / 1; margin: 0 auto; }
-.wdash-gauge-ring { position: absolute; inset: 11%; border-radius: 50%; background: conic-gradient(from -90deg, var(--gauge-color-a), var(--gauge-color-mid) calc(var(--gauge-band-progress, 0.5) * 360deg), var(--gauge-color-b) 360deg); mask: radial-gradient(closest-side, transparent calc(100% - 10px), black calc(100% - 8px)); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.1); }
-.wdash-gauge-pointer { position: absolute; inset: 11%; display: flex; align-items: flex-start; justify-content: center; transform: rotate(calc(var(--gauge-indicator, 0deg) - 90deg)); transform-origin: 50% 50%; pointer-events: none; }
+  .wdash-gauge-svg { position: absolute; inset: 11%; width: calc(100% - 22%); height: calc(100% - 22%); display: block; }
+  .wdash-gauge-pointer { position: absolute; inset: 11%; display: flex; align-items: flex-start; justify-content: center; transform: rotate(calc(var(--gauge-indicator, 0deg) - 90deg)); transform-origin: 50% 50%; pointer-events: none; }
 .wdash-gauge-pointer::after { content: ''; width: 4px; height: 54%; border-radius: 999px; background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.85)); box-shadow: 0 6px 16px rgba(0,0,0,0.45); }
 .wdash-gauge-center { position: absolute; inset: 26%; border-radius: 50%; background: rgba(5,10,20,0.85); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 12px 10px; gap: 6px; text-align: center; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04); }
 .wdash-gauge-current { display: flex; flex-direction: column; gap: 4px; align-items: center; }
@@ -957,7 +1282,7 @@
 .wdash-wind-speed { display: inline-flex; align-items: baseline; gap: 4px; font-weight: 700; }
 .wdash-wind-speed-value { font-size: 2.1rem; color: #5bd6ff; }
 .wdash-wind-heading { font-size: 0.78rem; color: #9badcf; letter-spacing: 0.08em; }
-.wdash-wind-compass svg { width: 100%; height: auto; display: block; filter: drop-shadow(0 8px 18px rgba(0,0,0,0.4)); }
+  .wdash-wind-compass svg { position: absolute; inset: 11%; width: calc(100% - 22%); height: calc(100% - 22%); display: block; filter: drop-shadow(0 8px 18px rgba(0,0,0,0.4)); }
 .wdash-wind-gust { display: inline-flex; align-items: baseline; gap: 4px; font-weight: 700; }
 .wdash-wind-gust-value { font-size: 0.98rem; font-weight: 600; color: #f4f6ff; }
 .wdash-wind-gust-label { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.08em; color: #8ea0c8; }
@@ -965,26 +1290,31 @@
 .wdash-compass-inner { fill: none; stroke: rgba(255,255,255,0.1); stroke-width: 1.4; stroke-dasharray: 6 8; }
 .wdash-compass-tick { stroke: rgba(255,255,255,0.2); stroke-width: 1.4; stroke-linecap: round; }
 .wdash-compass-tick--major { stroke-width: 2.2; }
-.wdash-compass-cardinal { fill: rgba(255,255,255,0.68); font-size: 12px; font-weight: 700; letter-spacing: 0.08em; }
-.wdash-compass-arrow path { transition: fill 0.2s ease, stroke 0.2s ease; stroke-linejoin: round; stroke-linecap: round; }
+.wdash-compass-cardinal { fill: rgba(255,255,255,0.68); font-size: 10px; font-weight: 700; letter-spacing: 0.06em; }
+.wdash-compass-arrow { transition: transform 260ms cubic-bezier(.2,.9,.2,1); -webkit-transform-box: view-box; transform-box: view-box; -webkit-transform-origin: 50% 50%; transform-origin: 50% 50%; }
+.wdash-compass-arrow path { stroke-linejoin: round; stroke-linecap: round; }
 .wdash-compass-arrow--current path { fill: #4cc3ff; stroke: rgba(76,195,255,0.55); stroke-width: 1.5; }
-.wdash-compass-arrow--avg path { fill: transparent; stroke: rgba(208,213,220,0.85); stroke-width: 2; }
-.wdash-ambient { display: flex; flex-direction: column; gap: 14px; flex: 1; }
+.wdash-compass-arrow--avg path { fill: none; stroke: rgba(208,213,220,0.95); stroke-width: 1.0; }
+.wdash-compass-avg { pointer-events: none; }
+.wdash-compass-current { pointer-events: none; }
+.wdash-ambient { display: flex; flex-direction: column; gap: 14px; flex: 1; /* ambient ring defaults (viewBox units) */ --ambient-ring-r: 45; --ambient-ring-stroke: 10; }
 .wdash-ambient-circles { display: flex; gap: 12px; justify-content: center; }
-.wdash-ambient-circle { flex: 0 0 130px; width: 130px; aspect-ratio: 1; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: #fff; font-weight: 600; box-shadow: 0 10px 22px rgba(4,9,20,0.4); text-align: center; padding: 12px; position: relative; background: rgba(5,10,20,0.9); }
+.wdash-ambient-circle { flex: 0 0 130px; width: 130px; aspect-ratio: 1; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: #fff; font-weight: 600; box-shadow: 0 10px 22px rgba(4,9,20,0.4); text-align: center; padding: 12px; position: relative; background: transparent; }
 .wdash-ambient-svg { position: absolute; inset: 4px; width: calc(100% - 8px); height: calc(100% - 8px); z-index: 1; pointer-events: none; }
-.wdash-ambient-svg .wdash-ambient-track { transition: stroke 200ms ease; }
-.wdash-ambient-svg .wdash-ambient-fill { transition: stroke 300ms ease, stroke-dashoffset 400ms cubic-bezier(.2,.9,.2,1); transform-origin: 50% 50%; transform: rotate(-90deg); }
-.wdash-ambient-inner { position: absolute; inset: 22px; border-radius: 50%; background: rgba(5,10,20,0.95); z-index: 0; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.02); }
-.wdash-ambient-inner { pointer-events: none; }
-.wdash-ambient-circle > .wdash-ambient-inner + .wdash-ambient-reading,
-.wdash-ambient-circle > .wdash-ambient-inner + .wdash-ambient-reading + .wdash-ambient-label,
+.wdash-ambient-svg .wdash-ambient-track { transition: none; }
+.wdash-ambient-svg .wdash-ambient-fill { transition: stroke-dashoffset 260ms cubic-bezier(.2,.9,.2,1); transform-origin: 50% 50%; transform: rotate(-90deg); }
+.wdash-svg-stop { transition: none; }
+.wdash-ambient-svg .wdash-ambient-inner-circle { transition: none; }
+.wdash-gauge-svg circle, .wdash-wind-compass svg circle, .wdash-wind-compass svg stop { transition: none !important; }
+.wdash-wind-compass svg path, .wdash-wind-compass svg line { transition: none !important; }
+.wdash-ambient-circle > .wdash-ambient-reading,
+.wdash-ambient-circle > .wdash-ambient-reading + .wdash-ambient-label,
 .wdash-ambient-circle > .wdash-ambient-reading,
 .wdash-ambient-circle > .wdash-ambient-label { position: relative; z-index: 2; }
 .wdash-ambient-reading { font-size: 1.8rem; font-weight: 700; }
 .wdash-ambient-label { font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.8; }
-.wdash-ambient-circle--temp { background: rgba(5,10,20,0.9); }
-.wdash-ambient-circle--humidity { background: rgba(5,10,20,0.9); }
+.wdash-ambient-circle--temp { background: transparent; }
+.wdash-ambient-circle--humidity { background: transparent; }
 .wdash-ambient-timer { --wdash-timer-color: #29d88b; position: absolute; top: 92px; right: -36px; width: 40px; height: 40px; border: none; padding: 0; border-radius: 50%; background: transparent; color: var(--wdash-timer-color); display: grid; place-items: center; cursor: pointer; filter: drop-shadow(0 8px 16px rgba(0,0,0,0.45)); transition: transform 0.2s ease, filter 0.2s ease, color 0.2s ease; }
 .wdash-ambient-timer:hover:not(:disabled) { transform: translateY(-1px); filter: drop-shadow(0 16px 26px rgba(0,0,0,0.55)); }
 .wdash-ambient-timer:active:not(:disabled) { transform: translateY(1px); filter: drop-shadow(0 10px 18px rgba(0,0,0,0.45)); }
