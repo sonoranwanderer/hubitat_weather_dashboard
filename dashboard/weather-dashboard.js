@@ -401,10 +401,13 @@
               <span class="wdash-ambient-label">Humidity</span>
               <button type="button" class="wdash-ambient-timer" aria-label="${escapeHtml(timerLabel)}" aria-pressed="false"${timerDisabledAttr}>
                 <svg class="wdash-ambient-timer-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                  <g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M4.5 12a7.5 7.5 0 0112.92-4.24"></path>
+                  <!-- Simplified sync-style icon: two curved strokes with chevrons drawn as short stroked segments -->
+                  <g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <!-- top-right arc + chevron -->
+                    <path d="M4.5 12a8.2 8.2 0 0114.18-4.24"></path>
                     <path d="M19.5 3v5.25H14.25"></path>
-                    <path d="M19.5 12a7.5 7.5 0 01-12.92 4.24"></path>
+                    <!-- bottom-left arc + chevron -->
+                    <path d="M19.5 12a8.2 8.2 0 01-14.18 4.24"></path>
                     <path d="M4.5 21v-5.25H9.75"></path>
                   </g>
                 </svg>
@@ -927,7 +930,7 @@
 .wdash-ambient-circle { flex: 0 0 130px; width: 130px; aspect-ratio: 1; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: #fff; font-weight: 600; box-shadow: 0 10px 22px rgba(4,9,20,0.4); text-align: center; padding: 12px; }
 .wdash-ambient-circle--temp { background: radial-gradient(circle at 30% 30%, rgba(255,158,89,0.9), rgba(242,91,44,0.65)); }
 .wdash-ambient-circle--humidity { background: radial-gradient(circle at 30% 30%, rgba(90,160,255,0.9), rgba(51,96,255,0.6)); position: relative; }
-.wdash-ambient-timer { --wdash-timer-color: #29d88b; position: absolute; top: 86px; right: -30px; width: 34px; height: 34px; border: none; padding: 0; border-radius: 50%; background: transparent; color: var(--wdash-timer-color); display: grid; place-items: center; cursor: pointer; filter: drop-shadow(0 8px 16px rgba(0,0,0,0.45)); transition: transform 0.2s ease, filter 0.2s ease, color 0.2s ease; }
+.wdash-ambient-timer { --wdash-timer-color: #29d88b; position: absolute; top: 92px; right: -36px; width: 40px; height: 40px; border: none; padding: 0; border-radius: 50%; background: transparent; color: var(--wdash-timer-color); display: grid; place-items: center; cursor: pointer; filter: drop-shadow(0 8px 16px rgba(0,0,0,0.45)); transition: transform 0.2s ease, filter 0.2s ease, color 0.2s ease; }
 .wdash-ambient-timer:hover:not(:disabled) { transform: translateY(-1px); filter: drop-shadow(0 16px 26px rgba(0,0,0,0.55)); }
 .wdash-ambient-timer:active:not(:disabled) { transform: translateY(1px); filter: drop-shadow(0 10px 18px rgba(0,0,0,0.45)); }
 .wdash-ambient-timer.is-paused { --wdash-timer-color: #ff6b63; }
