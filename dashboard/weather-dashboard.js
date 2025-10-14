@@ -8,7 +8,6 @@
 
 (() => {
   const DISPLAY_TILE_ID = 'tile-0';
-  const DATA_TILE_COUNT = 3; // Set this to the number of data tiles you have (1, 2, or 3)
   const CSS_ID = 'weather-dashboard-css';
   const TEMP_RANGE = { min: -40, max: 120 };
   const AMBIENT_ROTATION_INTERVAL_MS = 5000;
@@ -41,7 +40,7 @@
     wind: 'Wind',
     rain: 'Rainfall',
     pressure: 'Barometer',
-    solarSun: 'Sun, Solar & UV',
+    solarSun: 'Sun & Solar',
     air: 'Air Quality'
   };
 
@@ -55,6 +54,17 @@
     countdownTimer: null,
     nextSwitchAt: null,
     paused: false
+  };
+
+  let airQualityRotation = {
+    timer: null,
+    sources: [], // ['outdoor', 'indoor']
+    index: 0,
+    interval: 10000, // Rotate every 10 seconds
+    paused: false,
+    nextSwitchAt: null,
+    countdownTimer: null,
+    lastData: null
   };
 
   // remember last shown humidity per sensor (keyed by sensor name when available)
@@ -141,6 +151,7 @@
       grid.innerHTML = `<div class="wdash-empty">Waiting for weather data…</div>`;
       clearAmbientRotation();
       toggleSourceTileMask(false);
+      clearAirQualityRotation();
       return;
     }
 
@@ -158,6 +169,7 @@
       } catch (e) { /* ignore */ }
     }
     setupAmbientRotation(payload);
+    setupAirQualityRotation(payload);
     setupInteractiveComponents(grid);
     // observe ambient container for size changes to keep ring geometry synchronized
     try {
@@ -176,43 +188,52 @@
   }
 
   function readPayloads() {
-    const payloads = [];
-    const chunkEnvelopes = [];
+    const tile1 = byId('tile-1');
+    const text1 = getTileText(tile1);
+    if (!text1) return [];
 
-    for (let i = 1; i <= DATA_TILE_COUNT; i++) {
-      const id = `tile-${i}`;
-      const tile = byId(id);
-      const text = getTileText(tile);
-      if (!text) continue;
-      if (/please select an attribute/i.test(text)) {
-        if (!placeholderLogged.has(id)) {
-          placeholderLogged.add(id);
-          console.warn(`[WeatherDashboard] ${id} is still showing the Hubitat placeholder text. Confirm the tile template is set to Attribute and the dashboardData attribute is selected.`);
-        }
-        continue;
+    const json1 = extractJson(text1);
+    if (!json1) return [];
+
+    try {
+      const parsed1 = JSON.parse(json1);
+      if (!isChunkEnvelope(parsed1)) {
+        // Not chunked, return as a single payload
+        return [parsed1];
       }
-      const json = extractJson(text);
-      if (!json) continue;
-      try {
+
+      // It's chunked, find out how many chunks to expect
+      const totalChunks = parsed1.chunkCount;
+      if (!Number.isInteger(totalChunks) || totalChunks < 1) {
+        console.warn('[WeatherDashboard] Invalid chunkCount found in tile-1', parsed1);
+        return [];
+      }
+
+      const chunkEnvelopes = [parsed1];
+      // Read the rest of the chunks
+      for (let i = 2; i <= totalChunks; i++) {
+        const tile = byId(`tile-${i}`);
+        const text = getTileText(tile);
+        if (!text) continue;
+        const json = extractJson(text);
+        if (!json) continue;
         const parsed = JSON.parse(json);
         if (isChunkEnvelope(parsed)) {
-          chunkEnvelopes.push({ ...parsed, tileId: id });
-        } else {
-          payloads.push(parsed);
+          chunkEnvelopes.push(parsed);
         }
-      } catch (err) {
-        console.warn('[WeatherDashboard] Failed to parse payload from', id, err, json.slice(0, 1200));
       }
+
+      const assembled = assembleChunkPayload(chunkEnvelopes);
+      return assembled ? [assembled] : [];
+    } catch (err) {
+      console.warn('[WeatherDashboard] Failed to parse payload from tile-1', err, json1.slice(0, 200));
+      return [];
     }
-    const assembled = assembleChunkPayload(chunkEnvelopes);
-    if (assembled) {
-      payloads.push(assembled);
-    }
-    return payloads;
   }
 
   function toggleSourceTileMask(hide) {
-    for (let i = 1; i <= DATA_TILE_COUNT; i++) {
+    const count = ambientRotation.chunkCount || 1;
+    for (let i = 1; i <= count; i++) {
       const id = `tile-${i}`;
       const tile = byId(id);
       if (!tile) continue;
@@ -221,7 +242,8 @@
   }
 
   function ensureDataTileObservers() {
-    for (let i = 1; i <= DATA_TILE_COUNT; i++) {
+    const count = ambientRotation.chunkCount || 1;
+    for (let i = 1; i <= count; i++) {
       const id = `tile-${i}`;
       const tile = byId(id);
       const existing = dataTileObservers.get(id);
@@ -601,10 +623,10 @@
             </div>
           </div>
           ${buildMetricRow(stats, 'wdash-pressure-stats')}
-        </div>
-        <div class="wdash-pressure-outlook">
-          <span class="wdash-outlook-label">${outlook.category || 'Outlook'}</span>
-          <span class="wdash-outlook-text">${outlook.summary || 'No forecast available.'}</span>
+          <div class="wdash-pressure-outlook">
+            <span class="wdash-outlook-label">${outlook.category || 'Outlook'}</span>
+            <span class="wdash-outlook-text">${outlook.summary || 'No forecast available.'}</span>
+          </div>
         </div>
       </section>
     `;
@@ -651,30 +673,67 @@
   }
 
   function buildAirQualityCard(data) {
-    const air = data.airQuality || {};
-    const aqi = toNumber(air.aqi);
-    const pm25 = toNumber(air.pm25);
-    const pm10 = toNumber(air.pm10);
-    const co2 = toNumber(air.co2ppm);
+    const sources = [];
+    if (data.outdoorAirQuality) sources.push('Outdoor');
+    if (data.indoorAirQuality) sources.push('Indoor');
 
-    const metrics = [
-      { label: 'AQI', value: Number.isFinite(aqi) ? formatNumber(aqi, 0) : '--' },
-      { label: 'PM2.5', value: Number.isFinite(pm25) ? `${formatNumber(pm25, 1)} µg/m³` : '--' }
-    ];
+    const currentSource = airQualityRotation.sources[airQualityRotation.index] || sources[0] || 'Outdoor';
+    const airData = currentSource === 'Indoor' ? data.indoorAirQuality : data.outdoorAirQuality;
 
-    if (Number.isFinite(pm10)) {
-      metrics.push({ label: 'PM10', value: `${formatNumber(pm10, 1)} µg/m³` });
-    }
-    if (Number.isFinite(co2)) {
-      metrics.push({ label: 'CO₂', value: `${formatNumber(co2, 0)} ppm` });
-    }
+    const metrics = buildAirQualityMetrics(airData, currentSource);
+    const headerLabel = sources.length > 1 ? currentSource : '';
 
     return `
-      <section class="wdash-card wdash-card--air">
-        ${cardHeader(CARD_TITLES.air, data)}
+      <section class="wdash-card wdash-card--air" data-aq-source="${currentSource.toLowerCase()}">
+        ${cardHeader(CARD_TITLES.air, data, headerLabel)}
         ${buildMetricRow(metrics, 'wdash-air-metrics')}
       </section>
     `;
+  }
+
+  function buildAirQualityMetrics(air, type) {
+    if (!air) return [{ label: 'AQI', value: '--' }];
+
+    const metrics = [];
+    const aqi = toNumber(air.aqi);
+    const pm25 = toNumber(air.pm25);
+    const aqi24h = toNumber(air.aqi_avg_24h);
+    const pm25_24h = toNumber(air.pm25_avg_24h);
+
+    if (Number.isFinite(aqi)) {
+      metrics.push({ label: 'AQI', value: formatNumber(aqi, 0), color: air.aqiColor });
+    }
+    if (Number.isFinite(aqi24h)) {
+      metrics.push({ label: 'AQI 24h AVE', value: formatNumber(aqi24h, 0), color: air.aqiColor_avg_24h });
+    }
+    if (Number.isFinite(pm25)) {
+      metrics.push({ label: 'PM2.5', value: `${formatNumber(pm25, 1)} µg/m³` });
+    }
+    if (Number.isFinite(pm25_24h)) {
+      metrics.push({ label: 'PM2.5 24h AVE', value: `${formatNumber(pm25_24h, 1)} µg/m³` });
+    }
+
+    if (type === 'Indoor') {
+      const pm10 = toNumber(air.pm10);
+      const pm10_24h = toNumber(air.pm10_avg_24h);
+      const co2 = toNumber(air.carbonDioxide);
+      const co2_24h = toNumber(air.carbonDioxide_avg_24h);
+
+      if (Number.isFinite(pm10)) {
+        metrics.push({ label: 'PM10', value: `${formatNumber(pm10, 1)} µg/m³` });
+      }
+      if (Number.isFinite(pm10_24h)) {
+        metrics.push({ label: 'PM10 24h AVE', value: `${formatNumber(pm10_24h, 1)} µg/m³` });
+      }
+      if (Number.isFinite(co2)) {
+        metrics.push({ label: 'CO₂', value: `${formatNumber(co2, 0)} ppm` });
+      }
+      if (Number.isFinite(co2_24h)) {
+        metrics.push({ label: 'CO₂ 24h AVE', value: `${formatNumber(co2_24h, 0)} ppm` });
+      }
+    }
+
+    return metrics.length > 0 ? metrics : [{ label: 'AQI', value: '--' }];
   }
 
   /* ---------- helpers ---------- */
@@ -929,6 +988,7 @@
     const sensors = Array.isArray(data?.ambientSensors) ? data.ambientSensors.filter(Boolean) : [];
     ambientRotation.sensors = sensors;
     ambientRotation.tempUnit = data?.ambientTemperatureUnit || '°F';
+    ambientRotation.chunkCount = data?.metadata?.chunkCount || 1;
     ambientRotation.humidityUnit = data?.ambientHumidityUnit || '%';
     ambientRotation.interval = AMBIENT_ROTATION_INTERVAL_MS;
 
@@ -952,6 +1012,7 @@
 
   function clearAmbientRotation() {
     stopAmbientRotationTimer();
+    clearAirQualityRotation();
     ambientRotation.sensors = [];
     ambientRotation.index = 0;
     ambientRotation.paused = false;
@@ -1115,12 +1176,57 @@
     }
   }
 
-  function cardHeader(title, data) {
+  function setupAirQualityRotation(data) {
+    airQualityRotation.lastData = data;
+    const sources = [];
+    if (data?.outdoorAirQuality) sources.push('Outdoor');
+    if (data?.indoorAirQuality) sources.push('Indoor');
+    airQualityRotation.sources = sources;
+
+    if (airQualityRotation.index >= sources.length) {
+      airQualityRotation.index = 0;
+    }
+
+    if (sources.length > 1 && !airQualityRotation.timer) {
+      scheduleAirQualityRotation();
+    } else if (sources.length <= 1) {
+      clearAirQualityRotation();
+    }
+  }
+
+  function scheduleAirQualityRotation() {
+    if (airQualityRotation.timer) clearTimeout(airQualityRotation.timer);
+    airQualityRotation.timer = setTimeout(() => {
+      airQualityRotation.timer = null;
+      airQualityRotation.index = (airQualityRotation.index + 1) % airQualityRotation.sources.length;
+      updateAirQualityCard();
+      scheduleAirQualityRotation();
+    }, airQualityRotation.interval);
+  }
+
+  function clearAirQualityRotation() {
+    if (airQualityRotation.timer) {
+      clearTimeout(airQualityRotation.timer);
+      airQualityRotation.timer = null;
+    }
+    airQualityRotation.sources = [];
+    airQualityRotation.index = 0;
+  }
+
+  function updateAirQualityCard() {
+    const card = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-card--air');
+    if (!card || !airQualityRotation.lastData) return;
+
+    const newMarkup = buildAirQualityCard(airQualityRotation.lastData);
+    card.outerHTML = newMarkup;
+  }
+
+  function cardHeader(title, data, subLabel = null) {
     const generated = data.metadata?.generatedAt ? formatRelativeTime(data.metadata.generatedAt) : null;
     return `
       <header class="wdash-card-header">
         <h3>${title}</h3>
-        <span class="wdash-updated">${generated ? 'Updated ' + generated : ''}</span>
+        <span class="wdash-updated">${subLabel || (generated ? 'Updated ' + generated : '')}</span>
       </header>
     `;
   }
@@ -1251,13 +1357,17 @@
     const styleAttr = columnValue ? ` style="--wdash-columns: ${columnValue};"` : '';
     return `
       <div class="${className}"${styleAttr}>
-        ${items.map(item => `
-          <div class="wdash-metric">
+        ${items.map(item => {
+          const hasColor = !!item.color;
+          const colorStyle = hasColor ? ` style="background-color: #${item.color.replace('#', '')};"` : '';
+          const metricClass = hasColor ? 'wdash-metric wdash-metric--tinted' : 'wdash-metric';
+          return `
+          <div class="${metricClass}"${colorStyle}>
             <span class="wdash-metric-label">${escapeHtml(item.label || '')}</span>
             <span class="wdash-metric-value">${item.value != null ? item.value : '--'}</span>
             ${item.sub ? `<span class="wdash-metric-sub">${item.sub}</span>` : ''}
           </div>
-        `).join('')}
+        `}).join('')}
       </div>
     `;
   }
@@ -1273,10 +1383,25 @@
 .wdash-root { position: relative; width: 100%; height: 100%; --wdash-base-width: 1200px; --wdash-base-height: 900px; --wdash-scale: 1; --wdash-render-width: var(--wdash-base-width); --wdash-render-height: var(--wdash-base-height); background: rgba(4, 9, 20, 0.85); border-radius: 12px; overflow: hidden; box-sizing: border-box; display: flex; align-items: center; justify-content: center; }
 .wdash-frame { position: relative; width: var(--wdash-render-width); height: var(--wdash-render-height); display: flex; align-items: center; justify-content: center; overflow: hidden; }
 .wdash { width: var(--wdash-base-width); height: var(--wdash-base-height); font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif; color: #f4f6ff; background: linear-gradient(145deg, rgba(27,35,58,0.95), rgba(13,18,32,0.95)); backdrop-filter: blur(4px); border-radius: 12px; padding: 18px; box-sizing: border-box; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05); transform-origin: top left; transform: scale(var(--wdash-scale)); }
-.wdash-grid { display: grid; gap: 14px; height: 100%; width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: 360px 280px 280px; grid-template-areas:
+.wdash-grid { display: grid; gap: 14px; height: 100%; width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(18, 1fr); grid-template-areas:
   "temp-wind ambient"
-  "pressure rain"
-  "solar air" }
+  "temp-wind ambient"
+  "temp-wind ambient"
+  "temp-wind ambient"
+  "temp-wind ambient"
+  "temp-wind rain"
+  "temp-wind rain"
+  "temp-wind rain"
+  "air       rain"
+  "air       rain"
+  "air       pressure"
+  "air       pressure"
+  "solar     pressure"
+  "solar     pressure"
+  "solar     pressure"
+  "solar     pressure"
+  "solar     ."
+  "solar     ."
 }
 .wdash-grid[data-empty="true"] { display: flex; align-items: center; justify-content: center; }
 .wdash-grid > * { min-height: 0; }
@@ -1310,11 +1435,12 @@
 .wdash-temp-extrema--high .wdash-temp-extrema-value { color: #ffb95a; }
 .wdash-temp-extrema--low .wdash-temp-extrema-value { color: #7cc5ff; }
 .wdash-metric-row { display: flex; flex-wrap: wrap; gap: 10px; width: 100%; }
-.wdash-metric { flex: 1 1 0; min-width: 140px; background: rgba(255,255,255,0.05); border-radius: 12px; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px; text-align: center; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04); }
+.wdash-metric { flex: 1 1 auto; min-width: 0; background: rgba(255,255,255,0.05); border-radius: 12px; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px; text-align: center; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04); }
 .wdash-metric-row--layout-fill { flex-wrap: nowrap; }
-.wdash-metric-row--layout-fill .wdash-metric { flex: 1 1 0; min-width: 0; }
+.wdash-metric-row--layout-fill .wdash-metric { flex-grow: 0; flex-shrink: 1; flex-basis: auto; }
 .wdash-metric-label { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.08em; color: #8ea0c8; }
-.wdash-metric-value { font-size: 0.98rem; font-weight: 600; color: #f4f6ff; }
+.wdash-metric-value { font-size: 0.98rem; font-weight: 600; color: #f4f6ff; white-space: nowrap; }
+.wdash-metric--tinted .wdash-metric-label { color: #f4f6ff; opacity: 0.9; }
 .wdash-metric-sub { font-size: 0.68rem; color: #9badcf; }
 .wdash-metric-row--gauge { display: grid; grid-template-columns: repeat(var(--wdash-columns, 3), minmax(0, 1fr)); width: 100%; max-width: 260px; margin: 0 auto; gap: 4px 12px; justify-items: center; align-items: end; }
 .wdash-metric-row--gauge .wdash-metric { background: transparent; box-shadow: none; padding: 0; gap: 3px; min-width: 0; align-items: center; }
@@ -1384,14 +1510,14 @@
 .wdash-rain-daily-metric { flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; }
 .wdash-rain-daily-value { font-size: 2.8rem; font-weight: 800; line-height: 1; }
 .wdash-rain-daily-label { font-size: 0.9rem; font-weight: 700; color: #c9d8ff; margin-top: 4px; }
-.wdash-rain-col--stats { display: flex; align-items: center; }
+.wdash-rain-col--stats { align-self: start; }
 .wdash-rain-stats.wdash-metric-row--table { display: block; width: 100%; }
 .wdash-rain-stats.wdash-metric-row--table .wdash-metric { background: none; box-shadow: none; display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.07); }
 .wdash-rain-stats.wdash-metric-row--table .wdash-metric { flex-direction: row; align-items: baseline; }
 .wdash-rain-stats.wdash-metric-row--table .wdash-metric:last-child { border-bottom: none; }
 .wdash-rain-stats.wdash-metric-row--table .wdash-metric-label { text-align: left; font-size: 0.9rem; font-weight: 600; color: #c9d8ff; }
 .wdash-rain-stats.wdash-metric-row--table .wdash-metric-value { text-align: right; font-size: 0.9rem; font-weight: 600; color: #f4f6ff; font-variant-numeric: tabular-nums; }
-.wdash-pressure-main { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.wdash-pressure-main { display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 16px; }
 .wdash-pressure-toggle { display: inline-flex; gap: 4px; padding: 4px; border-radius: 999px; background: rgba(255,255,255,0.05); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04); }
 .wdash-pressure-button { border: none; background: transparent; color: #9badcf; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.12em; padding: 5px 12px; border-radius: 999px; cursor: pointer; transition: all 0.2s ease; }
 .wdash-pressure-button:hover { color: #f4f6ff; }
@@ -1401,7 +1527,7 @@
 .wdash-card--pressure[data-pressure-mode="relative"] .wdash-pressure-value[data-pressure-value="relative"],
 .wdash-card--pressure[data-pressure-mode="absolute"] .wdash-pressure-value[data-pressure-value="absolute"] { display: inline-flex; }
 .wdash-pressure-stats .wdash-metric-value { font-size: 0.88rem; }
-.wdash-pressure-outlook { margin-top: auto; background: rgba(255,255,255,0.06); border-radius: 10px; padding: 8px 10px; font-size: 0.76rem; display: grid; gap: 4px; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04); }
+.wdash-pressure-outlook { background: rgba(255,255,255,0.06); border-radius: 10px; padding: 8px 10px; font-size: 0.76rem; display: grid; gap: 4px; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04); }
 .wdash-outlook-label { font-weight: 700; color: #ffb95a; text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.75rem; }
 .wdash-outlook-text { line-height: 1.35; }
 .wdash-solar { display: flex; flex-direction: column; gap: 8px; flex: 1; }
@@ -1668,7 +1794,11 @@
     if (!buffer) return null;
 
     try {
-      return JSON.parse(buffer);
+      const payload = JSON.parse(buffer);
+      // Ensure the chunk count is preserved in the final payload for other functions to use.
+      if (payload.metadata) payload.metadata.chunkCount = expectedCount;
+      else payload.metadata = { chunkCount: expectedCount };
+      return payload;
     } catch (err) {
       console.warn('[WeatherDashboard] Failed to reassemble chunked payload', err);
       return null;

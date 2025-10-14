@@ -18,10 +18,12 @@ definition(
     capability "Refresh"
 
     attribute "dashboardData", "string"
+    // Define attributes for up to 10 chunks. The first is dashboardData.
+    (2..10).each { i ->
+        attribute "dashboardDataChunk${i}", "string"
+    }
     attribute "dashboardPretty", "string"
     attribute "dashboardUpdated", "string"
-    attribute "dashboardDataChunk2", "string"
-    attribute "dashboardDataChunk3", "string"
 
     command "updateDashboardData", [[name: "Dashboard JSON", type: "STRING", description: "JSON payload for dashboard rendering"],
                                      [name: "Pretty JSON", type: "STRING", description: "Optional formatted payload"]]
@@ -57,11 +59,10 @@ def refresh() {
 
 def clearDashboardData() {
     if (enableDebug) log.debug "Clearing dashboard attributes"
-    sendEvent(name: "dashboardData", value: "{}", isStateChange: true)
-    sendEvent(name: "dashboardDataChunk2", value: "{}", isStateChange: true)
-    sendEvent(name: "dashboardDataChunk3", value: "{}", isStateChange: true)
     sendEvent(name: "dashboardPretty", value: "{}", isStateChange: true)
     sendEvent(name: "dashboardUpdated", value: timestamp(), isStateChange: true)
+    // Clear all chunk attributes
+    (0..9).each { i -> sendEvent(name: chunkAttribute(i), value: "{}", isStateChange: true) }
 }
 
 def updateDashboardData(String json, String pretty = null) {
@@ -99,7 +100,6 @@ private String timestamp() {
 }
 
 @Field static final Integer MAX_EVENT_VALUE_LENGTH = 1024
-@Field static final Integer MAX_PAYLOAD_CHUNKS = 3
 @Field static final Integer CHUNK_OVERHEAD = 120
 
 private List<String> chunkPayload(String json) {
@@ -112,20 +112,26 @@ private List<String> chunkPayload(String json) {
     // First, iterate through the entire JSON string to determine how many chunks are needed.
     // This is a "dry run" to get the final chunkCount.
     def allSlices = []
-    def tempOffset = 0
-    while (tempOffset < json.size()) {
-        def slice = buildSafeSlice(json, tempOffset)
+    def offset = 0
+    while (offset < json.size()) {
+        def slice = buildSafeSlice(json, offset)
         allSlices << slice
-        tempOffset += slice.size()
+        offset += slice.size()
     }
     def chunkCount = allSlices.size()
 
     def chunks = []
     allSlices.eachWithIndex { slice, i ->
         def index = i + 1
-        // Manually escape the slice for embedding in the final JSON string.
-        def escapedSlice = slice.replaceAll('\\\\', '\\\\\\\\').replaceAll('"', '\\\\"')
-        def chunk = "{\"chunkNamespace\":\"weather-dashboard\",\"chunkIndex\":${index},\"chunkCount\":${chunkCount},\"chunkData\":\"${escapedSlice}\"}"
+        def chunk = JsonOutput.toJson([
+            chunkNamespace: "weather-dashboard",
+            chunkIndex: index,
+            chunkCount: chunkCount,
+            chunkData: slice
+        ])
+        if (chunk.size() > MAX_EVENT_VALUE_LENGTH) {
+            log.warn "Generated chunk ${index} of ${chunkCount} is oversized (${chunk.size()} chars). This may cause dashboard errors."
+        }
         chunks << chunk
     }
 
@@ -135,14 +141,16 @@ private List<String> chunkPayload(String json) {
 private String buildSafeSlice(String json, int offset) {
     // The base size of the JSON envelope, assuming 2-digit numbers for index/count.
     def envelopeOverhead = '{"chunkNamespace":"weather-dashboard","chunkIndex":00,"chunkCount":00,"chunkData":""}'.size()
-    def maxLength = MAX_EVENT_VALUE_LENGTH - envelopeOverhead
+    // This is the max length of the *escaped* data, not the raw data.
+    def maxEscapedLength = MAX_EVENT_VALUE_LENGTH - envelopeOverhead
 
     def builder = new StringBuilder()
     def escapedLength = 0
     for (int i = offset; i < json.size(); i++) {
         def ch = json.charAt(i)
+        // Account for JSON string escaping: " becomes \" and \ becomes \\
         def charSize = (ch == '"' || ch == '\\') ? 2 : 1
-        if (escapedLength + charSize > maxLength) break
+        if (escapedLength + charSize > maxEscapedLength) break
         builder.append(ch)
         escapedLength += charSize
     }
@@ -150,26 +158,21 @@ private String buildSafeSlice(String json, int offset) {
 }
 
 private String chunkAttribute(int index) {
-    switch (index) {
-        case 0:
-            return "dashboardData"
-        case 1:
-            return "dashboardDataChunk2"
-        case 2:
-            return "dashboardDataChunk3"
-        default:
-            return "dashboardData"
+    if (index == 0) {
+        return "dashboardData"
     }
+    // index is 0-based, but chunk numbers are 1-based.
+    // So index 1 corresponds to chunk 2.
+    def chunkNum = index + 1
+    if (chunkNum > 10) {
+        log.error "Exceeded maximum supported chunks (10). Payload is too large."
+        return "dashboardData" // Fallback to avoid crash
+    }
+    return "dashboardDataChunk${chunkNum}"
 }
 
 private void clearUnusedChunkAttributes(int used) {
-    if (used < 1) {
-        sendEvent(name: "dashboardData", value: "{}", isStateChange: true)
-    }
-    if (used < 2) {
-        sendEvent(name: "dashboardDataChunk2", value: "{}", isStateChange: true)
-    }
-    if (used < 3) {
-        sendEvent(name: "dashboardDataChunk3", value: "{}", isStateChange: true)
-    }
+    // 'used' is the number of chunks. Attributes are 0-indexed.
+    // If used=3, we need to clear from index 3 (chunk 4) onwards.
+    (used..9).each { i -> sendEvent(name: chunkAttribute(i), value: "{}", isStateChange: true) }
 }

@@ -59,8 +59,35 @@ def mainPage() {
             attributeInputs("Yearly rain", "attrRainYearly", "rainYearly", deviceOptions)
             attributeInputs("UV index", "attrUVIndex", "uv", deviceOptions)
             attributeInputs("Solar radiation", "attrSolarRadiation", "solarRadiation", deviceOptions)
-            attributeInputs("Air quality index", "attrAQI", "aqi", deviceOptions)
-            attributeInputs("PM2.5", "attrPM25", "pm25", deviceOptions)
+        }
+
+        section("Outdoor Air Quality (optional)") {
+            attributeInputs("AQI", "attrOutdoorAQI", "aqi", deviceOptions)
+            attributeInputs("AQI (24h Avg)", "attrOutdoorAQI24h", "aqi_avg_24h", deviceOptions)
+            attributeInputs("AQI Color", "attrOutdoorAQIColor", "aqiColor", deviceOptions)
+            attributeInputs("AQI Color (24h Avg)", "attrOutdoorAQIColor24h", "aqiColor_avg_24h", deviceOptions)
+            attributeInputs("AQI Danger", "attrOutdoorAQIDanger", "aqiDanger", deviceOptions)
+            attributeInputs("AQI Danger (24h Avg)", "attrOutdoorAQIDanger24h", "aqiDanger_avg_24h", deviceOptions)
+            attributeInputs("PM2.5", "attrOutdoorPM25", "pm25", deviceOptions)
+            attributeInputs("PM2.5 (24h Avg)", "attrOutdoorPM25_24h", "pm25_avg_24h", deviceOptions)
+            attributeInputs("Battery", "attrOutdoorAQIBattery", "battery", deviceOptions)
+        }
+
+        section("Indoor Air Quality (optional)") {
+            // Using the same structure as outdoor for consistency
+            attributeInputs("AQI",                  "attrIndoorAQI",              "aqi", deviceOptions)
+            attributeInputs("AQI (24h Avg)",        "attrIndoorAQI24h",           "aqi_avg_24h", deviceOptions)
+            attributeInputs("AQI Color",            "attrIndoorAQIColor",         "aqiColor", deviceOptions)
+            attributeInputs("AQI Color (24h Avg)",  "attrIndoorAQIColor24h",      "aqiColor_avg_24h", deviceOptions)
+            attributeInputs("AQI Danger",           "attrIndoorAQIDanger",        "aqiDanger", deviceOptions)
+            attributeInputs("AQI Danger (24h Avg)", "attrIndoorAQIDanger24h",     "aqiDanger_avg_24h", deviceOptions)
+            attributeInputs("CO2",                  "attrIndoorCO2",              "carbonDioxide", deviceOptions)
+            attributeInputs("CO2 (24h Avg)",        "attrIndoorCO2_24h",          "carbonDioxide_avg_24h", deviceOptions)
+            attributeInputs("PM10",                 "attrIndoorPM10",             "pm10", deviceOptions)
+            attributeInputs("PM10 (24h Avg)",       "attrIndoorPM10_24h",         "pm10_avg_24h", deviceOptions)
+            attributeInputs("PM2.5",                "attrIndoorPM25",             "pm25", deviceOptions)
+            attributeInputs("PM2.5 (24h Avg)",      "attrIndoorPM25_24h",         "pm25_avg_24h", deviceOptions)
+            attributeInputs("Battery",              "attrIndoorAQIBattery",       "battery", deviceOptions)
         }
 
         section("Lightning sensor (optional)") {
@@ -153,6 +180,8 @@ def initialize() {
     state.windHistory = state.windHistory ?: []
     state.pressureHistory = state.pressureHistory ?: []
     state.temperatureHistory = state.temperatureHistory ?: []
+    state.dailyOutdoorAQ = state.dailyOutdoorAQ ?: [:]
+    state.dailyIndoorAQ = state.dailyIndoorAQ ?: [:]
 
     subscribeToSource()
     runEvery1Minute("refreshWeatherData")
@@ -204,8 +233,20 @@ private List<Map> getAttributeSubscriptions() {
         "attrRainYearly",
         "attrUVIndex",
         "attrSolarRadiation",
-        "attrAQI",
-        "attrPM25"
+        "attrOutdoorAQI",
+        "attrOutdoorPM25",
+        "attrIndoorAQI",
+        "attrIndoorAQI24h",
+        "attrIndoorAQIColor",
+        "attrIndoorAQIColor24h",
+        "attrIndoorAQIDanger",
+        "attrIndoorAQIDanger24h",
+        "attrIndoorCO2",
+        "attrIndoorCO2_24h",
+        "attrIndoorPM10",
+        "attrIndoorPM10_24h",
+        "attrIndoorPM25",
+        "attrIndoorPM25_24h"
     ].plus([
         "attrLightningCount",
         "attrLightningDistance",
@@ -213,7 +254,9 @@ private List<Map> getAttributeSubscriptions() {
         "attrOutdoorBattery",
         "attrBatteryWind",
         "attrBatteryRain",
-        "attrLightningBattery"
+        "attrLightningBattery",
+        "attrOutdoorAQIBattery",
+        "attrIndoorAQIBattery"
     ])
 
     attrs.collect { settingName ->
@@ -459,13 +502,54 @@ def refreshWeatherData() {
     if (solarRad != null) solar.solarRadiationWm2 = round(solarRad, 1)
     if (solar) payload.solar = solar
 
-    def air = [:]
-    def aqi = readDecimalFor("attrAQI")
-    if (aqi != null) air.aqi = Math.round(aqi)
-    def pm25 = readDecimalFor("attrPM25")
-    if (pm25 != null) air.pm25 = round(pm25, 1)
-    if (air) payload.airQuality = air
+    def outdoorAir = [:]
+    def outdoorAqi = readDecimalFor("attrOutdoorAQI")
+    if (outdoorAqi != null) outdoorAir.aqi = Math.round(outdoorAqi)
+    def outdoorPm25 = readDecimalFor("attrOutdoorPM25")
+    if (outdoorPm25 != null) outdoorAir.pm25 = round(outdoorPm25, 1)
 
+    def dailyOutdoorAQExtrema = updateDailyAQExtrema("outdoor", [aqi: outdoorAqi, pm25: outdoorPm25], now, tz)
+    if (dailyOutdoorAQExtrema?.aqiPeak != null) outdoorAir.aqiPeak = dailyOutdoorAQExtrema.aqiPeak
+    if (dailyOutdoorAQExtrema?.pm25Peak != null) outdoorAir.pm25Peak = dailyOutdoorAQExtrema.pm25Peak
+
+    outdoorAir.aqi_avg_24h = readDecimalFor("attrOutdoorAQI24h")
+    outdoorAir.aqiColor = readStringFor("attrOutdoorAQIColor")
+    outdoorAir.aqiColor_avg_24h = readStringFor("attrOutdoorAQIColor24h")
+    outdoorAir.aqiDanger = readStringFor("attrOutdoorAQIDanger")
+    outdoorAir.aqiDanger_avg_24h = readStringFor("attrOutdoorAQIDanger24h")
+    outdoorAir.pm25_avg_24h = readDecimalFor("attrOutdoorPM25_24h")
+    outdoorAir.battery = readDecimalFor("attrOutdoorAQIBattery")
+
+    if (outdoorAir.any { it.value != null }) payload.outdoorAirQuality = outdoorAir.findAll { it.value != null }
+
+    def indoorAir = [:]
+    def indoorAqi = readDecimalFor("attrIndoorAQI")
+    if (indoorAqi != null) indoorAir.aqi = Math.round(indoorAqi)
+    def indoorPm10 = readDecimalFor("attrIndoorPM10")
+    if (indoorPm10 != null) indoorAir.pm10 = round(indoorPm10, 1)
+    def indoorPm25 = readDecimalFor("attrIndoorPM25")
+    if (indoorPm25 != null) indoorAir.pm25 = round(indoorPm25, 1)
+    def indoorCo2 = readDecimalFor("attrIndoorCO2")
+    if (indoorCo2 != null) indoorAir.carbonDioxide = Math.round(indoorCo2)
+
+    def dailyIndoorAQExtrema = updateDailyAQExtrema("indoor", [aqi: indoorAqi, pm10: indoorPm10, pm25: indoorPm25, carbonDioxide: indoorCo2], now, tz)
+    if (dailyIndoorAQExtrema?.aqiPeak != null) indoorAir.aqiPeak = dailyIndoorAQExtrema.aqiPeak
+    if (dailyIndoorAQExtrema?.pm10Peak != null) indoorAir.pm10Peak = dailyIndoorAQExtrema.pm10Peak
+    if (dailyIndoorAQExtrema?.pm25Peak != null) indoorAir.pm25Peak = dailyIndoorAQExtrema.pm25Peak
+    if (dailyIndoorAQExtrema?.carbonDioxidePeak != null) indoorAir.carbonDioxidePeak = dailyIndoorAQExtrema.carbonDioxidePeak
+
+    indoorAir.aqi_avg_24h = readDecimalFor("attrIndoorAQI24h")
+    indoorAir.aqiColor = readStringFor("attrIndoorAQIColor")
+    indoorAir.aqiColor_avg_24h = readStringFor("attrIndoorAQIColor24h")
+    indoorAir.aqiDanger = readStringFor("attrIndoorAQIDanger")
+    indoorAir.aqiDanger_avg_24h = readStringFor("attrIndoorAQIDanger24h")
+    indoorAir.carbonDioxide_avg_24h = readDecimalFor("attrIndoorCO2_24h")
+    indoorAir.pm10_avg_24h = readDecimalFor("attrIndoorPM10_24h")
+    indoorAir.pm25_avg_24h = readDecimalFor("attrIndoorPM25_24h")
+    indoorAir.battery = readDecimalFor("attrIndoorAQIBattery")
+
+    if (indoorAir.any { it.value != null }) payload.indoorAirQuality = indoorAir.findAll { it.value != null }
+    
     def sun = [:]
     def sunriseDate = location?.sunrise
     if (sunriseDate) sun.sunrise = formatDateTime(sunriseDate, tz)
@@ -820,6 +904,30 @@ private Map updateDailyOutdoorExtrema(BigDecimal temperature, long timestamp, Ti
     record.updatedAt = timestamp
     state.dailyOutdoorTemp = record
     record
+}
+
+private Map updateDailyAQExtrema(String type, Map<String, BigDecimal> values, long timestamp, TimeZone tz) {
+    def stateKey = (type == "indoor") ? "dailyIndoorAQ" : "dailyOutdoorAQ"
+    def record = (state[stateKey] ?: [:]) as Map
+    def dayKey = dayKeyFor(timestamp, tz)
+
+    if (!record.day || record.day != dayKey) {
+        record = [day: dayKey]
+    }
+
+    values.each { key, value ->
+        if (value != null) {
+            def peakKey = "${key}Peak"
+            def rounded = (key == "aqi" || key == "carbonDioxide") ? Math.round(value) : round(value, 1)
+            if (record[peakKey] == null || rounded > record[peakKey]) {
+                record[peakKey] = rounded
+            }
+        }
+    }
+
+    record.updatedAt = timestamp
+    state[stateKey] = record
+    return record
 }
 
 private String dayKeyFor(long timestamp, TimeZone tz) {
