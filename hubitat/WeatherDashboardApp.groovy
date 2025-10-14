@@ -45,6 +45,7 @@ def mainPage() {
             attributeInputs("Indoor humidity", "attrIndoorHumidity", "humidityIndoor", deviceOptions)
             attributeInputs("Wind speed", "attrWindSpeed", "windSpeed", deviceOptions)
             attributeInputs("Wind gust", "attrWindGust", "windGust", deviceOptions)
+            attributeInputs("Max Daily Gust", "attrWindGustMaxDaily", "windGustMaxDaily", deviceOptions)
             attributeInputs("Wind direction (cardinal)", "attrWindDirection", "windDirection", deviceOptions)
             attributeInputs("Wind direction (degrees)", "attrWindDirectionDegrees", "windDirectionDegrees", deviceOptions)
             attributeInputs("Relative pressure", "attrPressure", "pressure", deviceOptions)
@@ -172,6 +173,7 @@ private List<Map> getAttributeSubscriptions() {
         "attrIndoorHumidity",
         "attrWindSpeed",
         "attrWindGust",
+        "attrWindGustMaxDaily",
         "attrWindDirection",
         "attrWindDirectionDegrees",
         "attrPressure",
@@ -346,6 +348,10 @@ def refreshWeatherData() {
     def windGust = readDecimalFor("attrWindGust")
     if (windGust != null) {
         wind.gustMph = round(windGust, 1)
+    }
+    def dailyMaxGust = readDecimalFor("attrWindGustMaxDaily")
+    if (dailyMaxGust != null) {
+        wind.dailyMaxGustMph = round(dailyMaxGust, 1)
     }
 
     def directionDegrees = readDecimalFor("attrWindDirectionDegrees")

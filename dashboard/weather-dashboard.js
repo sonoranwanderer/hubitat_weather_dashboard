@@ -289,18 +289,17 @@
   function buildMarkup(data) {
     return `
       ${[
-        buildTemperatureCard(data),
-        buildWindCard(data),
+        buildTempWindCard(data),
         buildAmbientSensorCard(data),
-        buildRainCard(data),
         buildPressureCard(data),
+        buildRainCard(data),
         buildSolarSunCard(data),
         buildAirQualityCard(data)
       ].join('')}
     `;
   }
 
-  function buildTemperatureCard(data) {
+  function buildTempWindCard(data) {
     const outdoor = data.outdoor || {};
     const temp = toNumber(outdoor.temperatureF);
     const high = toNumber(outdoor.dailyHighF);
@@ -310,58 +309,97 @@
     const humidity = toNumber(outdoor.humidity);
     const trend = toNumber(outdoor.trendFPerHour);
 
+    const wind = data.wind || {};
+    const avg = wind.average || {};
+    const speed = toNumber(wind.speedMph);
+    const gust = toNumber(wind.gustMph);
+    const dirDegrees = toNumber(wind.directionDegrees);
+    const dirText = wind.directionCardinal || null;
+    const avgSpeed = toNumber(avg.speedMph);
+    const avgDir = toNumber(avg.directionDegrees);
+    const avgDirText = avg.directionCardinal || (Number.isFinite(avgDir) ? degreesToCardinal(avgDir) : null);
+    const windowMins = wind.averageMinutes || avg.minutes || 10;
+    const dailyMaxGust = toNumber(wind.dailyMaxGustMph);
+
+    const bearingLabel = dirText || (Number.isFinite(dirDegrees) ? degreesToCardinal(dirDegrees) : '--');
+
     const tempColor = colorForTemp(temp);
     const indicator = gaugeIndicator(temp);
     const dewText = formatTemperature(dew);
     const humidityText = formatPercent(humidity, 0);
-    const trendText = formatSigned(trend, 2, '°/hr');
+    const trendText = formatSigned(trend, 1, '°/hr');
     const feelsText = formatTemperature(feels);
     const highText = formatTemperature(high);
     const lowText = formatTemperature(low);
+    const gustText = Number.isFinite(gust) ? `${formatNumber(gust, 1)} mph` : '--';
+    const avgSpeedText = Number.isFinite(avgSpeed) ? `${formatNumber(avgSpeed, 1)} mph` : '--';
+    const avgCombinedText = `${avgDirText || '--'} ${avgSpeedText}`;
+    const dailyMaxGustText = Number.isFinite(dailyMaxGust) ? `${formatNumber(dailyMaxGust, 1)} mph` : '--';
 
     return `
-      <section class="wdash-card wdash-card--temp">
-        ${cardHeader(CARD_TITLES.temperature, data)}
-        <div class="wdash-temp">
-          <div class="wdash-gauge" style="--gauge-indicator:${indicator};--gauge-color-a:${tempColor.colors[0]};--gauge-color-b:${tempColor.colors[1]};--gauge-color-mid:${tempColor.mid};--gauge-band-progress:${tempColor.progress};">
-            <svg class="wdash-gauge-svg" viewBox="0 0 100 100" aria-hidden="true">
-              <defs>
-                <linearGradient id="wdash-temp-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                  <stop offset="0%" stop-color="${tempColor.colors[0]}" />
-                  <stop offset="50%" stop-color="${tempColor.colors[1]}" />
-                  <stop offset="100%" stop-color="${tempColor.colors[1]}" />
-                </linearGradient>
-              </defs>
-              <!-- outer solid edge (no interior fill) -->
-              <circle class="wdash-gauge-track" cx="50" cy="50" r="${OUTDOOR_RING.r + OUTDOOR_RING.stroke/2}" fill="transparent" stroke="rgba(255,255,255,0.12)" stroke-width="1" />
-              <!-- inner dashed edge (drawn at inner radius) -->
-              <circle cx="50" cy="50" r="${OUTDOOR_RING.r - OUTDOOR_RING.stroke/2}" class="wdash-gauge-inner-edge" fill="transparent" stroke="rgba(255,255,255,0.08)" stroke-width="1.4" stroke-dasharray="6 6" />
-              <!-- inner filled core (matches center background) -->
-              <circle class="wdash-gauge-inner-fill" cx="50" cy="50" r="${OUTDOOR_RING.r - OUTDOOR_RING.stroke/2}" fill="rgba(5,10,20,0.85)" />
-              <!-- colored band (stroke) -->
-              <circle class="wdash-gauge-fill" cx="50" cy="50" r="${OUTDOOR_RING.r}" fill="none" stroke="url(#wdash-temp-gradient)" stroke-width="${OUTDOOR_RING.stroke}" stroke-linecap="round" transform="rotate(-90 50 50)" stroke-dasharray="${Math.round(2*Math.PI*OUTDOOR_RING.r)}" stroke-dashoffset="0" />
-            </svg>
-            <div class="wdash-gauge-center">
-              <div class="wdash-temp-extrema wdash-temp-extrema--high">
-                <span class="wdash-temp-extrema-label">High</span>
-                <span class="wdash-temp-extrema-value">${highText}</span>
-              </div>
-              <div class="wdash-gauge-current">
-                <span class="wdash-gauge-value">${formatTemperature(temp)}</span>
-              </div>
-              <div class="wdash-temp-extrema wdash-temp-extrema--low">
-                <span class="wdash-temp-extrema-label">Low</span>
-                <span class="wdash-temp-extrema-value">${lowText}</span>
+      <section class="wdash-card wdash-card--temp-wind">
+        <header class="wdash-card-header">
+          <h3>Outdoor Conditions</h3>
+          <span class="wdash-updated">${escapeHtml(data.metadata?.generatedAt ? 'Updated ' + formatRelativeTime(data.metadata.generatedAt) : '')}</span>
+        </header>
+        <div class="wdash-temp-wind-main">
+          <div class="wdash-temp">
+            <div class="wdash-gauge" style="--gauge-indicator:${indicator};--gauge-color-a:${tempColor.colors[0]};--gauge-color-b:${tempColor.colors[1]};--gauge-color-mid:${tempColor.mid};--gauge-band-progress:${tempColor.progress};">
+              <svg class="wdash-gauge-svg" viewBox="0 0 100 100" aria-hidden="true">
+                <defs>
+                  <linearGradient id="wdash-temp-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" stop-color="${tempColor.colors[0]}" />
+                    <stop offset="50%" stop-color="${tempColor.colors[1]}" />
+                    <stop offset="100%" stop-color="${tempColor.colors[1]}" />
+                  </linearGradient>
+                </defs>
+                <circle class="wdash-gauge-track" cx="50" cy="50" r="${OUTDOOR_RING.r + OUTDOOR_RING.stroke/2}" fill="transparent" stroke="rgba(255,255,255,0.12)" stroke-width="1" />
+                <circle cx="50" cy="50" r="${OUTDOOR_RING.r - OUTDOOR_RING.stroke/2}" class="wdash-gauge-inner-edge" fill="transparent" stroke="rgba(255,255,255,0.08)" stroke-width="1.4" stroke-dasharray="6 6" />
+                <circle class="wdash-gauge-inner-fill" cx="50" cy="50" r="${OUTDOOR_RING.r - OUTDOOR_RING.stroke/2}" fill="rgba(5,10,20,0.85)" />
+                <circle class="wdash-gauge-fill" cx="50" cy="50" r="${OUTDOOR_RING.r}" fill="none" stroke="url(#wdash-temp-gradient)" stroke-width="${OUTDOOR_RING.stroke}" stroke-linecap="round" transform="rotate(-90 50 50)" stroke-dasharray="${Math.round(2*Math.PI*OUTDOOR_RING.r)}" stroke-dashoffset="0" />
+              </svg>
+              <div class="wdash-gauge-center">
+                <div class="wdash-temp-extrema wdash-temp-extrema--high">
+                  <span class="wdash-temp-extrema-label">High</span>
+                  <span class="wdash-temp-extrema-value">${highText}</span>
+                </div>
+                <div class="wdash-gauge-current">
+                  <span class="wdash-gauge-value">${formatTemperature(temp)}</span>
+                </div>
+                <div class="wdash-temp-extrema wdash-temp-extrema--low">
+                  <span class="wdash-temp-extrema-label">Low</span>
+                  <span class="wdash-temp-extrema-value">${lowText}</span>
+                </div>
               </div>
             </div>
           </div>
-          ${buildMetricRow([
-            { label: 'Feels Like', value: feelsText },
-            { label: 'Dew Point', value: dewText },
-            { label: 'Humidity', value: humidityText },
-            { label: 'Trend', value: trendText }
-          ], 'wdash-temp-details', { variant: 'gauge', columns: 4 })}
+          <div class="wdash-wind">
+            <div class="wdash-wind-compass" aria-label="Wind direction ${bearingLabel} ${formatDegrees(dirDegrees)}">
+              ${windCompassSvg(dirDegrees, avgDir)}
+              <div class="wdash-wind-overlay">
+                <span class="wdash-wind-bearing-line">
+                  <span class="wdash-wind-bearing">${bearingLabel}</span>
+                  <span class="wdash-wind-heading"> ${formatDegrees(dirDegrees)}</span>
+                </span>
+                <span class="wdash-wind-speed">
+                  <span class="wdash-wind-speed-value">${formatNumber(speed, 1)}</span>
+                  <span class="wdash-unit">mph</span>
+                </span>
+                <span class="wdash-wind-gust">
+                  <span class="wdash-wind-gust-label">Gust: </span>
+                  <span class="wdash-wind-gust-value">${gustText}</span>
+                </span>
+              </div>
+            </div>
+          </div>
         </div>
+        ${buildMetricRow([
+          { label: 'Feels Like', value: feelsText },
+          { label: 'Dew Point', value: dewText },
+          { label: 'Humidity', value: humidityText },
+          { label: 'Temp Trend', value: trendText },
+          { label: `${windowMins}m Avg`, value: avgCombinedText },
+          { label: 'Max Gust', value: dailyMaxGustText } ], 'wdash-temp-wind-details', { layout: 'fill', columns: 6 })}
       </section>
     `;
   }
@@ -384,59 +422,6 @@
         circle.dataset.lastHum = String(last);
       }
     } catch (e) { /* ignore */ }
-  }
-
-  function buildWindCard(data) {
-    const wind = data.wind || {};
-    const avg = wind.average || {};
-    const speed = toNumber(wind.speedMph);
-    const gust = toNumber(wind.gustMph);
-    const dirDegrees = toNumber(wind.directionDegrees);
-    const dirText = wind.directionCardinal || null;
-    const avgSpeed = toNumber(avg.speedMph);
-    const avgDir = toNumber(avg.directionDegrees);
-    const avgDirText = avg.directionCardinal || (Number.isFinite(avgDir) ? degreesToCardinal(avgDir) : null);
-    const windowMins = wind.averageMinutes || avg.minutes || 10;
-
-    const bearingLabel = dirText || (Number.isFinite(dirDegrees) ? degreesToCardinal(dirDegrees) : '--');
-    const compass = windCompassSvg(dirDegrees, avgDir);
-    const gustText = Number.isFinite(gust) ? `${formatNumber(gust, 1)} mph` : '--';
-    const avgSpeedText = Number.isFinite(avgSpeed) ? `${formatNumber(avgSpeed, 1)} mph` : '--';
-
-    const headingParts = [];
-    if (bearingLabel && bearingLabel !== '--') headingParts.push(bearingLabel);
-    headingParts.push(formatDegrees(dirDegrees));
-    const headingValue = headingParts.join(' ').trim();
-
-    return `
-      <section class="wdash-card wdash-card--wind">
-        ${cardHeader(CARD_TITLES.wind, data)}
-        <div class="wdash-wind">
-          <div class="wdash-wind-compass" aria-label="Wind direction ${bearingLabel} ${formatDegrees(dirDegrees)}">
-            ${compass}
-            <div class="wdash-wind-overlay">
-              <span class="wdash-wind-bearing-line">
-                <span class="wdash-wind-bearing">${bearingLabel}</span>
-                <span class="wdash-wind-heading"> ${formatDegrees(dirDegrees)}</span>
-              </span>
-              <span class="wdash-wind-speed">
-                <span class="wdash-wind-speed-value">${formatNumber(speed, 1)}</span>
-                <span class="wdash-unit">mph</span>
-              </span>
-              <span class="wdash-wind-gust">
-                <span class="wdash-wind-gust-label">Gust: </span>
-                <span class="wdash-wind-gust-value">${gustText}</span>
-              </span>
-            </div>
-          </div>
-          ${buildMetricRow([
-            { label: 'Gust', value: gustText },
-            { label: `${windowMins} min avg`, value: avgSpeedText, sub: `${avgDirText || '--'} (${formatDegrees(avgDir)})` },
-            { label: 'Heading', value: headingValue }
-          ], 'wdash-wind-metrics', { variant: 'gauge', columns: 3 })}
-        </div>
-      </section>
-    `;
   }
 
   function buildAmbientSensorCard(data) {
@@ -1196,14 +1181,17 @@
 
   function buildMetricRow(items, extraClass = '', options = {}) {
     if (!Array.isArray(items) || !items.length) return '';
-    const { variant, columns } = options || {};
+    const { variant, columns, layout } = options || {};
     const classes = ['wdash-metric-row', extraClass];
     if (variant) {
       classes.push(`wdash-metric-row--${variant}`);
     }
+    if (layout) {
+      classes.push(`wdash-metric-row--layout-${layout}`);
+    }
     const className = classes.filter(Boolean).join(' ');
     const columnValue = Number.isFinite(Number(columns)) ? Number(columns) : null;
-    const styleAttr = columnValue ? ` style="--wdash-columns:${columnValue}"` : '';
+    const styleAttr = columnValue ? ` style="--wdash-columns: ${columnValue};"` : '';
     return `
       <div class="${className}"${styleAttr}>
         ${items.map(item => `
@@ -1229,9 +1217,9 @@
 .wdash-frame { position: relative; width: var(--wdash-render-width); height: var(--wdash-render-height); display: flex; align-items: center; justify-content: center; overflow: hidden; }
 .wdash { width: var(--wdash-base-width); height: var(--wdash-base-height); font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif; color: #f4f6ff; background: linear-gradient(145deg, rgba(27,35,58,0.95), rgba(13,18,32,0.95)); backdrop-filter: blur(4px); border-radius: 12px; padding: 18px; box-sizing: border-box; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05); transform-origin: top left; transform: scale(var(--wdash-scale)); }
 .wdash-grid { display: grid; gap: 14px; height: 100%; width: 100%; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: 360px 250px 250px; grid-template-areas:
-  "temp wind ambient"
-  "rain pressure pressure"
-  "solar air air";
+  "temp-wind temp-wind ambient"
+  "air air rain"
+  "solar pressure pressure"; }
 }
 .wdash-grid[data-empty="true"] { display: flex; align-items: center; justify-content: center; }
 .wdash-grid > * { min-height: 0; }
@@ -1240,8 +1228,7 @@
 .wdash-card-header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.72rem; color: #8ea0c8; }
 .wdash-card-header h3 { margin: 0; font-size: 0.82rem; font-weight: 700; color: #c9d8ff; }
 .wdash-updated { font-size: 0.68rem; opacity: 0.7; }
-.wdash-card--temp { grid-area: temp; }
-.wdash-card--wind { grid-area: wind; }
+.wdash-card--temp-wind { grid-area: temp-wind; }
 .wdash-card--ambient { grid-area: ambient; }
 .wdash-card--rain { grid-area: rain; }
 .wdash-card--pressure { grid-area: pressure; }
@@ -1249,6 +1236,9 @@
 .wdash-card--air { grid-area: air; }
 .wdash-temp, .wdash-wind, .wdash-solar, .wdash-pressure { display: flex; flex-direction: column; gap: 10px; flex: 1; }
 .wdash-pressure { gap: 10px; }
+.wdash-temp-wind-main { display: flex; gap: 14px; flex: 1; }
+.wdash-temp-wind-main > .wdash-temp, .wdash-temp-wind-main > .wdash-wind { flex: 1; }
+.wdash-temp-wind-details { display: flex; justify-content: space-between; gap: 12px; }
 .wdash-temp { align-items: center; }
 .wdash-wind { align-items: center; }
 .wdash-gauge, .wdash-wind-compass { position: relative; width: min(100%, 260px); aspect-ratio: 1 / 1; margin: 0 auto; }
@@ -1264,6 +1254,8 @@
 .wdash-temp-extrema--low .wdash-temp-extrema-value { color: #7cc5ff; }
 .wdash-metric-row { display: flex; flex-wrap: wrap; gap: 10px; width: 100%; }
 .wdash-metric { flex: 1 1 0; min-width: 140px; background: rgba(255,255,255,0.05); border-radius: 12px; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px; text-align: center; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04); }
+.wdash-metric-row--layout-fill { flex-wrap: nowrap; }
+.wdash-metric-row--layout-fill .wdash-metric { flex: 1 1 0; min-width: 0; }
 .wdash-metric-label { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.08em; color: #8ea0c8; }
 .wdash-metric-value { font-size: 0.98rem; font-weight: 600; color: #f4f6ff; }
 .wdash-metric-sub { font-size: 0.68rem; color: #9badcf; }
@@ -1350,11 +1342,11 @@
 .wdash-air-metrics .wdash-metric-value { font-size: 1.02rem; }
 @media (max-width: 1100px) {
   .wdash-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: none; grid-auto-rows: minmax(260px, auto); grid-template-areas:
-    "temp wind"
+    "temp-wind temp-wind" 
     "ambient ambient"
-    "rain pressure"
-    "solar pressure"
-    "air air";
+    "rain air"
+    "solar air"
+    "pressure pressure";
   }
 }
 @media (max-width: 900px) {
