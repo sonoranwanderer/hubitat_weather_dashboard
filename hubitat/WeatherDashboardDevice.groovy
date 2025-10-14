@@ -109,33 +109,44 @@ private List<String> chunkPayload(String json) {
         return [json]
     }
 
-    def safeChunkLength = Math.max(1, MAX_EVENT_VALUE_LENGTH - CHUNK_OVERHEAD)
-    def chunkCount = Math.ceil(json.size() / safeChunkLength) as Integer
-    if (chunkCount > MAX_PAYLOAD_CHUNKS) {
-        log.warn "Dashboard payload (${json.size()} chars) exceeds chunk capacity. Truncating to ${MAX_PAYLOAD_CHUNKS} chunks."
-        chunkCount = MAX_PAYLOAD_CHUNKS
+    // First, iterate through the entire JSON string to determine how many chunks are needed.
+    // This is a "dry run" to get the final chunkCount.
+    def allSlices = []
+    def tempOffset = 0
+    while (tempOffset < json.size()) {
+        def slice = buildSafeSlice(json, tempOffset)
+        allSlices << slice
+        tempOffset += slice.size()
     }
-
-    def chunkSize = Math.ceil(json.size() / chunkCount) as Integer
-    if (chunkSize > safeChunkLength) {
-        chunkSize = safeChunkLength
-    }
+    def chunkCount = allSlices.size()
 
     def chunks = []
-    def offset = 0
-    for (int index = 0; index < chunkCount && offset < json.size(); index++) {
-        def end = Math.min(offset + chunkSize, json.size())
-        def slice = json.substring(offset, end)
-        chunks << JsonOutput.toJson([
-            chunkNamespace: 'weather-dashboard',
-            chunkIndex    : index + 1,
-            chunkCount    : chunkCount,
-            chunkData     : slice
-        ])
-        offset = end
+    allSlices.eachWithIndex { slice, i ->
+        def index = i + 1
+        // Manually escape the slice for embedding in the final JSON string.
+        def escapedSlice = slice.replaceAll('\\\\', '\\\\\\\\').replaceAll('"', '\\\\"')
+        def chunk = "{\"chunkNamespace\":\"weather-dashboard\",\"chunkIndex\":${index},\"chunkCount\":${chunkCount},\"chunkData\":\"${escapedSlice}\"}"
+        chunks << chunk
     }
 
     return chunks
+}
+
+private String buildSafeSlice(String json, int offset) {
+    // The base size of the JSON envelope, assuming 2-digit numbers for index/count.
+    def envelopeOverhead = '{"chunkNamespace":"weather-dashboard","chunkIndex":00,"chunkCount":00,"chunkData":""}'.size()
+    def maxLength = MAX_EVENT_VALUE_LENGTH - envelopeOverhead
+
+    def builder = new StringBuilder()
+    def escapedLength = 0
+    for (int i = offset; i < json.size(); i++) {
+        def ch = json.charAt(i)
+        def charSize = (ch == '"' || ch == '\\') ? 2 : 1
+        if (escapedLength + charSize > maxLength) break
+        builder.append(ch)
+        escapedLength += charSize
+    }
+    return builder.toString()
 }
 
 private String chunkAttribute(int index) {

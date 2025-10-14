@@ -52,12 +52,28 @@ def mainPage() {
             attributeInputs("Absolute pressure", "attrAbsolutePressure", "pressureAbsolute", deviceOptions)
             attributeInputs("Rain rate", "attrRainRate", "rainRate", deviceOptions)
             attributeInputs("Daily rain", "attrRainDaily", "rainDaily", deviceOptions)
+            attributeInputs("Event rain", "attrRainEvent", "rainEvent", deviceOptions)
+            attributeInputs("Hourly rain", "attrRainHourly", "rainHourly", deviceOptions)
             attributeInputs("Weekly rain", "attrRainWeekly", "rainWeekly", deviceOptions)
             attributeInputs("Monthly rain", "attrRainMonthly", "rainMonthly", deviceOptions)
+            attributeInputs("Yearly rain", "attrRainYearly", "rainYearly", deviceOptions)
             attributeInputs("UV index", "attrUVIndex", "uv", deviceOptions)
             attributeInputs("Solar radiation", "attrSolarRadiation", "solarRadiation", deviceOptions)
             attributeInputs("Air quality index", "attrAQI", "aqi", deviceOptions)
             attributeInputs("PM2.5", "attrPM25", "pm25", deviceOptions)
+        }
+
+        section("Lightning sensor (optional)") {
+            attributeInputs("Lightning count", "attrLightningCount", "lightningCount", deviceOptions)
+            attributeInputs("Lightning distance", "attrLightningDistance", "lightningDistance", deviceOptions)
+            attributeInputs("Lightning time", "attrLightningTime", "lightningTime", deviceOptions)
+        }
+
+        section("Battery attributes (optional)") {
+            attributeInputs("Outdoor sensor battery", "attrOutdoorBattery", "battery", deviceOptions)
+            attributeInputs("Wind sensor battery", "attrBatteryWind", "batteryWind", deviceOptions)
+            attributeInputs("Rain sensor battery", "attrBatteryRain", "batteryRain", deviceOptions)
+            attributeInputs("Lightning sensor battery", "attrLightningBattery", "battery", deviceOptions)
         }
 
         section("Ambient rotation sensors (optional)") {
@@ -65,6 +81,7 @@ def mainPage() {
             if (settings.ambientSensors) {
                 input name: "ambientTempAttr", type: "text", title: "Ambient temperature attribute", defaultValue: "temperature"
                 input name: "ambientHumidityAttr", type: "text", title: "Ambient humidity attribute", defaultValue: "humidity"
+                input name: "ambientBatteryAttr", type: "text", title: "Ambient battery attribute", defaultValue: "battery"
                 input name: "ambientTemperatureUnit", type: "text", title: "Ambient temperature unit label", defaultValue: "°F"
                 input name: "ambientHumidityUnit", type: "text", title: "Ambient humidity unit label", defaultValue: "%"
                 input name: "ambientRotationSeconds", type: "number", title: "Rotation interval (seconds)", defaultValue: 12, range: "3..120"
@@ -180,13 +197,24 @@ private List<Map> getAttributeSubscriptions() {
         "attrAbsolutePressure",
         "attrRainRate",
         "attrRainDaily",
+        "attrRainEvent",
+        "attrRainHourly",
         "attrRainWeekly",
         "attrRainMonthly",
+        "attrRainYearly",
         "attrUVIndex",
         "attrSolarRadiation",
         "attrAQI",
         "attrPM25"
-    ]
+    ].plus([
+        "attrLightningCount",
+        "attrLightningDistance",
+        "attrLightningTime",
+        "attrOutdoorBattery",
+        "attrBatteryWind",
+        "attrBatteryRain",
+        "attrLightningBattery"
+    ])
 
     attrs.collect { settingName ->
         def config = attributeConfig(settingName)
@@ -202,6 +230,7 @@ private List<Map> getAmbientSubscriptions() {
 
     def tempAttr = settings.ambientTempAttr ?: "temperature"
     def humidityAttr = settings.ambientHumidityAttr ?: "humidity"
+    def batteryAttr = settings.ambientBatteryAttr ?: "battery"
 
     def subs = []
     sensors.each { dev ->
@@ -210,6 +239,9 @@ private List<Map> getAmbientSubscriptions() {
         }
         if (humidityAttr) {
             subs << [device: dev, attribute: humidityAttr]
+        }
+        if (batteryAttr) {
+            subs << [device: dev, attribute: batteryAttr]
         }
     }
     subs
@@ -331,6 +363,9 @@ def refreshWeatherData() {
     def humidity = readDecimalFor("attrOutdoorHumidity")
     if (humidity != null) outdoor.humidity = round(humidity, 1)
 
+    def outdoorBattery = readDecimalFor("attrOutdoorBattery")
+    if (outdoorBattery != null) outdoor.battery = outdoorBattery
+
     if (outdoor) payload.outdoor = outdoor
 
     def indoor = [:]
@@ -352,6 +387,10 @@ def refreshWeatherData() {
     def dailyMaxGust = readDecimalFor("attrWindGustMaxDaily")
     if (dailyMaxGust != null) {
         wind.dailyMaxGustMph = round(dailyMaxGust, 1)
+    }
+    def windBattery = readDecimalFor("attrBatteryWind")
+    if (windBattery != null) {
+        wind.battery = windBattery
     }
 
     def directionDegrees = readDecimalFor("attrWindDirectionDegrees")
@@ -399,10 +438,18 @@ def refreshWeatherData() {
     if (rainRate != null) rain.rateInPerHour = round(rainRate, 2)
     def rainDaily = readDecimalFor("attrRainDaily")
     if (rainDaily != null) rain.dailyIn = round(rainDaily, 2)
+    def rainEvent = readDecimalFor("attrRainEvent")
+    if (rainEvent != null) rain.eventIn = round(rainEvent, 2)
+    def rainHourly = readDecimalFor("attrRainHourly")
+    if (rainHourly != null) rain.hourlyIn = round(rainHourly, 2)
     def rainWeekly = readDecimalFor("attrRainWeekly")
     if (rainWeekly != null) rain.weeklyIn = round(rainWeekly, 2)
     def rainMonthly = readDecimalFor("attrRainMonthly")
     if (rainMonthly != null) rain.monthlyIn = round(rainMonthly, 2)
+    def rainYearly = readDecimalFor("attrRainYearly")
+    if (rainYearly != null) rain.yearlyIn = round(rainYearly, 2)
+    def rainBattery = readDecimalFor("attrBatteryRain")
+    if (rainBattery != null) rain.battery = rainBattery
     if (rain) payload.rain = rain
 
     def solar = [:]
@@ -425,6 +472,21 @@ def refreshWeatherData() {
     def sunsetDate = location?.sunset
     if (sunsetDate) sun.sunset = formatDateTime(sunsetDate, tz)
     if (sun) payload.sun = sun
+
+    def lightning = [:]
+    def lightningCount = readDecimalFor("attrLightningCount")
+    if (lightningCount != null) lightning.count = lightningCount
+    def lightningDistance = readDecimalFor("attrLightningDistance")
+    if (lightningDistance != null) lightning.distance = lightningDistance
+    def lightningTime = readStringFor("attrLightningTime")
+    if (lightningTime != null) {
+        lightning.time = lightningTime
+    }
+    def lightningBattery = readDecimalFor("attrLightningBattery")
+    if (lightningBattery != null) {
+        lightning.battery = lightningBattery
+    }
+    if (lightning) payload.lightning = lightning
 
     if (!payload.outlook24h) {
         def outlook = computeOutlook(payload.pressure?.relativeInHg ?: payload.pressure?.absoluteInHg, trend?.ratePerHour, outdoor?.humidity)
@@ -468,6 +530,7 @@ private Map buildAmbientSensorsPayload() {
 
     def tempAttr = settings.ambientTempAttr ?: "temperature"
     def humidityAttr = settings.ambientHumidityAttr ?: "humidity"
+    def batteryAttr = settings.ambientBatteryAttr ?: "battery"
     Integer rotation = settings.ambientRotationSeconds ? (settings.ambientRotationSeconds as Integer) : 12
     if (rotation < 3) {
         rotation = 3
@@ -490,7 +553,11 @@ private Map buildAmbientSensorsPayload() {
         if (humidityVal != null) {
             entry.humidity = round(humidityVal, 1)
         }
-        if (entry.temperatureF != null || entry.humidity != null) {
+        def batteryVal = batteryAttr ? readDecimal(dev, batteryAttr) : null
+        if (batteryVal != null) {
+            entry.battery = batteryVal
+        }
+        if (entry.temperatureF != null || entry.humidity != null || entry.battery != null) {
             entries << entry
         }
     }

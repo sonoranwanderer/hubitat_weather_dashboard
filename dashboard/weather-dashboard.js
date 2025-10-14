@@ -8,8 +8,7 @@
 
 (() => {
   const DISPLAY_TILE_ID = 'tile-0';
-  const DATA_TILE_IDS = ['tile-1', 'tile-2', 'tile-3'];
-  const CHUNK_NAMESPACE = 'weather-dashboard';
+  const DATA_TILE_COUNT = 3; // Set this to the number of data tiles you have (1, 2, or 3)
   const CSS_ID = 'weather-dashboard-css';
   const TEMP_RANGE = { min: -40, max: 120 };
   const AMBIENT_ROTATION_INTERVAL_MS = 5000;
@@ -179,9 +178,10 @@
   function readPayloads() {
     const payloads = [];
     const chunkEnvelopes = [];
-    for (const id of DATA_TILE_IDS) {
+
+    for (let i = 1; i <= DATA_TILE_COUNT; i++) {
+      const id = `tile-${i}`;
       const tile = byId(id);
-      if (!tile) continue;
       const text = getTileText(tile);
       if (!text) continue;
       if (/please select an attribute/i.test(text)) {
@@ -212,7 +212,8 @@
   }
 
   function toggleSourceTileMask(hide) {
-    for (const id of DATA_TILE_IDS) {
+    for (let i = 1; i <= DATA_TILE_COUNT; i++) {
+      const id = `tile-${i}`;
       const tile = byId(id);
       if (!tile) continue;
       tile.classList.toggle('wdash-source-tile', hide);
@@ -220,7 +221,8 @@
   }
 
   function ensureDataTileObservers() {
-    for (const id of DATA_TILE_IDS) {
+    for (let i = 1; i <= DATA_TILE_COUNT; i++) {
+      const id = `tile-${i}`;
       const tile = byId(id);
       const existing = dataTileObservers.get(id);
       if (!tile) {
@@ -500,16 +502,58 @@
 
   function buildRainCard(data) {
     const rain = data.rain || {};
+    const rate = toNumber(rain.rateInPerHour);
+    const hourlyIn = toNumber(rain.hourlyIn);
+
+    // Determine the fill ratio based on 8 discrete states of hourly rainfall
+    let fillRatio = 0;
+    if (hourlyIn > 1.2) {
+      fillRatio = 1; // State 8: > 1.2
+    } else if (hourlyIn > 1.0) {
+      fillRatio = 6 / 7; // State 7: > 1.0 to 1.2
+    } else if (hourlyIn > 0.8) {
+      fillRatio = 5 / 7; // State 6: > 0.8 to 1.0
+    } else if (hourlyIn > 0.6) {
+      fillRatio = 4 / 7; // State 5: > 0.6 to 0.8
+    } else if (hourlyIn > 0.4) {
+      fillRatio = 3 / 7; // State 4: > 0.4 to 0.6
+    } else if (hourlyIn > 0.2) {
+      fillRatio = 2 / 7; // State 3: > 0.2 to 0.4
+    } else if (hourlyIn > 0) {
+      fillRatio = 1 / 7; // State 2: > 0 to 0.2
+    } // State 1: 0 (default)
+
+    const DROP_HEIGHT = 140;
+    const DROP_BOTTOM_Y = 150;
+    const fillHeight = DROP_HEIGHT * fillRatio;
+    const fillY = DROP_BOTTOM_Y - fillHeight;
+
     const stats = [
-      { label: 'Rate', value: formatRain(rain.rateInPerHour) },
+      { label: 'Event', value: formatRain(rain.eventIn) },
+      { label: 'Hourly', value: formatRain(rain.hourlyIn) },
       { label: 'Daily', value: formatRain(rain.dailyIn) },
       { label: 'Weekly', value: formatRain(rain.weeklyIn) },
-      { label: 'Monthly', value: formatRain(rain.monthlyIn) }
+      { label: 'Monthly', value: formatRain(rain.monthlyIn) },
+      { label: 'Yearly', value: formatRain(rain.yearlyIn) }
     ];
     return `
       <section class="wdash-card wdash-card--rain">
         ${cardHeader(CARD_TITLES.rain, data)}
-        ${buildMetricRow(stats, 'wdash-rain-stats')}
+        <div class="wdash-rain-main">
+          <div class="wdash-rain-drop">
+            <svg viewBox="0 0 120 160" role="img" aria-label="Rain rate visualization">
+              <defs>
+                <clipPath id="wdash-rain-clip"><path d="M60 10 C40 45 20 75 20 105 C20 135 38 150 60 150 C82 150 100 135 100 105 C100 75 80 45 60 10 Z" /></clipPath>
+                <linearGradient id="wdash-rain-gradient" x1="0" x2="0" y1="1" y2="0"><stop offset="0%" stop-color="#3d8bff" /><stop offset="100%" stop-color="#7dd3ff" /></linearGradient>
+              </defs>
+              <path class="wdash-rain-drop-bg" d="M60 10 C40 45 20 75 20 105 C20 135 38 150 60 150 C82 150 100 135 100 105 C100 75 80 45 60 10 Z" />
+              <rect class="wdash-rain-drop-fill" x="20" y="${fillY}" width="80" height="${fillHeight}" clip-path="url(#wdash-rain-clip)" rx="35" fill="url(#wdash-rain-gradient)" />
+              <path class="wdash-rain-drop-outline" d="M60 10 C40 45 20 75 20 105 C20 135 38 150 60 150 C82 150 100 135 100 105 C100 75 80 45 60 10 Z" />
+            </svg>
+            <div class="wdash-rain-rate-label">Rate: ${formatRain(rate)}</div>
+          </div>
+          ${buildMetricRow(stats, 'wdash-rain-stats', { columns: 2 })}
+        </div>
       </section>
     `;
   }
@@ -1216,10 +1260,10 @@
 .wdash-root { position: relative; width: 100%; height: 100%; --wdash-base-width: 1200px; --wdash-base-height: 900px; --wdash-scale: 1; --wdash-render-width: var(--wdash-base-width); --wdash-render-height: var(--wdash-base-height); background: rgba(4, 9, 20, 0.85); border-radius: 12px; overflow: hidden; box-sizing: border-box; display: flex; align-items: center; justify-content: center; }
 .wdash-frame { position: relative; width: var(--wdash-render-width); height: var(--wdash-render-height); display: flex; align-items: center; justify-content: center; overflow: hidden; }
 .wdash { width: var(--wdash-base-width); height: var(--wdash-base-height); font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif; color: #f4f6ff; background: linear-gradient(145deg, rgba(27,35,58,0.95), rgba(13,18,32,0.95)); backdrop-filter: blur(4px); border-radius: 12px; padding: 18px; box-sizing: border-box; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05); transform-origin: top left; transform: scale(var(--wdash-scale)); }
-.wdash-grid { display: grid; gap: 14px; height: 100%; width: 100%; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: 360px 250px 250px; grid-template-areas:
-  "temp-wind temp-wind ambient"
-  "air air rain"
-  "solar pressure pressure"; }
+.wdash-grid { display: grid; gap: 14px; height: 100%; width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: 360px 280px 280px; grid-template-areas:
+  "temp-wind ambient"
+  "pressure rain"
+  "solar air" }
 }
 .wdash-grid[data-empty="true"] { display: flex; align-items: center; justify-content: center; }
 .wdash-grid > * { min-height: 0; }
@@ -1316,7 +1360,14 @@
 .wdash-ambient-name { font-weight: 700; }
 .wdash-ambient-rotation { font-size: 0.75rem; color: #8ea0c8; }
 .wdash-ambient--empty .wdash-ambient-reading { opacity: 0.6; }
-.wdash-rain-stats .wdash-metric, .wdash-air-metrics .wdash-metric, .wdash-solar-metrics .wdash-metric, .wdash-pressure-stats .wdash-metric { min-width: 120px; }
+.wdash-rain-main { display: flex; gap: 14px; align-items: center; flex: 1; }
+.wdash-rain-drop { flex: 0 0 120px; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.wdash-rain-drop svg { width: 100%; height: auto; display: block; filter: drop-shadow(0 6px 12px rgba(0,0,0,0.3)); }
+.wdash-rain-drop-outline { fill: none; stroke: #6ab9ff; stroke-width: 4; stroke-linejoin: round; }
+.wdash-rain-drop-bg { fill: rgba(80,160,255,0.15); }
+.wdash-rain-drop-fill { transition: all 0.4s ease-in-out; }
+.wdash-rain-rate-label { font-size: 0.8rem; font-weight: 600; color: #c9d8ff; }
+.wdash-rain-stats { flex: 1; display: grid; grid-template-columns: repeat(var(--wdash-columns, 2), 1fr); gap: 8px; }
 .wdash-pressure-main { display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .wdash-pressure-toggle { display: inline-flex; gap: 4px; padding: 4px; border-radius: 999px; background: rgba(255,255,255,0.05); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04); }
 .wdash-pressure-button { border: none; background: transparent; color: #9badcf; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.12em; padding: 5px 12px; border-radius: 999px; cursor: pointer; transition: all 0.2s ease; }
@@ -1342,11 +1393,10 @@
 .wdash-air-metrics .wdash-metric-value { font-size: 1.02rem; }
 @media (max-width: 1100px) {
   .wdash-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: none; grid-auto-rows: minmax(260px, auto); grid-template-areas:
-    "temp-wind temp-wind" 
-    "ambient ambient"
-    "rain air"
+    "temp-wind ambient"
+    "pressure rain"
     "solar air"
-    "pressure pressure";
+    "air air"; /* This line seems redundant, but we'll keep it for now */
   }
 }
 @media (max-width: 900px) {
@@ -1562,8 +1612,7 @@
   }
 
   function isChunkEnvelope(payload) {
-    if (!payload || typeof payload !== 'object') return false;
-    if (payload.chunkNamespace !== CHUNK_NAMESPACE) return false;
+    if (!payload || typeof payload !== 'object' || payload.chunkNamespace !== 'weather-dashboard') return false;
     if (!Number.isInteger(payload.chunkIndex) || !Number.isInteger(payload.chunkCount)) return false;
     if (payload.chunkIndex < 1 || payload.chunkCount < 1) return false;
     return typeof payload.chunkData === 'string';
