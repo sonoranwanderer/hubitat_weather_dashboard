@@ -1399,7 +1399,7 @@
   "solar     pressure"
   "solar     pressure"
   "solar     pressure"
-  "solar     pressure"
+  "solar     ."
   "solar     ."
   "solar     ."
 }
