@@ -528,19 +528,19 @@
     const fillHeight = DROP_HEIGHT * fillRatio;
     const fillY = DROP_BOTTOM_Y - fillHeight;
 
-    const stats = [
+    const rightColStats = [
       { label: 'Event', value: formatRain(rain.eventIn) },
       { label: 'Hourly', value: formatRain(rain.hourlyIn) },
-      { label: 'Daily', value: formatRain(rain.dailyIn) },
       { label: 'Weekly', value: formatRain(rain.weeklyIn) },
       { label: 'Monthly', value: formatRain(rain.monthlyIn) },
       { label: 'Yearly', value: formatRain(rain.yearlyIn) }
     ];
+
     return `
       <section class="wdash-card wdash-card--rain">
         ${cardHeader(CARD_TITLES.rain, data)}
         <div class="wdash-rain-main">
-          <div class="wdash-rain-drop">
+          <div class="wdash-rain-col wdash-rain-col--drop">
             <svg viewBox="0 0 120 160" role="img" aria-label="Rain rate visualization">
               <defs>
                 <clipPath id="wdash-rain-clip"><path d="M60 10 C40 45 20 75 20 105 C20 135 38 150 60 150 C82 150 100 135 100 105 C100 75 80 45 60 10 Z" /></clipPath>
@@ -550,9 +550,22 @@
               <rect class="wdash-rain-drop-fill" x="20" y="${fillY}" width="80" height="${fillHeight}" clip-path="url(#wdash-rain-clip)" rx="35" fill="url(#wdash-rain-gradient)" />
               <path class="wdash-rain-drop-outline" d="M60 10 C40 45 20 75 20 105 C20 135 38 150 60 150 C82 150 100 135 100 105 C100 75 80 45 60 10 Z" />
             </svg>
-            <div class="wdash-rain-rate-label">Rate: ${formatRain(rate)}</div>
           </div>
-          ${buildMetricRow(stats, 'wdash-rain-stats', { columns: 2 })}
+          <div class="wdash-rain-col wdash-rain-col--center">
+            <div class="wdash-rain-rate-wrapper">
+              ${buildMetricRow([
+                { label: 'Rate', value: formatRain(rate) }
+              ], 'wdash-rain-stats wdash-metric-row--table', {
+              })}
+            </div>
+            <div class="wdash-rain-daily-metric">
+              <div class="wdash-rain-daily-value">${formatRain(rain.dailyIn)}</div>
+              <div class="wdash-rain-daily-label">Daily</div>
+            </div>
+          </div>
+          <div class="wdash-rain-col wdash-rain-col--stats">
+            ${buildMetricRow(rightColStats, 'wdash-rain-stats', { variant: 'table' })}
+          </div>
         </div>
       </section>
     `;
@@ -1360,14 +1373,24 @@
 .wdash-ambient-name { font-weight: 700; }
 .wdash-ambient-rotation { font-size: 0.75rem; color: #8ea0c8; }
 .wdash-ambient--empty .wdash-ambient-reading { opacity: 0.6; }
-.wdash-rain-main { display: flex; gap: 14px; align-items: center; flex: 1; }
-.wdash-rain-drop { flex: 0 0 120px; display: flex; flex-direction: column; align-items: center; gap: 8px; }
-.wdash-rain-drop svg { width: 100%; height: auto; display: block; filter: drop-shadow(0 6px 12px rgba(0,0,0,0.3)); }
+.wdash-rain-main { display: grid; grid-template-columns: 120px 1fr 1fr; gap: 18px; align-items: center; flex: 1; }
+.wdash-rain-col--drop { display: flex; align-items: center; justify-content: center; }
+.wdash-rain-col--drop svg { width: 100%; height: auto; display: block; filter: drop-shadow(0 6px 12px rgba(0,0,0,0.3)); }
 .wdash-rain-drop-outline { fill: none; stroke: #6ab9ff; stroke-width: 4; stroke-linejoin: round; }
 .wdash-rain-drop-bg { fill: rgba(80,160,255,0.15); }
 .wdash-rain-drop-fill { transition: all 0.4s ease-in-out; }
-.wdash-rain-rate-label { font-size: 0.8rem; font-weight: 600; color: #c9d8ff; }
-.wdash-rain-stats { flex: 1; display: grid; grid-template-columns: repeat(var(--wdash-columns, 2), 1fr); gap: 8px; }
+.wdash-rain-col--center { display: flex; flex-direction: column; justify-content: space-between; height: 100%; text-align: center; }
+.wdash-rain-rate-wrapper { width: 75%; margin: 0 auto; }
+.wdash-rain-daily-metric { flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.wdash-rain-daily-value { font-size: 2.8rem; font-weight: 800; line-height: 1; }
+.wdash-rain-daily-label { font-size: 0.9rem; font-weight: 700; color: #c9d8ff; margin-top: 4px; }
+.wdash-rain-col--stats { display: flex; align-items: center; }
+.wdash-rain-stats.wdash-metric-row--table { display: block; width: 100%; }
+.wdash-rain-stats.wdash-metric-row--table .wdash-metric { background: none; box-shadow: none; display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.07); }
+.wdash-rain-stats.wdash-metric-row--table .wdash-metric { flex-direction: row; align-items: baseline; }
+.wdash-rain-stats.wdash-metric-row--table .wdash-metric:last-child { border-bottom: none; }
+.wdash-rain-stats.wdash-metric-row--table .wdash-metric-label { text-align: left; font-size: 0.9rem; font-weight: 600; color: #c9d8ff; }
+.wdash-rain-stats.wdash-metric-row--table .wdash-metric-value { text-align: right; font-size: 0.9rem; font-weight: 600; color: #f4f6ff; font-variant-numeric: tabular-nums; }
 .wdash-pressure-main { display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .wdash-pressure-toggle { display: inline-flex; gap: 4px; padding: 4px; border-radius: 999px; background: rgba(255,255,255,0.05); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04); }
 .wdash-pressure-button { border: none; background: transparent; color: #9badcf; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.12em; padding: 5px 12px; border-radius: 999px; cursor: pointer; transition: all 0.2s ease; }
