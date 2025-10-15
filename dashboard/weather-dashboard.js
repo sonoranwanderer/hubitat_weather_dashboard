@@ -17,6 +17,46 @@
   const BASE_WIDTH = 1200;
   const BASE_HEIGHT = 900;
 
+  // Declarative grid layout configuration so card heights/row spans can be adjusted
+  // by changing the repeat counts instead of editing CSS strings.
+  const GRID_LAYOUT = {
+    desktop: [
+      // Desktop rows can also override `height` to trim or expand individual tracks.
+      // When you shorten a row (for example, changing 260px to 250px) the tracks
+      // defined beneath it automatically shift upward—the browser recalculates the
+      // grid using the new track size so there's no extra work required to realign
+      // the cards below.
+      { columns: ['temp-wind', 'ambient'], repeat: 5, height: 'minmax(0, 1fr)' },
+      { columns: ['temp-wind', 'rain'], repeat: 3, height: 'minmax(0, 1fr)' },
+      { columns: ['air', 'rain'], repeat: 2, height: 'minmax(0, 1fr)' },
+      { columns: ['air', 'pressure'], repeat: 2, height: 'minmax(0, 1fr)' },
+      { columns: ['solar', 'pressure'], repeat: 3, height: 'minmax(0, 1fr)' },
+      { columns: ['solar', '.'], repeat: 2, height: 'minmax(0, 1fr)' },
+      { columns: ['.', '.'], repeat: 1, height: 'minmax(0, 1fr)' }
+    ],
+    tablet: [
+      // Adjust the `height` value on any row to fine-tune card height (e.g. 250px trims 10px vs 260px).
+      { columns: ['temp-wind', 'ambient'], repeat: 1, height: 'minmax(260px, auto)' },
+      { columns: ['pressure', 'rain'], repeat: 1, height: 'minmax(260px, auto)' },
+      { columns: ['solar', 'air'], repeat: 1, height: 'minmax(260px, auto)' },
+      { columns: ['air', 'air'], repeat: 1, height: 'minmax(260px, auto)' }
+    ],
+    mobile: [
+      { columns: ['temp-wind'], repeat: 1, height: 'minmax(240px, auto)' },
+      { columns: ['ambient'], repeat: 1, height: 'minmax(240px, auto)' },
+      { columns: ['rain'], repeat: 1, height: 'minmax(240px, auto)' },
+      { columns: ['pressure'], repeat: 1, height: 'minmax(240px, auto)' },
+      { columns: ['solar'], repeat: 1, height: 'minmax(240px, auto)' },
+      { columns: ['air'], repeat: 1, height: 'minmax(240px, auto)' }
+    ]
+  };
+
+  const GRID_TEMPLATES = {
+    desktop: compileGridTemplate(GRID_LAYOUT.desktop),
+    tablet: compileGridTemplate(GRID_LAYOUT.tablet),
+    mobile: compileGridTemplate(GRID_LAYOUT.mobile)
+  };
+
   const TEMP_COLORS = [
     { max: -20, colors: ['#70a9ff', '#3c6aff'] },
     { max: -5, colors: ['#5a8fff', '#3360ff'] },
@@ -1437,6 +1477,55 @@
     return match ? `#${match[1]}` : null;
   }
 
+  function compileGridTemplate(layout) {
+    if (!Array.isArray(layout)) {
+      return { areas: '"."', rows: 'repeat(1, minmax(0, 1fr))', rowCount: 1 };
+    }
+    const areaLines = [];
+    const rowTracks = [];
+    let rowCount = 0;
+    for (const entry of layout) {
+      const repeat = Math.max(1, Number(entry?.repeat) || 1);
+      const columns = Array.isArray(entry?.columns)
+        ? entry.columns.filter(col => typeof col === 'string' && col.length)
+        : [];
+      if (!columns.length) continue;
+      const track = normalizeTrackSize(entry?.height ?? entry?.rowHeight ?? entry?.size);
+      for (let i = 0; i < repeat; i += 1) {
+        areaLines.push(`"${columns.join(' ')}"`);
+        rowTracks.push(track);
+      }
+      rowCount += repeat;
+    }
+    if (!areaLines.length) {
+      return { areas: '"."', rows: 'repeat(1, minmax(0, 1fr))', rowCount: 1 };
+    }
+    const safeRowCount = Math.max(rowCount, 1);
+    const defaultTrack = 'minmax(0, 1fr)';
+    const hasCustomTrack = rowTracks.some(track => track !== defaultTrack);
+    const rowsValue = hasCustomTrack
+      ? rowTracks.join(' ')
+      : `repeat(${safeRowCount}, ${defaultTrack})`;
+    return { areas: areaLines.join('\n  '), rows: rowsValue, rowCount: safeRowCount };
+  }
+
+  function normalizeTrackSize(value) {
+    const defaultTrack = 'minmax(0, 1fr)';
+    if (value == null) return defaultTrack;
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return `${Math.max(0, value)}px`;
+    }
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (!trimmed) return defaultTrack;
+      if (/^var\(\s*--[\w-]+\s*(?:,[^)]*)?\)$/i.test(trimmed)) return trimmed;
+      if (/^(?:calc|minmax|clamp|fit-content)\((?:[^()]+|\([^()]*\))*\)$/i.test(trimmed)) return trimmed;
+      if (/^\d*\.?\d+fr$/i.test(trimmed)) return trimmed.toLowerCase();
+      if (/^\d*\.?\d+(?:px|rem|em|vh|vw|%)$/i.test(trimmed)) return trimmed.toLowerCase();
+    }
+    return defaultTrack;
+  }
+
   function injectCSS() {
     if (document.getElementById(CSS_ID)) return;
     const style = document.createElement('style');
@@ -1448,25 +1537,8 @@
 .wdash-root { position: relative; width: 100%; height: 100%; --wdash-base-width: 1200px; --wdash-base-height: 900px; --wdash-scale: 1; --wdash-render-width: var(--wdash-base-width); --wdash-render-height: var(--wdash-base-height); background: rgba(4, 9, 20, 0.85); border-radius: 12px; overflow: hidden; box-sizing: border-box; display: flex; align-items: center; justify-content: center; }
 .wdash-frame { position: relative; width: var(--wdash-render-width); height: var(--wdash-render-height); display: flex; align-items: center; justify-content: center; overflow: hidden; }
 .wdash { width: var(--wdash-base-width); height: var(--wdash-base-height); font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif; color: #f4f6ff; background: linear-gradient(145deg, rgba(27,35,58,0.95), rgba(13,18,32,0.95)); backdrop-filter: blur(4px); border-radius: 12px; padding: 18px; box-sizing: border-box; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05); transform-origin: top left; transform: scale(var(--wdash-scale)); }
-.wdash-grid { display: grid; gap: 14px; height: 100%; width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(18, 1fr); grid-template-areas:
-  "temp-wind ambient"
-  "temp-wind ambient"
-  "temp-wind ambient"
-  "temp-wind ambient"
-  "temp-wind ambient"
-  "temp-wind rain"
-  "temp-wind rain"
-  "temp-wind rain"
-  "air       rain"
-  "air       rain"
-  "air       pressure"
-  "air       pressure"
-  "solar     pressure"
-  "solar     pressure"
-  "solar     pressure"
-  "solar     ."
-  "solar     ."
-  ".         ."
+.wdash-grid { display: grid; gap: 14px; height: 100%; width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: ${GRID_TEMPLATES.desktop.rows}; grid-template-areas:
+  ${GRID_TEMPLATES.desktop.areas};
 }
 .wdash-grid[data-empty="true"] { display: flex; align-items: center; justify-content: center; }
 .wdash-grid > * { min-height: 0; }
@@ -1613,24 +1685,16 @@
 .wdash-sun-time--set { /* Positioned by inline style */ }
 .wdash-air-metrics .wdash-metric-value { font-size: 1.02rem; }
 @media (max-width: 1100px) {
-  .wdash-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: none; grid-auto-rows: minmax(260px, auto); grid-template-areas:
-    "temp-wind ambient"
-    "pressure rain"
-    "solar air"
-    "air air";
+  .wdash-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: ${GRID_TEMPLATES.tablet.rows}; grid-template-areas:
+    ${GRID_TEMPLATES.tablet.areas};
   }
 }
 @media (max-width: 900px) {
   .wdash { padding: 14px; }
 }
 @media (max-width: 720px) {
-  .wdash-grid { grid-template-columns: 1fr; grid-template-rows: none; grid-auto-rows: minmax(240px, auto); grid-template-areas:
-    "temp-wind"
-    "ambient"
-    "rain"
-    "pressure"
-    "solar"
-    "air";
+  .wdash-grid { grid-template-columns: 1fr; grid-template-rows: ${GRID_TEMPLATES.mobile.rows}; grid-template-areas:
+    ${GRID_TEMPLATES.mobile.areas};
   }
   .wdash-metric-row { flex-direction: column; }
   .wdash-metric { min-width: unset; }
