@@ -1442,7 +1442,7 @@
   "solar     pressure"
   "solar     ."
   "solar     ."
-  "solar     ."
+  ".         ."
 }
 .wdash-grid[data-empty="true"] { display: flex; align-items: center; justify-content: center; }
 .wdash-grid > * { min-height: 0; }
@@ -1572,7 +1572,7 @@
 .wdash-outlook-label { font-weight: 700; color: #ffb95a; text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.75rem; }
 .wdash-outlook-text { line-height: 1.35; }
 .wdash-solar { display: flex; flex-direction: column; gap: 8px; flex: 1; }
-.wdash-sun-graphic { position: relative; width: 100%; aspect-ratio: 2.6 / 1; border-radius: 16px; background: radial-gradient(circle at 50% 115%, rgba(255,194,120,0.18), rgba(255,255,255,0)); overflow: hidden; }
+.wdash-sun-graphic { position: relative; width: 100%; aspect-ratio: 2.6 / 1; border-radius: 16px; background: transparent; overflow: hidden; }
 .wdash-sun-arc { position: absolute; inset: 16% 12% 42%; border: 2px solid rgba(255,255,255,0.25); border-bottom: none; border-radius: 100% 100% 0 0 / 100% 100% 0 0; }
 .wdash-sun-horizon { position: absolute; left: 12%; right: 12%; bottom: 42%; height: 2px; background: rgba(255,255,255,0.25); }
 .wdash-sun-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
