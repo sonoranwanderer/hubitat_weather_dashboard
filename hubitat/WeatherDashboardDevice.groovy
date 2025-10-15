@@ -260,14 +260,14 @@ private Integer encodedChunkLength(int index, int chunkCount, String fingerprint
 
 private Map buildChunkEnvelope(int index, int chunkCount, String fingerprint, int offset, int length, int totalLength, String data) {
     return [
-        chunkNamespace: "weather-dashboard",
-        chunkIndex: index,
-        chunkCount: chunkCount,
-        chunkFingerprint: fingerprint,
-        chunkOffset: offset,
-        chunkLength: length,
-        chunkTotalLength: totalLength,
-        chunkData: data
+        ns: "wd",
+        i: index,
+        c: chunkCount,
+        fp: fingerprint,
+        o: offset,
+        l: length,
+        t: totalLength,
+        d: data
     ]
 }
 
