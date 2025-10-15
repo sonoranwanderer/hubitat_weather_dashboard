@@ -2444,12 +2444,14 @@
   }
 
   function getTileText(tile) {
+    if (!tile) return '';
     const node = findContentElement(tile);
     if (!node) return '';
     return node.textContent.trim();
   }
 
   function findContentElement(tile) {
+    if (!tile) return null;
     const selectors = ['.tile-primary', '.tile-contents', '.tile-content', '.tile'];
     for (const sel of selectors) {
       const el = tile.querySelector(sel);

@@ -62,7 +62,7 @@ def clearDashboardData() {
     sendEvent(name: "dashboardPretty", value: "{}", isStateChange: true)
     sendEvent(name: "dashboardUpdated", value: timestamp(), isStateChange: true)
     // Clear all chunk attributes
-    (0..9).each { i -> sendEvent(name: chunkAttribute(i), value: "{}", isStateChange: true) }
+    (0..<MAX_CHUNK_ATTRIBUTES).each { i -> sendEvent(name: chunkAttribute(i), value: "{}", isStateChange: true) }
 }
 
 def updateDashboardData(String json, String pretty = null) {
@@ -102,6 +102,7 @@ private String timestamp() {
 @Field static final Integer MAX_EVENT_VALUE_LENGTH = 1024
 @Field static final Integer CHUNK_COUNT_PLACEHOLDER = 99
 @Field static final Integer CHUNK_SEQUENCE_MAX = 1679615 // base-36 'zzzz'
+@Field static final Integer MAX_CHUNK_ATTRIBUTES = 10
 
 private List<String> chunkPayload(String json) {
     if (!json) return []
@@ -112,20 +113,57 @@ private List<String> chunkPayload(String json) {
 
     def totalLength = json.size()
     def fingerprint = generateChunkFingerprint(json)
-    def slices = buildChunkSlices(json, fingerprint, totalLength)
-    def chunkCount = slices.size()
+    def attemptLimit = MAX_EVENT_VALUE_LENGTH
+    def lastChunks = []
+    def oversize = true
 
-    def chunks = []
-    slices.eachWithIndex { slice, i ->
-        def index = i + 1
-        def chunk = JsonOutput.toJson(buildChunkEnvelope(index, chunkCount, fingerprint, slice.offset as Integer, slice.length as Integer, totalLength, slice.data))
-        if (chunk.size() > MAX_EVENT_VALUE_LENGTH) {
-            log.warn "Generated chunk ${index} of ${chunkCount} is oversized (${chunk.size()} chars). This may cause dashboard errors."
+    while (attemptLimit > 0 && oversize) {
+        def slices = buildChunkSlices(json, fingerprint, totalLength, attemptLimit)
+        def chunkCount = slices.size()
+
+        if (chunkCount > MAX_CHUNK_ATTRIBUTES) {
+            log.error "Dashboard payload requires ${chunkCount} chunks which exceeds the supported maximum of ${MAX_CHUNK_ATTRIBUTES}."
+            break
         }
-        chunks << chunk
+
+        oversize = false
+        lastChunks = []
+
+        slices.eachWithIndex { slice, i ->
+            def index = i + 1
+            def chunk = JsonOutput.toJson(buildChunkEnvelope(index, chunkCount, fingerprint, slice.offset as Integer, slice.length as Integer, totalLength, slice.data))
+            if (chunk.size() > MAX_EVENT_VALUE_LENGTH) {
+                oversize = true
+            }
+            lastChunks << chunk
+        }
+
+        if (oversize) {
+            attemptLimit = attemptLimit > 32 ? attemptLimit - 16 : attemptLimit - 1
+        }
     }
 
-    return chunks
+    if (oversize) {
+        log.error "Unable to generate dashboard chunks within ${MAX_EVENT_VALUE_LENGTH} characters even after tightening slice target (last attempt ${attemptLimit})."
+        def placeholder = JsonOutput.toJson([
+            error: "chunking_failed",
+            originalLength: json.size(),
+            limit: MAX_EVENT_VALUE_LENGTH
+        ])
+        return [placeholder]
+    }
+
+    if (!lastChunks) {
+        log.warn "Chunk generation produced no slices — emitting placeholder payload."
+        def placeholder = JsonOutput.toJson([
+            error: "chunking_empty",
+            originalLength: json.size(),
+            limit: MAX_EVENT_VALUE_LENGTH
+        ])
+        return [placeholder]
+    }
+
+    return lastChunks
 }
 
 private String generateChunkFingerprint(String json) {
@@ -154,7 +192,7 @@ private Integer nextChunkSequence() {
     return next
 }
 
-private List<Map> buildChunkSlices(String json, String fingerprint, int totalLength) {
+private List<Map> buildChunkSlices(String json, String fingerprint, int totalLength, int maxChunkLength) {
     def slices = []
     int offset = 0
     int index = 1
@@ -171,7 +209,7 @@ private List<Map> buildChunkSlices(String json, String fingerprint, int totalLen
 
             def candidateData = builder.toString()
             def encodedLength = encodedChunkLength(index, CHUNK_COUNT_PLACEHOLDER, fingerprint, offset, candidateData.size(), totalLength, candidateData)
-            if (encodedLength <= MAX_EVENT_VALUE_LENGTH) {
+            if (encodedLength <= maxChunkLength) {
                 bestData = candidateData
                 bestCursor = cursor
             } else {
@@ -195,7 +233,7 @@ private List<Map> buildChunkSlices(String json, String fingerprint, int totalLen
             }
 
             def encodedLength = encodedChunkLength(index, CHUNK_COUNT_PLACEHOLDER, fingerprint, offset, bestData.size(), totalLength, bestData)
-            while (encodedLength > MAX_EVENT_VALUE_LENGTH && bestData.size() > 1) {
+            while (encodedLength > maxChunkLength && bestData.size() > 1) {
                 bestData = bestData.substring(0, bestData.size() - 1)
                 bestCursor -= 1
                 encodedLength = encodedChunkLength(index, CHUNK_COUNT_PLACEHOLDER, fingerprint, offset, bestData.size(), totalLength, bestData)
@@ -240,8 +278,8 @@ private String chunkAttribute(int index) {
     // index is 0-based, but chunk numbers are 1-based.
     // So index 1 corresponds to chunk 2.
     def chunkNum = index + 1
-    if (chunkNum > 10) {
-        log.error "Exceeded maximum supported chunks (10). Payload is too large."
+    if (chunkNum > MAX_CHUNK_ATTRIBUTES) {
+        log.error "Exceeded maximum supported chunks (${MAX_CHUNK_ATTRIBUTES}). Payload is too large."
         return "dashboardData" // Fallback to avoid crash
     }
     return "dashboardDataChunk${chunkNum}"
@@ -250,5 +288,5 @@ private String chunkAttribute(int index) {
 private void clearUnusedChunkAttributes(int used) {
     // 'used' is the number of chunks. Attributes are 0-indexed.
     // If used=3, we need to clear from index 3 (chunk 4) onwards.
-    (used..9).each { i -> sendEvent(name: chunkAttribute(i), value: "{}", isStateChange: true) }
+    (used..<MAX_CHUNK_ATTRIBUTES).each { i -> sendEvent(name: chunkAttribute(i), value: "{}", isStateChange: true) }
 }

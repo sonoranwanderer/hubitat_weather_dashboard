@@ -19,12 +19,14 @@ before rendering.
   and length for every chunk and adds those fields (`chunkOffset`, `chunkLength`,
   and `chunkTotalLength`) to each envelope. The bookkeeping reuses the existing
   loop and does not require extra allocations beyond a few integers per chunk,
-  so the overhead stays well within the 1,024-character attribute limit.【F:hubitat/WeatherDashboardDevice.groovy†L118-L169】
-* **Chunk size control.** Each slice is extended character by character until
-  the fully encoded JSON envelope would exceed Hubitat’s 1,024-character limit,
-  so the driver never emits an oversized event even when the payload contains
-  many escaped characters. The trimming happens inside the existing slicing loop
-  and reuses the same `sendEvent` strings, so there is no extra allocation churn.【F:hubitat/WeatherDashboardDevice.groovy†L134-L169】
+  so the overhead stays well within the 1,024-character attribute limit.【F:hubitat/WeatherDashboardDevice.groovy†L195-L271】
+* **Chunk size control.** Each slicing pass grows a chunk character by character
+  while simulating the fully encoded envelope against a tunable target length.
+  If any resulting chunk still exceeds Hubitat’s 1,024-character limit, the
+  driver tightens the target and rebuilds the slices until every envelope fits
+  (or logs an error and emits a small placeholder when the payload cannot be
+  represented within the ten available attributes). The work stays in the same
+  O(n) loop and does not add extra allocations beyond the retry bookkeeping.【F:hubitat/WeatherDashboardDevice.groovy†L114-L219】
 
 Overall, the Hubitat hub performs one extra O(n) pass over the payload string
 plus a small constant increase in per-chunk attribute size. Both additions are
