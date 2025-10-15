@@ -81,8 +81,21 @@
     wind: 'Wind',
     rain: 'Rainfall',
     pressure: 'Barometer',
-    solarSun: 'Sun & Solar',
+    sunMoon: 'Sun & Moon',
     air: 'Air Quality'
+  };
+
+  const DEFAULT_MOON_PHASE_KEY = 'new-moon';
+  const MOON_PHASE_NAME_MAP = {
+    'new moon': 'new-moon',
+    'waxing crescent': 'waxing-crescent',
+    'first quarter': 'first-quarter',
+    'waxing gibbous': 'waxing-gibbous',
+    'full moon': 'full-moon',
+    'waning gibbous': 'waning-gibbous',
+    'last quarter': 'last-quarter',
+    'third quarter': 'last-quarter',
+    'waning crescent': 'waning-crescent'
   };
 
   let ambientRotation = {
@@ -740,9 +753,9 @@
   function buildSolarSunCard(data) {
     const solar = data.solar || {};
     const sun = data.sun || {};
+    const moon = sun.moon || {};
     const uvIndex = toNumber(solar.uvIndex);
     const solarRadiation = toNumber(solar.solarRadiationWm2); // Support multiple keys
-    const lightLux = toNumber(sun.illuminanceLux ?? sun.lightLux ?? solar.illuminanceLux);
 
     const now = parseDateTime(data.metadata?.generatedAt);
     const sunrise = parseDateTime(sun.sunrise);
@@ -751,6 +764,24 @@
     const progress = sunProgress(sun, now);
     const isDay = progress >= 0 && progress <= 1;
     const dayNightClass = isDay ? 'is-day' : 'is-night';
+
+    const moonPhaseKey = normalizeMoonPhaseKey(moon) || DEFAULT_MOON_PHASE_KEY;
+    const moonPhaseName = moon.phase || 'Unknown';
+    const moonHemisphere = (moon.hemisphere || '').toLowerCase() === 'southern' ? 'southern' : 'northern';
+    const illuminationPercent = (() => {
+      const percent = toNumber(moon.illuminationPercent);
+      if (Number.isFinite(percent)) return percent;
+      const fraction = toNumber(moon.illuminationFraction);
+      if (Number.isFinite(fraction)) return fraction * 100;
+      return NaN;
+    })();
+    const illuminationText = Number.isFinite(illuminationPercent) ? formatPercent(illuminationPercent, 0) : '--';
+    const moonAriaParts = [];
+    if (moonPhaseName && moonPhaseName !== 'Unknown') moonAriaParts.push(moonPhaseName);
+    if (Number.isFinite(illuminationPercent)) moonAriaParts.push(`${illuminationPercent.toFixed(0)}% illuminated`);
+    const moonAriaLabel = moonAriaParts.length ? `Moon phase: ${moonAriaParts.join(', ')}` : 'Moon phase unavailable';
+
+    const moonIconClass = `wdash-moon-icon${moonHemisphere === 'southern' ? ' is-southern' : ''}`;
 
     // Unified geometry for the arc and sun path, all within the SVG's viewBox
     // A 150-degree arc (210 to 330) with padding so the sun marker doesn't clip.
@@ -768,8 +799,8 @@
     const uvStyle = `left: ${35 / 2}%; top: ${28}%;`;
     // Solar (center)
     const solarStyle = `left: ${100 / 2}%; top: ${45}%;`;
-    // Illuminance (upper right)
-    const illuminanceStyle = `left: ${165 / 2}%; top: ${28}%;`;
+    // Moon phase (upper right)
+    const moonStyle = `left: ${165 / 2}%; top: ${28}%;`;
 
     // --- Time Label Positioning ---
     const sunriseStyle = `left: ${startPoint.x / 2}%; top: ${startPoint.y}%`;
@@ -777,7 +808,7 @@
 
     return `
       <section class="wdash-card wdash-card--solar">
-        ${cardHeader(CARD_TITLES.solarSun, data)}
+        ${cardHeader(CARD_TITLES.sunMoon, data)}
         <div class="wdash-solar">
           <div class="wdash-sun-graphic">
             <svg class="wdash-sun-svg" viewBox="0 0 200 100">
@@ -801,9 +832,12 @@
               <div class="wdash-sun-metric-label">Solar</div>
               <div class="wdash-sun-metric-value">${Number.isFinite(solarRadiation) ? formatNumber(solarRadiation, 0) : '--'} <span class="wdash-sun-metric-unit">W/m²</span></div>
             </div>
-            <div class="wdash-sun-html-metric" style="${illuminanceStyle}">
-              <div class="wdash-sun-metric-label">Illuminance</div>
-              <div class="wdash-sun-metric-value">${Number.isFinite(lightLux) ? formatNumber(lightLux, 0) : '--'} <span class="wdash-sun-metric-unit">lux</span></div>
+            <div class="wdash-sun-html-metric wdash-sun-html-metric--moon" style="${moonStyle}">
+              <div class="${moonIconClass}" data-phase="${moonPhaseKey}" role="img" aria-label="${escapeHtml(moonAriaLabel)}"></div>
+              <div class="wdash-moon-label">
+                <div class="wdash-moon-phase-name">${escapeHtml(moonPhaseName)}</div>
+                <div class="wdash-moon-illumination">${illuminationText}</div>
+              </div>
             </div>
             <!-- Time Labels (HTML) -->
             <div class="wdash-sun-time wdash-sun-time--rise" style="${sunriseStyle}">
@@ -1741,6 +1775,27 @@
 .wdash-sun-metric-label { font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #8ea0c8; }
 .wdash-sun-metric-value { font-size: 0.8rem; font-weight: 600; color: #f4f6ff; }
 .wdash-sun-metric-unit { opacity: 0.8; }
+.wdash-sun-html-metric--moon { gap: 6px; }
+.wdash-moon-icon { width: 16px; height: 16px; border-radius: 50%; background: #050913; box-shadow: inset 0 0 6px rgba(0,0,0,0.65); position: relative; display: inline-block; transform-origin: center; }
+.wdash-moon-icon::after, .wdash-moon-icon::before { content: ''; position: absolute; inset: 0; border-radius: 50%; }
+.wdash-moon-icon::after { background: radial-gradient(circle at 50% 40%, #f7f9ff 0%, #e4ecff 60%, #cad5ff 100%); opacity: 0; }
+.wdash-moon-icon::before { background: radial-gradient(circle at 50% 60%, rgba(0,0,0,0.4) 0%, rgba(0,0,0,0.75) 65%, rgba(0,0,0,0.9) 100%); opacity: 0; }
+.wdash-moon-icon[data-phase='full-moon']::after { opacity: 1; clip-path: inset(0 0 0 0 round 50%); }
+.wdash-moon-icon[data-phase='new-moon']::after { opacity: 0; }
+.wdash-moon-icon[data-phase='first-quarter']::after { opacity: 1; clip-path: inset(0 0 0 50% round 50%); }
+.wdash-moon-icon[data-phase='last-quarter']::after { opacity: 1; clip-path: inset(0 50% 0 0 round 50%); }
+.wdash-moon-icon[data-phase='waxing-crescent']::after { opacity: 1; clip-path: ellipse(35% 48% at 70% 50%); }
+.wdash-moon-icon[data-phase='waning-crescent']::after { opacity: 1; clip-path: ellipse(35% 48% at 30% 50%); }
+.wdash-moon-icon[data-phase='waxing-gibbous']::after { opacity: 1; clip-path: ellipse(70% 48% at 60% 50%); }
+.wdash-moon-icon[data-phase='waning-gibbous']::after { opacity: 1; clip-path: ellipse(70% 48% at 40% 50%); }
+.wdash-moon-icon[data-phase='waxing-gibbous']::before,
+.wdash-moon-icon[data-phase='waning-gibbous']::before { opacity: 0.7; clip-path: ellipse(55% 48% at 50% 50%); }
+.wdash-moon-icon[data-phase='waxing-crescent']::before,
+.wdash-moon-icon[data-phase='waning-crescent']::before { opacity: 0.5; clip-path: ellipse(40% 48% at 50% 50%); }
+.wdash-moon-icon.is-southern { transform: scaleX(-1); }
+.wdash-moon-label { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.wdash-moon-phase-name { font-size: 0.74rem; font-weight: 600; color: #f4f6ff; white-space: nowrap; }
+.wdash-moon-illumination { font-size: 0.64rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: #8ea0c8; }
 .wdash-sun-time { position: absolute; font-size: 0.8rem; font-weight: 600; color: #c9d8ff; transform: translate(-50%, 8px); white-space: nowrap; }
 .wdash-sun-time--rise { /* Positioned by inline style */ }
 .wdash-sun-time--set { /* Positioned by inline style */ }
@@ -1829,6 +1884,20 @@
     const elapsed = now.getTime() - sunrise.getTime();
     // Return the raw progress, which can be < 0 or > 1
     return elapsed / total;
+  }
+
+  function normalizeMoonPhaseKey(moon) {
+    if (!moon || typeof moon !== 'object') return null;
+    if (typeof moon.phaseKey === 'string' && moon.phaseKey.trim().length) {
+      return moon.phaseKey.trim().toLowerCase();
+    }
+    if (typeof moon.phase === 'string' && moon.phase.trim().length) {
+      const normalized = moon.phase.trim().toLowerCase();
+      if (MOON_PHASE_NAME_MAP[normalized]) return MOON_PHASE_NAME_MAP[normalized];
+      const slug = normalized.replace(/[^a-z]+/g, '-').replace(/^-+|-+$/g, '');
+      return slug || null;
+    }
+    return null;
   }
 
   function getPointOnArc(arc, progress) {
