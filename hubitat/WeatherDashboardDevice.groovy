@@ -101,6 +101,7 @@ private String timestamp() {
 
 @Field static final Integer MAX_EVENT_VALUE_LENGTH = 1024
 @Field static final Integer CHUNK_OVERHEAD = 120
+@Field static final Integer CHUNK_SEQUENCE_MAX = 1679615 // base-36 'zzzz'
 
 private List<String> chunkPayload(String json) {
     if (!json) return []
@@ -120,6 +121,7 @@ private List<String> chunkPayload(String json) {
     }
     def chunkCount = allSlices.size()
 
+    def fingerprint = generateChunkFingerprint(json)
     def chunks = []
     allSlices.eachWithIndex { slice, i ->
         def index = i + 1
@@ -127,6 +129,7 @@ private List<String> chunkPayload(String json) {
             chunkNamespace: "weather-dashboard",
             chunkIndex: index,
             chunkCount: chunkCount,
+            chunkFingerprint: fingerprint,
             chunkData: slice
         ])
         if (chunk.size() > MAX_EVENT_VALUE_LENGTH) {
@@ -136,6 +139,32 @@ private List<String> chunkPayload(String json) {
     }
 
     return chunks
+}
+
+private String generateChunkFingerprint(String json) {
+    if (!json) return null
+    def timestamp = now()
+    def sequence = nextChunkSequence()
+    def length = json.size()
+    try {
+        def ts = Long.toString(timestamp, 36)
+        def seq = Integer.toString(sequence, 36)
+        def len = Integer.toString(length, 36)
+        return "${ts}-${seq}-${len}"
+    } catch (Exception ex) {
+        log.warn "Unable to encode chunk fingerprint: ${ex.message}"
+        return "${timestamp}-${sequence}-${length}"
+    }
+}
+
+private Integer nextChunkSequence() {
+    def current = (state?.chunkSequence ?: 0) as Integer
+    def next = current + 1
+    if (next > CHUNK_SEQUENCE_MAX) {
+        next = 1
+    }
+    state.chunkSequence = next
+    return next
 }
 
 private String buildSafeSlice(String json, int offset) {
