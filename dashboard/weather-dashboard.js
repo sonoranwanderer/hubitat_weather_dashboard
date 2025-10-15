@@ -607,9 +607,9 @@
     const relative = escapeHtml(formatPressure(pressure.relativeInHg));
     const absolute = escapeHtml(formatPressure(pressure.absoluteInHg));
     const stats = [
-      { label: 'Tendency', value: escapeHtml(trend) },
-      { label: 'Rate', value: escapeHtml(formatSigned(rate, 3, 'inHg/hr')) },
-      { label: 'Change', value: escapeHtml(formatSigned(change, 3, 'inHg')) }
+      { label: 'Tendency', value: trend },
+      { label: 'Rate', value: formatSigned(rate, 3, 'inHg/hr') },
+      { label: 'Change', value: formatSigned(change, 3, 'inHg') }
     ];
 
     return `
