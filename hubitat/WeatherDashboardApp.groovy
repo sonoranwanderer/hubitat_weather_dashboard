@@ -24,31 +24,6 @@ definition(
 )
 
 @Field final TimeZone UTC_ZONE = TimeZone.getTimeZone('UTC')
-@Field final double SYNODIC_MONTH_DAYS = 29.530588853D
-@Field final long MILLIS_PER_DAY = 86_400_000L
-@Field final double TWO_PI = Math.PI * 2D
-@Field final long KNOWN_NEW_MOON_MS = {
-    Calendar cal = Calendar.getInstance(UTC_ZONE)
-    cal.set(Calendar.YEAR, 2000)
-    cal.set(Calendar.MONTH, Calendar.JANUARY)
-    cal.set(Calendar.DAY_OF_MONTH, 6)
-    cal.set(Calendar.HOUR_OF_DAY, 18)
-    cal.set(Calendar.MINUTE, 14)
-    cal.set(Calendar.SECOND, 0)
-    cal.set(Calendar.MILLISECOND, 0)
-    cal.timeInMillis
-}()
-@Field final List<Map> MOON_PHASE_BOUNDS = [
-    [limit: 1.84566D, key: 'new-moon', name: 'New Moon'],
-    [limit: 5.53699D, key: 'waxing-crescent', name: 'Waxing Crescent'],
-    [limit: 9.22831D, key: 'first-quarter', name: 'First Quarter'],
-    [limit: 12.91963D, key: 'waxing-gibbous', name: 'Waxing Gibbous'],
-    [limit: 16.61096D, key: 'full-moon', name: 'Full Moon'],
-    [limit: 20.30228D, key: 'waning-gibbous', name: 'Waning Gibbous'],
-    [limit: 23.99361D, key: 'last-quarter', name: 'Last Quarter'],
-    [limit: 27.68493D, key: 'waning-crescent', name: 'Waning Crescent'],
-    [limit: SYNODIC_MONTH_DAYS + 0.0001D, key: 'new-moon', name: 'New Moon']
-]
 
 preferences {
     page(name: "mainPage", title: "Weather Dashboard", install: true, uninstall: true)
@@ -912,26 +887,57 @@ private Map computeOutlook(BigDecimal pressure, BigDecimal rate, BigDecimal humi
 private Map computeMoonPhase(Date reference, TimeZone tz, BigDecimal latitude, BigDecimal longitude) {
     if (!reference) return null
 
+    final long millisPerDay = 86_400_000L
+    final double twoPi = Math.PI * 2D
+    final double synodicMonthDays = 29.530588853D
+
     TimeZone zone = tz ?: UTC_ZONE
     long millis = reference.time
     long utcMillis = millis - zone.getOffset(millis)
-    double daysSince = (utcMillis - KNOWN_NEW_MOON_MS) / (double) MILLIS_PER_DAY
+
+    Calendar cal = Calendar.getInstance(UTC_ZONE)
+    cal.set(Calendar.YEAR, 2000)
+    cal.set(Calendar.MONTH, Calendar.JANUARY)
+    cal.set(Calendar.DAY_OF_MONTH, 6)
+    cal.set(Calendar.HOUR_OF_DAY, 18)
+    cal.set(Calendar.MINUTE, 14)
+    cal.set(Calendar.SECOND, 0)
+    cal.set(Calendar.MILLISECOND, 0)
+    long knownNewMoonMs = cal.timeInMillis
+
+    double daysSince = (utcMillis - knownNewMoonMs) / (double) millisPerDay
     if (!Double.isFinite(daysSince)) return null
 
-    double phaseDays = daysSince % SYNODIC_MONTH_DAYS
+    double phaseDays = daysSince % synodicMonthDays
     if (phaseDays < 0) {
-        phaseDays += SYNODIC_MONTH_DAYS
+        phaseDays += synodicMonthDays
     }
 
-    double phaseFraction = phaseDays / SYNODIC_MONTH_DAYS
-    double illumination = 0.5D * (1 - Math.cos(TWO_PI * phaseFraction))
+    double phaseFraction = phaseDays / synodicMonthDays
+    double illumination = 0.5D * (1 - Math.cos(twoPi * phaseFraction))
     double phaseAngle = (phaseFraction * 360.0D) % 360.0D
     if (phaseAngle < 0) {
         phaseAngle += 360.0D
     }
 
     boolean waxing = phaseFraction < 0.5D
-    def phaseDef = MOON_PHASE_BOUNDS.find { phaseDays < (it.limit as double) } ?: MOON_PHASE_BOUNDS[-1]
+
+    List phaseBounds = [
+        [limit: 1.84566D, key: 'new-moon', name: 'New Moon'],
+        [limit: 5.53699D, key: 'waxing-crescent', name: 'Waxing Crescent'],
+        [limit: 9.22831D, key: 'first-quarter', name: 'First Quarter'],
+        [limit: 12.91963D, key: 'waxing-gibbous', name: 'Waxing Gibbous'],
+        [limit: 16.61096D, key: 'full-moon', name: 'Full Moon'],
+        [limit: 20.30228D, key: 'waning-gibbous', name: 'Waning Gibbous'],
+        [limit: 23.99361D, key: 'last-quarter', name: 'Last Quarter'],
+        [limit: 27.68493D, key: 'waning-crescent', name: 'Waning Crescent'],
+        [limit: synodicMonthDays + 0.0001D, key: 'new-moon', name: 'New Moon']
+    ]
+
+    def phaseDef = phaseBounds.find { phaseDays < (it.limit as double) }
+    if (!phaseDef) {
+        phaseDef = phaseBounds[phaseBounds.size() - 1]
+    }
 
     def result = [
         phase              : phaseDef.name,
