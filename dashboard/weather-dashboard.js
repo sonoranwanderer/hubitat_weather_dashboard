@@ -1110,6 +1110,43 @@
       return;
     }
 
+    const dateEl = target.querySelector('[data-hub-clock-date]');
+    const timeEl = target.querySelector('[data-hub-clock-time]');
+    const meridiemEl = target.querySelector('[data-hub-clock-meridiem]');
+    const hasSegmentTargets = !!(dateEl || timeEl || meridiemEl);
+
+    if (hasSegmentTargets) {
+      if (hubClockState.mode === 'clock') {
+        const clockText = formatHubClock(parts) || '';
+        if (force || clockText !== hubClockState.lastText) {
+          if (timeEl) timeEl.textContent = clockText;
+          if (dateEl) dateEl.textContent = '';
+          if (meridiemEl) meridiemEl.textContent = '';
+          hubClockState.lastText = clockText;
+        }
+        return;
+      }
+
+      const dateText = formatHubDateFromParts(parts) || '';
+      const segments = clockSegmentsFromParts(parts);
+      if (!segments) {
+        const fallbackText = formatHubDateTime(parts) || hubClockState.fallbackLabel || '';
+        if (force || fallbackText !== hubClockState.lastText) {
+          target.textContent = fallbackText;
+          hubClockState.lastText = fallbackText;
+        }
+        return;
+      }
+      const assembled = dateText ? `${dateText}, ${segments.text}` : segments.text;
+      if (force || assembled !== hubClockState.lastText) {
+        if (dateEl) dateEl.textContent = dateText;
+        if (timeEl) timeEl.textContent = segments.time;
+        if (meridiemEl) meridiemEl.textContent = segments.meridiem;
+        hubClockState.lastText = assembled;
+      }
+      return;
+    }
+
     const text = hubClockState.mode === 'clock'
       ? formatHubClock(parts)
       : formatHubDateTime(parts);
@@ -1806,9 +1843,35 @@
       }
     }
     const attrText = spanAttributes.length ? ' ' + spanAttributes.join(' ') : '';
-    const updatedLines = [
-      `<span class="wdash-updated-line wdash-updated-line--primary"${attrText}>${escapeHtml(label)}</span>`
-    ];
+    let primaryLineHtml = `<span class="wdash-updated-line wdash-updated-line--primary"${attrText}>${escapeHtml(label)}</span>`;
+    if (clock && clock !== false) {
+      const candidateSources = [];
+      if (clock.source) candidateSources.push(clock.source);
+      if (data?.metadata?.weatherStationTime) candidateSources.push(data.metadata.weatherStationTime);
+      if (data?.metadata?.generatedAt) candidateSources.push(data.metadata.generatedAt);
+      let parsedSource = null;
+      for (const source of candidateSources) {
+        const parsed = parseIsoDateParts(source);
+        if (parsed && parsed.hasTime) {
+          parsedSource = parsed;
+          break;
+        }
+      }
+      if (parsedSource) {
+        const dateText = formatHubDateFromParts(parsedSource);
+        const clockSegments = clockSegmentsFromParts(parsedSource);
+        if (dateText && clockSegments) {
+          primaryLineHtml = [
+            `<span class="wdash-updated-line wdash-updated-line--primary"${attrText}>`,
+            `<span class="wdash-clock-date" data-hub-clock-date="true">${escapeHtml(dateText)}</span>, `,
+            `<span class="wdash-clock-time" data-hub-clock-time="true">${escapeHtml(clockSegments.time)}</span> `,
+            `<span class="wdash-clock-meridiem" data-hub-clock-meridiem="true">${escapeHtml(clockSegments.meridiem)}</span>`,
+            `</span>`
+          ].join('');
+        }
+      }
+    }
+    const updatedLines = [primaryLineHtml];
     if (timezoneLabel) {
       updatedLines.push(`<span class="wdash-updated-line wdash-updated-line--secondary" data-hub-clock-timezone="true">${escapeHtml(timezoneLabel)}</span>`);
     }
@@ -2048,6 +2111,7 @@
 .wdash-updated { display: inline-flex; flex-direction: column; align-items: flex-end; text-align: right; gap: 2px; }
 .wdash-updated-line { font-size: 0.68rem; opacity: 0.7; line-height: 1.2; white-space: nowrap; }
 .wdash-updated-line--secondary { font-size: 0.62rem; opacity: 0.6; }
+.wdash-clock-time { font-family: 'SFMono-Regular', 'Roboto Mono', 'Menlo', 'Courier New', monospace; font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
 .wdash-card--temp-wind { grid-area: temp-wind; gap: 6px; padding-bottom: 10px; }
 .wdash-card--ambient { grid-area: ambient; gap: 6px; padding-bottom: 10px; }
 .wdash-card--rain { grid-area: rain; }
@@ -2510,18 +2574,13 @@
     };
   }
 
-  function formatHubClock(value) {
-    const parts = value && typeof value === 'object' && 'hour' in value
-      ? value
-      : parseIsoDateParts(value);
-    if (!parts || !parts.hasTime) {
-      return value != null ? String(value) : '';
-    }
+  function clockSegmentsFromParts(parts) {
+    if (!parts || !parts.hasTime) return null;
     const hour = Number(parts.hour);
     const minute = Number(parts.minute);
     const second = Number(parts.second);
     if (!Number.isFinite(hour) || !Number.isFinite(minute)) {
-      return parts.original || (value != null ? String(value) : '');
+      return null;
     }
     const normalizedHour = ((Math.floor(hour) % 24) + 24) % 24;
     const normalizedMinute = Math.max(0, Math.min(59, Math.floor(minute)));
@@ -2531,7 +2590,22 @@
     const hourStr = String(hour12).padStart(2, '0');
     const minuteStr = String(normalizedMinute).padStart(2, '0');
     const secondStr = String(normalizedSecond).padStart(2, '0');
-    return `${hourStr}:${minuteStr}:${secondStr} ${meridiem}`;
+    const time = `${hourStr}:${minuteStr}:${secondStr}`;
+    return { time, meridiem, text: `${time} ${meridiem}` };
+  }
+
+  function formatHubClock(value) {
+    const parts = value && typeof value === 'object' && 'hour' in value
+      ? value
+      : parseIsoDateParts(value);
+    if (!parts || !parts.hasTime) {
+      return value != null ? String(value) : '';
+    }
+    const segments = clockSegmentsFromParts(parts);
+    if (!segments) {
+      return parts.original || (value != null ? String(value) : '');
+    }
+    return segments.text;
   }
 
   function formatHubDateFromParts(parts) {
