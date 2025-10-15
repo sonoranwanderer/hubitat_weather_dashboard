@@ -2120,15 +2120,15 @@
 .wdash-updated-line { font-size: 0.68rem; opacity: 0.7; line-height: 1.2; white-space: nowrap; }
 .wdash-updated-line--secondary { font-size: 0.62rem; opacity: 0.6; }
 .wdash-clock-time { font-family: 'SFMono-Regular', 'Roboto Mono', 'Menlo', 'Courier New', monospace; font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
-.wdash-card--temp-wind { grid-area: temp-wind; gap: 6px; padding-bottom: 10px; }
-.wdash-card--ambient { grid-area: ambient; gap: 6px; padding-bottom: 10px; }
+.wdash-card--temp-wind { grid-area: temp-wind; gap: 4px; padding-bottom: 6px; }
+.wdash-card--ambient { grid-area: ambient; gap: 4px; padding-bottom: 6px; }
 .wdash-card--rain { grid-area: rain; }
 .wdash-card--pressure { grid-area: pressure; }
 .wdash-card--solar { grid-area: solar; gap: 6px; padding-bottom: 10px; }
-.wdash-card--air { grid-area: air; gap: 6px; padding-bottom: 10px; }
+.wdash-card--air { grid-area: air; gap: 4px; padding-bottom: 6px; }
 .wdash-temp, .wdash-wind, .wdash-solar, .wdash-pressure { display: flex; flex-direction: column; gap: 10px; flex: 1; }
 .wdash-pressure { gap: 10px; }
-.wdash-temp-wind-main { display: flex; gap: 14px; flex: 1; }
+.wdash-temp-wind-main { display: flex; gap: 12px; flex: 0 0 auto; }
 .wdash-temp-wind-main > .wdash-temp, .wdash-temp-wind-main > .wdash-wind { flex: 1; }
 .wdash-temp-wind-details { display: flex; justify-content: space-between; gap: 12px; }
 .wdash-card--temp-wind .wdash-temp-wind-main { padding-top: 2px; }
@@ -2180,7 +2180,7 @@
 .wdash-compass-arrow--avg path { fill: none; stroke: rgba(208,213,220,0.95); stroke-width: 1.0; }
 .wdash-compass-avg { pointer-events: none; }
 .wdash-compass-current { pointer-events: none; }
-.wdash-ambient { display: flex; flex-direction: column; gap: 10px; flex: 1; /* ambient ring defaults (viewBox units) */ --ambient-ring-r: 45; --ambient-ring-stroke: 10; }
+.wdash-ambient { display: flex; flex-direction: column; gap: 8px; flex: 0 0 auto; /* ambient ring defaults (viewBox units) */ --ambient-ring-r: 45; --ambient-ring-stroke: 10; }
 .wdash-ambient-circles { display: flex; gap: 12px; justify-content: center; }
 .wdash-ambient-circle { flex: 0 0 130px; width: 130px; aspect-ratio: 1; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: #fff; font-weight: 600; box-shadow: 0 10px 22px rgba(4,9,20,0.4); text-align: center; padding: 12px; position: relative; background: transparent; }
 .wdash-ambient-svg { position: absolute; inset: 4px; width: calc(100% - 8px); height: calc(100% - 8px); z-index: 1; pointer-events: none; }
@@ -2282,7 +2282,8 @@
 .wdash-sun-time { position: absolute; font-size: 0.8rem; font-weight: 600; color: #c9d8ff; transform: translate(-50%, 8px); white-space: nowrap; }
 .wdash-sun-time--rise { /* Positioned by inline style */ }
 .wdash-sun-time--set { /* Positioned by inline style */ }
-.wdash-air-metrics .wdash-metric { flex: 1 1 calc(25% - 10px); }
+.wdash-air-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-rows: minmax(0, 1fr); gap: 8px 10px; align-content: start; }
+.wdash-air-metrics .wdash-metric { flex: unset; min-height: 0; width: 100%; height: 100%; }
 .wdash-air-metrics .wdash-metric-value { font-size: 1.02rem; }
 .wdash-air-metrics .wdash-metric--placeholder { visibility: hidden; pointer-events: none; }
 @media (max-width: 1100px) {
