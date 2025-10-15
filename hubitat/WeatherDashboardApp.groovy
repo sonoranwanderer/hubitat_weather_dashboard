@@ -607,6 +607,9 @@ def refreshWeatherData() {
         generatedAt: generated.format("yyyy-MM-dd'T'HH:mm:ssXXX", tz),
         sourceDevices: devices.collect { dev -> [id: dev.id, name: dev.displayName] }
     ]
+    if (tz) {
+        metadata.weatherStationTimezone = tz?.ID
+    }
     if (stationUpdatedAt) {
         metadata.weatherStationTime = stationUpdatedAt
     }

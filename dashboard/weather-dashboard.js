@@ -128,13 +128,15 @@
     timer: null,
     target: null,
     baseUtc: null,
-    offsetMs: 0,
-    baseMonotonic: null,
+    deltaUtcMs: null,
+    offsetMinutes: null,
+    zone: null,
     mode: 'datetime',
     fallbackLabel: '',
     lastText: null,
     sourceParts: null
   };
+  const hubClockFormatterCache = new Map();
 
   // remember last shown humidity per sensor (keyed by sensor name when available)
   const ambientLastHumidity = new Map();
@@ -965,6 +967,9 @@
     }
 
     const dataset = target.dataset || {};
+    const zone = data?.metadata?.weatherStationTimezone
+      || dataset.hubClockZone
+      || null;
     const isoSource = data?.metadata?.weatherStationTime
       || data?.metadata?.generatedAt
       || dataset.hubClockSource
@@ -998,6 +1003,8 @@
       return;
     }
 
+    const offsetMinutes = determineHubClockOffsetMinutes(baseUtc, parts, zone);
+
     if (hubClockState.timer) {
       clearInterval(hubClockState.timer);
       hubClockState.timer = null;
@@ -1008,10 +1015,16 @@
     if (target.dataset) {
       target.dataset.hubClockSource = String(isoSource);
       target.dataset.hubClockMode = hubClockState.mode;
+      if (zone) {
+        target.dataset.hubClockZone = zone;
+      } else if ('hubClockZone' in target.dataset) {
+        delete target.dataset.hubClockZone;
+      }
     }
     hubClockState.baseUtc = baseUtc;
-    hubClockState.offsetMs = Number.isFinite(parts.offsetMinutes) ? parts.offsetMinutes * 60000 : 0;
-    hubClockState.baseMonotonic = Date.now();
+    hubClockState.deltaUtcMs = baseUtc - Date.now();
+    hubClockState.offsetMinutes = Number.isFinite(offsetMinutes) ? offsetMinutes : null;
+    hubClockState.zone = zone;
     hubClockState.sourceParts = {
       year: Number(parts.year),
       month: Number(parts.month),
@@ -1019,7 +1032,7 @@
       hour: Number.isFinite(parts.hour) ? Number(parts.hour) : 0,
       minute: Number.isFinite(parts.minute) ? Number(parts.minute) : 0,
       second: Number.isFinite(parts.second) ? Number(parts.second) : 0,
-      offsetMinutes: Number.isFinite(parts.offsetMinutes) ? Number(parts.offsetMinutes) : null,
+      offsetMinutes: Number.isFinite(offsetMinutes) ? Number(offsetMinutes) : null,
       hasTime: !!parts.hasTime
     };
     hubClockState.fallbackLabel = fallbackLabel;
@@ -1036,8 +1049,9 @@
     }
     hubClockState.target = null;
     hubClockState.baseUtc = null;
-    hubClockState.offsetMs = 0;
-    hubClockState.baseMonotonic = null;
+    hubClockState.deltaUtcMs = null;
+    hubClockState.offsetMinutes = null;
+    hubClockState.zone = null;
     hubClockState.mode = 'datetime';
     hubClockState.fallbackLabel = '';
     hubClockState.lastText = null;
@@ -1058,11 +1072,7 @@
       return;
     }
 
-    const now = Date.now();
-    const base = hubClockState.baseMonotonic != null ? hubClockState.baseMonotonic : now;
-    const elapsedMs = Math.max(0, now - base);
-    const elapsedSeconds = Math.floor(elapsedMs / 1000);
-    const parts = computeHubClockParts(elapsedSeconds);
+    const parts = computeHubClockParts();
     if (!parts) {
       target.textContent = hubClockState.fallbackLabel || '';
       return;
@@ -1079,15 +1089,24 @@
     }
   }
 
-  function computeHubClockParts(elapsedSeconds) {
-    if (!Number.isFinite(hubClockState.baseUtc) || !hubClockState.sourceParts) {
+  function computeHubClockParts() {
+    if (!hubClockState.sourceParts) {
       return null;
     }
-    const deltaMs = Number.isFinite(elapsedSeconds) ? elapsedSeconds * 1000 : 0;
-    const newUtc = hubClockState.baseUtc + deltaMs;
-    if (!Number.isFinite(newUtc)) return null;
-    const localMs = newUtc + (Number.isFinite(hubClockState.offsetMs) ? hubClockState.offsetMs : 0);
-    const date = new Date(localMs);
+    const utcMs = (() => {
+      if (Number.isFinite(hubClockState.deltaUtcMs)) {
+        return Date.now() + hubClockState.deltaUtcMs;
+      }
+      if (Number.isFinite(hubClockState.baseUtc)) {
+        return hubClockState.baseUtc;
+      }
+      return NaN;
+    })();
+    if (!Number.isFinite(utcMs)) return null;
+
+    const offsetMinutes = getHubClockOffsetMinutes(utcMs);
+    const offsetMs = Number.isFinite(offsetMinutes) ? offsetMinutes * 60000 : 0;
+    const date = new Date(utcMs + offsetMs);
     if (isNaN(date)) return null;
 
     const hasTime = !!hubClockState.sourceParts.hasTime;
@@ -1099,10 +1118,42 @@
       minute: hasTime ? date.getUTCMinutes() : null,
       second: hasTime ? date.getUTCSeconds() : null,
       hasTime,
-      offsetMinutes: Number.isFinite(hubClockState.sourceParts.offsetMinutes)
-        ? hubClockState.sourceParts.offsetMinutes
-        : null
+      offsetMinutes: Number.isFinite(offsetMinutes) ? offsetMinutes : null
     };
+  }
+
+  function getHubClockOffsetMinutes(utcMs) {
+    if (!Number.isFinite(utcMs)) return null;
+    if (hubClockState.zone) {
+      const zoneOffset = computeTimeZoneOffsetMinutes(utcMs, hubClockState.zone);
+      if (Number.isFinite(zoneOffset)) {
+        hubClockState.offsetMinutes = zoneOffset;
+        if (hubClockState.sourceParts) {
+          hubClockState.sourceParts.offsetMinutes = zoneOffset;
+        }
+        return zoneOffset;
+      }
+    }
+    if (Number.isFinite(hubClockState.offsetMinutes)) {
+      return hubClockState.offsetMinutes;
+    }
+    if (hubClockState.sourceParts && Number.isFinite(hubClockState.sourceParts.offsetMinutes)) {
+      return hubClockState.sourceParts.offsetMinutes;
+    }
+    return null;
+  }
+
+  function determineHubClockOffsetMinutes(baseUtc, parts, zone) {
+    if (parts && Number.isFinite(parts.offsetMinutes)) {
+      return Number(parts.offsetMinutes);
+    }
+    if (zone) {
+      const zoneOffset = computeTimeZoneOffsetMinutes(baseUtc, zone);
+      if (Number.isFinite(zoneOffset)) {
+        return zoneOffset;
+      }
+    }
+    return null;
   }
 
   function hubClockPartsToUtc(parts) {
@@ -1122,6 +1173,90 @@
     if (!Number.isFinite(baseUtc)) return NaN;
     const offsetMinutes = Number.isFinite(parts.offsetMinutes) ? Number(parts.offsetMinutes) : 0;
     return baseUtc - offsetMinutes * 60000;
+  }
+
+  function computeTimeZoneOffsetMinutes(utcMs, zone) {
+    if (!Number.isFinite(utcMs) || !zone) return null;
+    if (typeof Intl === 'undefined' || typeof Intl.DateTimeFormat !== 'function') {
+      return null;
+    }
+    try {
+      const formatter = getHubClockFormatter(zone);
+      if (!formatter) return null;
+      const parts = formatter.formatToParts(new Date(utcMs));
+      const components = {};
+      for (const part of parts) {
+        switch (part.type) {
+          case 'year':
+            components.year = Number(part.value);
+            break;
+          case 'month':
+            components.month = Number(part.value);
+            break;
+          case 'day':
+            components.day = Number(part.value);
+            break;
+          case 'hour':
+            components.hour = Number(part.value);
+            break;
+          case 'minute':
+            components.minute = Number(part.value);
+            break;
+          case 'second':
+            components.second = Number(part.value);
+            break;
+          default:
+            break;
+        }
+      }
+      if (!Number.isFinite(components.year)
+        || !Number.isFinite(components.month)
+        || !Number.isFinite(components.day)) {
+        return null;
+      }
+      const hour = Number.isFinite(components.hour) ? components.hour : 0;
+      const minute = Number.isFinite(components.minute) ? components.minute : 0;
+      const second = Number.isFinite(components.second) ? components.second : 0;
+      const localizedUtc = Date.UTC(
+        components.year,
+        Math.max(0, Math.min(11, components.month - 1)),
+        Math.max(1, Math.min(31, components.day)),
+        Math.max(0, Math.min(23, hour)),
+        Math.max(0, Math.min(59, minute)),
+        Math.max(0, Math.min(59, second))
+      );
+      if (!Number.isFinite(localizedUtc)) return null;
+      const rawDiffMinutes = (localizedUtc - utcMs) / 60000;
+      if (!Number.isFinite(rawDiffMinutes)) return null;
+      const rounded = Math.round(rawDiffMinutes);
+      return Number.isFinite(rounded) ? rounded : null;
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function getHubClockFormatter(zone) {
+    if (!zone) return null;
+    if (hubClockFormatterCache.has(zone)) {
+      return hubClockFormatterCache.get(zone);
+    }
+    try {
+      const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: zone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hourCycle: 'h23'
+      });
+      hubClockFormatterCache.set(zone, formatter);
+      return formatter;
+    } catch (err) {
+      hubClockFormatterCache.set(zone, null);
+      return null;
+    }
   }
 
   // Ensure ambient SVG rings use unified sizing derived from CSS variables
