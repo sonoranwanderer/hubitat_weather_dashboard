@@ -2423,38 +2423,88 @@
     const raw = typeof value === 'string' ? value : String(value);
     const trimmed = raw.trim();
     if (!trimmed) return null;
-    const match = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T\s](\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?(Z|[+-]\d{2}:?\d{2})?)?$/);
-    if (!match) return null;
-    const year = Number(match[1]);
-    const month = Number(match[2]);
-    const day = Number(match[3]);
-    const hasTime = match[4] != null;
-    const hour = hasTime ? Number(match[4]) : null;
-    const minute = hasTime ? Number(match[5]) : null;
-    const second = hasTime && match[6] != null ? Number(match[6]) : 0;
-    let offsetMinutes = null;
-    const tzRaw = hasTime ? match[7] : null;
-    if (tzRaw) {
-      if (tzRaw === 'Z') {
-        offsetMinutes = 0;
-      } else {
-        const cleaned = tzRaw.replace(/:/g, '');
-        const sign = tzRaw.startsWith('-') ? -1 : 1;
-        const tzHour = Number(cleaned.slice(1, 3));
-        const tzMinute = Number(cleaned.slice(3, 5) || 0);
-        if (Number.isFinite(tzHour) && Number.isFinite(tzMinute)) {
-          offsetMinutes = sign * (tzHour * 60 + tzMinute);
+
+    const strictMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T\s](\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?(Z|[+-]\d{2}:?\d{2})?)?$/);
+    if (strictMatch) {
+      const year = Number(strictMatch[1]);
+      const month = Number(strictMatch[2]);
+      const day = Number(strictMatch[3]);
+      const hasTime = strictMatch[4] != null;
+      const hour = hasTime ? Number(strictMatch[4]) : null;
+      const minute = hasTime ? Number(strictMatch[5]) : null;
+      const second = hasTime && strictMatch[6] != null ? Number(strictMatch[6]) : 0;
+      let offsetMinutes = null;
+      const tzRaw = hasTime ? strictMatch[7] : null;
+      if (tzRaw) {
+        if (tzRaw === 'Z') {
+          offsetMinutes = 0;
+        } else {
+          const cleaned = tzRaw.replace(/:/g, '');
+          const sign = tzRaw.startsWith('-') ? -1 : 1;
+          const tzHour = Number(cleaned.slice(1, 3));
+          const tzMinute = Number(cleaned.slice(3, 5) || 0);
+          if (Number.isFinite(tzHour) && Number.isFinite(tzMinute)) {
+            offsetMinutes = sign * (tzHour * 60 + tzMinute);
+          }
         }
       }
+      return {
+        year,
+        month,
+        day,
+        hour,
+        minute,
+        second,
+        offsetMinutes,
+        hasTime,
+        original: trimmed
+      };
     }
+
+    const looseMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T\s](\d{1,2}):(\d{2})(?::(\d{2}))?\s*([AaPp][Mm])?)?$/);
+    if (!looseMatch) return null;
+
+    const year = Number(looseMatch[1]);
+    const month = Number(looseMatch[2]);
+    const day = Number(looseMatch[3]);
+    const hasTime = looseMatch[4] != null;
+    let hour = hasTime ? Number(looseMatch[4]) : null;
+    const minute = hasTime ? Number(looseMatch[5]) : null;
+    const second = hasTime && looseMatch[6] != null ? Number(looseMatch[6]) : 0;
+    const meridiem = looseMatch[7] ? looseMatch[7].toLowerCase() : null;
+
+    if (hasTime) {
+      if (!Number.isFinite(hour) || !Number.isFinite(minute)) {
+        return {
+          year,
+          month,
+          day,
+          hour: null,
+          minute: null,
+          second: null,
+          offsetMinutes: null,
+          hasTime: false,
+          original: trimmed
+        };
+      }
+      const normalizedHour = Math.max(0, Math.min(23, Math.floor(hour)));
+      if (meridiem === 'pm' && normalizedHour < 12) {
+        hour = normalizedHour + 12;
+      } else if (meridiem === 'am' && normalizedHour === 12) {
+        hour = 0;
+      } else {
+        hour = normalizedHour;
+      }
+    }
+
     return {
       year,
       month,
       day,
-      hour,
+      hour: hasTime ? hour : null,
       minute,
       second,
-      offsetMinutes,
+      offsetMinutes: null,
       hasTime,
       original: trimmed
     };
