@@ -636,36 +636,53 @@
     const solar = data.solar || {};
     const sun = data.sun || {};
     const uvIndex = toNumber(solar.uvIndex);
-    const solarRadiation = toNumber(solar.solarRadiationWm2);
+    const solarRadiation = toNumber(solar.solarRadiationWm2); // Support multiple keys
     const lightLux = toNumber(sun.illuminanceLux ?? sun.lightLux ?? solar.illuminanceLux);
-    const sunriseText = formatTime(sun.sunrise);
-    const sunsetText = formatTime(sun.sunset);
-    const progress = sunProgress(sun, data?.metadata?.generatedAt);
-    const progressStyle = Number.isFinite(progress) ? ` style="--sun-progress:${progress}"` : '';
+
+    const now = parseDateTime(data.metadata?.generatedAt);
+    const sunrise = parseDateTime(sun.sunrise);
+    const sunset = parseDateTime(sun.sunset);
+
+    const progress = sunProgress(sun, now);
+    const isDay = progress >= 0 && progress <= 1;
+    const dayNightClass = isDay ? 'is-day' : 'is-night';
+
+    // Unified geometry for the arc and sun path, all within the SVG's viewBox
+    const arc = { cx: 100, cy: 95, r: 95, startAngle: 180, endAngle: 360 };
+    const startPoint = getPointOnArc(arc, 0);
+    const endPoint = getPointOnArc(arc, 1);
+    const arcPath = `M ${startPoint.x} ${startPoint.y} A ${arc.r} ${arc.r} 0 0 1 ${endPoint.x} ${endPoint.y}`;
+
+    // Calculate sun's position using the same geometry and apply it as an SVG transform
+    const sunPoint = getPointOnArc(arc, progress);
+    const sunTransform = `translate(${sunPoint.x}, ${sunPoint.y})`;
 
     return `
       <section class="wdash-card wdash-card--solar">
         ${cardHeader(CARD_TITLES.solarSun, data)}
         <div class="wdash-solar">
-          <div class="wdash-sun-graphic"${progressStyle}>
-            <div class="wdash-sun-arc"></div>
-            <div class="wdash-sun-horizon"></div>
-            <div class="wdash-sun-marker"></div>
-          </div>
-          <div class="wdash-sun-times">
-            <div class="wdash-sun-time">
-              <span class="wdash-label">Sunrise</span>
-              <span class="wdash-value">${sunriseText}</span>
+          <div class="wdash-sun-graphic">
+            <svg class="wdash-sun-svg" viewBox="0 0 200 100">
+              <defs>
+                <linearGradient id="wdash-sun-gradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                  <stop offset="0%" stop-color="#ffd45a" />
+                  <stop offset="100%" stop-color="#ff9445" />
+                </linearGradient>
+              </defs>
+              <path class="wdash-sun-arc" d="${arcPath}" />
+              <g class="wdash-sun-marker ${dayNightClass}" transform="${sunTransform}">
+                <circle r="8" fill="url(#wdash-sun-gradient)" />
+              </g>
+            </svg>
+            <div class="wdash-sun-time wdash-sun-time--rise">
+              <span class="wdash-value">${formatTime(sun.sunrise)}</span>
             </div>
-            <div class="wdash-sun-time">
-              <span class="wdash-label">Sunset</span>
-              <span class="wdash-value">${sunsetText}</span>
+            <div class="wdash-sun-time wdash-sun-time--set">
+              <span class="wdash-value">${formatTime(sun.sunset)}</span>
             </div>
           </div>
           ${buildMetricRow([
-            { label: 'UV Index', value: Number.isFinite(uvIndex) ? formatNumber(uvIndex, 1) : '--' },
-            { label: 'Solar', value: Number.isFinite(solarRadiation) ? `${formatNumber(solarRadiation, 0)} W/m²` : '--' },
-            { label: 'Illuminance', value: Number.isFinite(lightLux) ? `${formatNumber(lightLux, 0)} lux` : '--' }
+            { label: 'UV Index', value: Number.isFinite(uvIndex) ? formatNumber(uvIndex, 1) : '--' }, { label: 'Solar', value: Number.isFinite(solarRadiation) ? `${formatNumber(solarRadiation, 0)} W/m²` : '--' }, { label: 'Illuminance', value: Number.isFinite(lightLux) ? `${formatNumber(lightLux, 0)} lux` : '--' }
           ], 'wdash-solar-metrics')}
         </div>
       </section>
@@ -1534,18 +1551,21 @@
 .wdash-sun-graphic { position: relative; width: 100%; aspect-ratio: 2.6 / 1; border-radius: 16px; background: radial-gradient(circle at 50% 115%, rgba(255,194,120,0.18), rgba(255,255,255,0)); overflow: hidden; }
 .wdash-sun-arc { position: absolute; inset: 16% 12% 42%; border: 2px solid rgba(255,255,255,0.25); border-bottom: none; border-radius: 100% 100% 0 0 / 100% 100% 0 0; }
 .wdash-sun-horizon { position: absolute; left: 12%; right: 12%; bottom: 42%; height: 2px; background: rgba(255,255,255,0.25); }
-.wdash-sun-marker { position: absolute; left: 50%; bottom: 42%; width: 16px; height: 16px; border-radius: 50%; background: linear-gradient(180deg, #ffd45a, #ff9445); box-shadow: 0 0 20px rgba(255,200,110,0.6); transform-origin: 50% calc(100% + 6px); transform: rotate(calc((var(--sun-progress, 0.5) * 180deg) - 90deg)) translateY(calc(-50% - 6px)); transition: transform 0.3s ease; }
-.wdash-sun-times { display: flex; justify-content: space-between; gap: 10px; text-align: center; }
-.wdash-sun-time { flex: 1; display: flex; flex-direction: column; gap: 3px; background: rgba(255,255,255,0.04); border-radius: 10px; padding: 8px 9px; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.03); }
-.wdash-sun-time .wdash-label { font-size: 0.68rem; letter-spacing: 0.08em; text-transform: uppercase; color: #8ea0c8; }
-.wdash-sun-time .wdash-value { font-size: 1.05rem; font-weight: 600; color: #f4f6ff; }
+.wdash-sun-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.wdash-sun-svg .wdash-sun-arc { fill: none; stroke: rgba(255,255,255,0.25); stroke-width: 2.5; vector-effect: non-scaling-stroke; }
+.wdash-sun-svg .wdash-sun-marker { transition: transform 0.3s ease; will-change: transform; }
+.wdash-sun-svg .wdash-sun-marker.is-night { opacity: 0; }
+.wdash-sun-svg .wdash-sun-marker circle { filter: drop-shadow(0 0 8px rgba(255,200,110,0.6)); }
+.wdash-sun-time { position: absolute; bottom: 18%; font-size: 0.8rem; font-weight: 600; color: #c9d8ff; }
+.wdash-sun-time--rise { left: 12%; transform: translateX(-50%); }
+.wdash-sun-time--set { right: 12%; transform: translateX(50%); }
 .wdash-air-metrics .wdash-metric-value { font-size: 1.02rem; }
 @media (max-width: 1100px) {
   .wdash-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: none; grid-auto-rows: minmax(260px, auto); grid-template-areas:
     "temp-wind ambient"
     "pressure rain"
     "solar air"
-    "air air"; /* This line seems redundant, but we'll keep it for now */
+    "air air";
   }
 }
 @media (max-width: 900px) {
@@ -1624,12 +1644,24 @@
     if (!sun) return null;
     const sunrise = parseDateTime(sun.sunrise);
     const sunset = parseDateTime(sun.sunset);
-    if (!sunrise || !sunset || sunset <= sunrise) return null;
-    const now = parseDateTime(sun.currentTime) || parseDateTime(referenceTime) || new Date();
+    const now = referenceTime || new Date();
+
+    if (!sunrise || !sunset || sunset <= sunrise) return -1; // Return -1 if times are invalid
+
     const total = sunset.getTime() - sunrise.getTime();
     if (total <= 0) return null;
     const elapsed = now.getTime() - sunrise.getTime();
-    return clamp(elapsed / total, 0, 1);
+    // Return the raw progress, which can be < 0 or > 1
+    return elapsed / total;
+  }
+
+  function getPointOnArc(arc, progress) {
+    const angleDeg = arc.startAngle + (arc.endAngle - arc.startAngle) * clamp(progress, 0, 1);
+    const angleRad = angleDeg * (Math.PI / 180);
+    return {
+      x: arc.cx + arc.r * Math.cos(angleRad),
+      y: arc.cy + arc.r * Math.sin(angleRad)
+    };
   }
 
   function mixColors(colorA, colorB, ratio) {
