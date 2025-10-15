@@ -6,8 +6,10 @@
  */
 
 import groovy.json.JsonOutput
+import groovy.transform.Field
 import java.math.RoundingMode
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.TimeZone
 
 definition(
@@ -20,6 +22,8 @@ definition(
     iconUrl: "https://raw.githubusercontent.com/sonoranwanderer/ecowitt_weather_hubitat_dashboard/main/assets/weather-dashboard-icon.svg",
     iconX2Url: "https://raw.githubusercontent.com/sonoranwanderer/ecowitt_weather_hubitat_dashboard/main/assets/weather-dashboard-icon.svg"
 )
+
+@Field final TimeZone UTC_ZONE = TimeZone.getTimeZone('UTC')
 
 preferences {
     page(name: "mainPage", title: "Weather Dashboard", install: true, uninstall: true)
@@ -372,7 +376,9 @@ def refreshWeatherData() {
     }
 
     def now = now()
-    def tz = location?.timeZone ?: TimeZone.getTimeZone('UTC')
+    def tz = location?.timeZone ?: UTC_ZONE
+    def latitude = location?.latitude
+    def longitude = location?.longitude
     def generated = new Date(now)
     def payload = [:]
 
@@ -555,6 +561,8 @@ def refreshWeatherData() {
     if (sunriseDate) sun.sunrise = formatDateTime(sunriseDate, tz)
     def sunsetDate = location?.sunset
     if (sunsetDate) sun.sunset = formatDateTime(sunsetDate, tz)
+    def moon = computeMoonPhase(generated, tz, latitude, longitude)
+    if (moon) sun.moon = moon
     if (sun) payload.sun = sun
 
     def lightning = [:]
@@ -874,6 +882,79 @@ private Map computeOutlook(BigDecimal pressure, BigDecimal rate, BigDecimal humi
     }
 
     [category: category, summary: summary]
+}
+
+private Map computeMoonPhase(Date reference, TimeZone tz, BigDecimal latitude, BigDecimal longitude) {
+    if (!reference) return null
+
+    final long millisPerDay = 86_400_000L
+    final double twoPi = Math.PI * 2D
+    final double synodicMonthDays = 29.530588853D
+
+    TimeZone zone = tz ?: UTC_ZONE
+    long millis = reference.time
+    long utcMillis = millis - zone.getOffset(millis)
+
+    Calendar cal = Calendar.getInstance(UTC_ZONE)
+    cal.set(Calendar.YEAR, 2000)
+    cal.set(Calendar.MONTH, Calendar.JANUARY)
+    cal.set(Calendar.DAY_OF_MONTH, 6)
+    cal.set(Calendar.HOUR_OF_DAY, 18)
+    cal.set(Calendar.MINUTE, 14)
+    cal.set(Calendar.SECOND, 0)
+    cal.set(Calendar.MILLISECOND, 0)
+    long knownNewMoonMs = cal.timeInMillis
+
+    double daysSince = (utcMillis - knownNewMoonMs) / (double) millisPerDay
+    if (!Double.isFinite(daysSince)) return null
+
+    double phaseDays = daysSince % synodicMonthDays
+    if (phaseDays < 0) {
+        phaseDays += synodicMonthDays
+    }
+
+    double phaseFraction = phaseDays / synodicMonthDays
+    double illumination = 0.5D * (1 - Math.cos(twoPi * phaseFraction))
+    double phaseAngle = (phaseFraction * 360.0D) % 360.0D
+    if (phaseAngle < 0) {
+        phaseAngle += 360.0D
+    }
+
+    boolean waxing = phaseFraction < 0.5D
+
+    List phaseBounds = [
+        [limit: 1.84566D, key: 'new-moon', name: 'New Moon'],
+        [limit: 5.53699D, key: 'waxing-crescent', name: 'Waxing Crescent'],
+        [limit: 9.22831D, key: 'first-quarter', name: 'First Quarter'],
+        [limit: 12.91963D, key: 'waxing-gibbous', name: 'Waxing Gibbous'],
+        [limit: 16.61096D, key: 'full-moon', name: 'Full Moon'],
+        [limit: 20.30228D, key: 'waning-gibbous', name: 'Waning Gibbous'],
+        [limit: 23.99361D, key: 'last-quarter', name: 'Last Quarter'],
+        [limit: 27.68493D, key: 'waning-crescent', name: 'Waning Crescent'],
+        [limit: synodicMonthDays + 0.0001D, key: 'new-moon', name: 'New Moon']
+    ]
+
+    def phaseDef = phaseBounds.find { phaseDays < (it.limit as double) }
+    if (!phaseDef) {
+        phaseDef = phaseBounds[phaseBounds.size() - 1]
+    }
+
+    def result = [
+        phase              : phaseDef.name,
+        phaseKey           : phaseDef.key,
+        ageDays            : round(phaseDays, 2),
+        illuminationFraction: round(illumination, 4),
+        illuminationPercent: round(illumination * 100.0D, 1),
+        phaseAngle         : round(phaseAngle, 2),
+        waxing             : waxing
+    ]
+
+    if (latitude != null) {
+        BigDecimal lat = latitude as BigDecimal
+        result.hemisphere = lat < 0 ? 'southern' : 'northern'
+    }
+
+    return result
 }
 
 private void updateTemperatureHistory(BigDecimal temperature, long timestamp) {
