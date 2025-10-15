@@ -100,7 +100,7 @@ private String timestamp() {
 }
 
 @Field static final Integer MAX_EVENT_VALUE_LENGTH = 1024
-@Field static final Integer CHUNK_OVERHEAD = 120
+@Field static final Integer CHUNK_COUNT_PLACEHOLDER = 99
 @Field static final Integer CHUNK_SEQUENCE_MAX = 1679615 // base-36 'zzzz'
 
 private List<String> chunkPayload(String json) {
@@ -110,39 +110,15 @@ private List<String> chunkPayload(String json) {
         return [json]
     }
 
-    // First, iterate through the entire JSON string to determine how many chunks are needed.
-    // This is a "dry run" to get the final chunkCount.
-    def slices = []
-    def offsets = []
-    def lengths = []
-    def offset = 0
-    while (offset < json.size()) {
-        def slice = buildSafeSlice(json, offset)
-        def length = slice.size()
-        slices << [data: slice, offset: offset, length: length]
-        offsets << offset
-        lengths << length
-        offset += length
-    }
-    def chunkCount = slices.size()
     def totalLength = json.size()
-
     def fingerprint = generateChunkFingerprint(json)
+    def slices = buildChunkSlices(json, fingerprint, totalLength)
+    def chunkCount = slices.size()
+
     def chunks = []
     slices.eachWithIndex { slice, i ->
         def index = i + 1
-        def chunk = JsonOutput.toJson([
-            chunkNamespace: "weather-dashboard",
-            chunkIndex: index,
-            chunkCount: chunkCount,
-            chunkFingerprint: fingerprint,
-            chunkOffset: slice.offset,
-            chunkLength: slice.length,
-            chunkTotalLength: totalLength,
-            chunkOffsets: offsets,
-            chunkLengths: lengths,
-            chunkData: slice.data
-        ])
+        def chunk = JsonOutput.toJson(buildChunkEnvelope(index, chunkCount, fingerprint, slice.offset as Integer, slice.length as Integer, totalLength, slice.data))
         if (chunk.size() > MAX_EVENT_VALUE_LENGTH) {
             log.warn "Generated chunk ${index} of ${chunkCount} is oversized (${chunk.size()} chars). This may cause dashboard errors."
         }
@@ -178,23 +154,83 @@ private Integer nextChunkSequence() {
     return next
 }
 
-private String buildSafeSlice(String json, int offset) {
-    // The base size of the JSON envelope, assuming 2-digit numbers for index/count.
-    def envelopeOverhead = '{"chunkNamespace":"weather-dashboard","chunkIndex":00,"chunkCount":00,"chunkData":""}'.size()
-    // This is the max length of the *escaped* data, not the raw data.
-    def maxEscapedLength = MAX_EVENT_VALUE_LENGTH - envelopeOverhead
+private List<Map> buildChunkSlices(String json, String fingerprint, int totalLength) {
+    def slices = []
+    int offset = 0
+    int index = 1
 
-    def builder = new StringBuilder()
-    def escapedLength = 0
-    for (int i = offset; i < json.size(); i++) {
-        def ch = json.charAt(i)
-        // Account for JSON string escaping: " becomes \" and \ becomes \\
-        def charSize = (ch == '"' || ch == '\\') ? 2 : 1
-        if (escapedLength + charSize > maxEscapedLength) break
-        builder.append(ch)
-        escapedLength += charSize
+    while (offset < totalLength) {
+        def builder = new StringBuilder()
+        int cursor = offset
+        int bestCursor = offset
+        String bestData = null
+
+        while (cursor < totalLength) {
+            builder.append(json.charAt(cursor))
+            cursor += 1
+
+            def candidateData = builder.toString()
+            def encodedLength = encodedChunkLength(index, CHUNK_COUNT_PLACEHOLDER, fingerprint, offset, candidateData.size(), totalLength, candidateData)
+            if (encodedLength <= MAX_EVENT_VALUE_LENGTH) {
+                bestData = candidateData
+                bestCursor = cursor
+            } else {
+                if (builder.length() > 0) {
+                    builder.setLength(builder.length() - 1)
+                    cursor -= 1
+                }
+                break
+            }
+        }
+
+        if (!bestData) {
+            if (builder.length() == 0 && cursor < totalLength) {
+                bestData = json.substring(offset, Math.min(offset + 1, totalLength))
+                bestCursor = offset + bestData.size()
+            } else if (builder.length() > 0) {
+                bestData = builder.toString()
+                bestCursor = cursor
+            } else {
+                break
+            }
+
+            def encodedLength = encodedChunkLength(index, CHUNK_COUNT_PLACEHOLDER, fingerprint, offset, bestData.size(), totalLength, bestData)
+            while (encodedLength > MAX_EVENT_VALUE_LENGTH && bestData.size() > 1) {
+                bestData = bestData.substring(0, bestData.size() - 1)
+                bestCursor -= 1
+                encodedLength = encodedChunkLength(index, CHUNK_COUNT_PLACEHOLDER, fingerprint, offset, bestData.size(), totalLength, bestData)
+            }
+        }
+
+        if (!bestData) {
+            break
+        }
+
+        def length = bestData.size()
+        slices << [offset: offset, length: length, data: bestData]
+        offset = bestCursor
+        index += 1
     }
-    return builder.toString()
+
+    return slices
+}
+
+private Integer encodedChunkLength(int index, int chunkCount, String fingerprint, int offset, int length, int totalLength, String data) {
+    def chunk = buildChunkEnvelope(index, chunkCount, fingerprint, offset, length, totalLength, data)
+    return JsonOutput.toJson(chunk).size()
+}
+
+private Map buildChunkEnvelope(int index, int chunkCount, String fingerprint, int offset, int length, int totalLength, String data) {
+    return [
+        chunkNamespace: "weather-dashboard",
+        chunkIndex: index,
+        chunkCount: chunkCount,
+        chunkFingerprint: fingerprint,
+        chunkOffset: offset,
+        chunkLength: length,
+        chunkTotalLength: totalLength,
+        chunkData: data
+    ]
 }
 
 private String chunkAttribute(int index) {

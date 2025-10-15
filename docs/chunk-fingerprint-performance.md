@@ -15,18 +15,16 @@ before rendering.
   payload length. All three values are already available inside the driver so
   the work is limited to a few integer additions and base-36 conversions—no
   extra passes over the JSON and no sandboxed class imports are required.【F:hubitat/WeatherDashboardDevice.groovy†L116-L167】
-* **Layout metadata.** During the first slicing pass the driver now records the
-  unescaped character offset and length for every chunk and attaches that map to
-  each envelope (`chunkOffset`, `chunkLength`, `chunkOffsets`, `chunkLengths`,
-  and `chunkTotalLength`). The bookkeeping reuses the existing slicing loop and
-  only appends a handful of integers to each JSON envelope, keeping the per-
-  chunk cost bounded well below the 1,024-character attribute limit even when
-  all ten chunk slots are used.【F:hubitat/WeatherDashboardDevice.groovy†L120-L151】
-* **Chunk size growth.** The added fields increase each envelope by roughly 80
-  bytes (two numeric properties plus two short arrays). Even with ten chunks the
-  payload expands by <1 KB, which remains inside Hubitat’s attribute ceiling and
-  does not change the number of driver allocations because the same JSON slices
-  are reused when the `sendEvent` calls fire.【F:hubitat/WeatherDashboardDevice.groovy†L120-L151】
+* **Layout metadata.** During the slicing pass the driver tracks the raw offset
+  and length for every chunk and adds those fields (`chunkOffset`, `chunkLength`,
+  and `chunkTotalLength`) to each envelope. The bookkeeping reuses the existing
+  loop and does not require extra allocations beyond a few integers per chunk,
+  so the overhead stays well within the 1,024-character attribute limit.【F:hubitat/WeatherDashboardDevice.groovy†L118-L169】
+* **Chunk size control.** Each slice is extended character by character until
+  the fully encoded JSON envelope would exceed Hubitat’s 1,024-character limit,
+  so the driver never emits an oversized event even when the payload contains
+  many escaped characters. The trimming happens inside the existing slicing loop
+  and reuses the same `sendEvent` strings, so there is no extra allocation churn.【F:hubitat/WeatherDashboardDevice.groovy†L134-L169】
 
 Overall, the Hubitat hub performs one extra O(n) pass over the payload string
 plus a small constant increase in per-chunk attribute size. Both additions are
@@ -42,10 +40,11 @@ handling overhead.
   grouping and comparison steps stay negligible next to `JSON.parse` and DOM
   updates.【F:dashboard/weather-dashboard.js†L231-L320】【F:dashboard/weather-dashboard.js†L1940-L2123】
 * **Composite assembly.** When a complete fingerprint is not yet available the
-  reader seeds a character buffer with the last successful payload and overlays
-  any newer chunk slices at the offsets published by the driver. Missing ranges
-  fall back to the cached payload, so the work is still linear in the number of
-  chunk envelopes and bounded by a few string copies before parsing.【F:dashboard/weather-dashboard.js†L2060-L2217】
+  reader seeds a character buffer with the last successful payload, derives the
+  layout by walking the available chunk metadata, and overlays newer slices at
+  those offsets. Missing ranges fall back to the cached payload, so the work
+  stays linear in the number of chunk envelopes and bounded by a few string
+  copies before parsing.【F:dashboard/weather-dashboard.js†L2056-L2230】
 * **Metadata merge.** Whether the payload comes from a complete group or a
   composite reconstruction, the script merges the chunk count, fingerprint, and
   the resolved layout map into the payload metadata via a few property

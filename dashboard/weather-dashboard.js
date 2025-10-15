@@ -1985,7 +1985,6 @@
           chunkCountMismatch: false,
           groupOrder: order,
           totalLength: toFiniteNumber(env.chunkTotalLength),
-          layout: extractChunkLayout(env),
           envelopes: []
         });
       }
@@ -2010,7 +2009,6 @@
       }
       group.chunkMap.set(env.chunkIndex, chunkInfo);
 
-      group.layout = mergeChunkLayouts(group.layout, extractChunkLayout(env));
       if (!Number.isFinite(group.totalLength) && Number.isFinite(chunkInfo.totalLength)) {
         group.totalLength = chunkInfo.totalLength;
       }
@@ -2273,101 +2271,92 @@
   }
 
   function resolveChunkLayout(target, groups) {
-    if (!target) return null;
-    const layouts = [];
-    if (target.layout) layouts.push(target.layout);
+    if (!target || !Number.isInteger(target.chunkCount) || target.chunkCount < 1) return null;
 
-    for (const group of groups.values()) {
-      if (group === target) continue;
-      if (group.chunkCount !== target.chunkCount) continue;
-      if (group.layout) layouts.push(group.layout);
-    }
-
-    const offsets = extractLayoutArrayFromCandidates(layouts, target.chunkCount, 'offsets');
-    const lengths = extractLayoutArrayFromCandidates(layouts, target.chunkCount, 'lengths');
+    const count = target.chunkCount;
+    const offsets = new Array(count).fill(null);
+    const lengths = new Array(count).fill(null);
     let totalLength = Number.isFinite(target.totalLength) ? target.totalLength : NaN;
 
-    if (!Number.isFinite(totalLength)) {
-      for (const layout of layouts) {
-        if (Number.isFinite(layout?.totalLength)) {
-          totalLength = layout.totalLength;
+    function applyGroupLayout(group) {
+      if (!group || !Number.isInteger(group.chunkCount) || group.chunkCount !== count) return;
+      if (!Number.isFinite(totalLength) && Number.isFinite(group.totalLength)) {
+        totalLength = group.totalLength;
+      }
+      if (!group.chunkMap || typeof group.chunkMap.get !== 'function') return;
+
+      for (let i = 1; i <= count; i++) {
+        const chunk = group.chunkMap.get(i);
+        if (!chunk) continue;
+
+        if (offsets[i - 1] == null) {
+          const offset = toFiniteNumber(chunk.offset);
+          if (Number.isFinite(offset)) offsets[i - 1] = offset;
+        }
+
+        if (lengths[i - 1] == null) {
+          const length = toFiniteNumber(chunk.length);
+          if (Number.isFinite(length)) lengths[i - 1] = length;
+        }
+      }
+    }
+
+    applyGroupLayout(target);
+
+    if (offsets.includes(null) || lengths.includes(null) || !Number.isFinite(totalLength)) {
+      for (const group of groups.values()) {
+        if (group === target) continue;
+        applyGroupLayout(group);
+
+        const missingOffsets = offsets.includes(null);
+        const missingLengths = lengths.includes(null);
+        const hasTotal = Number.isFinite(totalLength);
+        if (!missingOffsets && !missingLengths && hasTotal) {
           break;
         }
       }
     }
 
-    if (!offsets || !lengths) {
+    if (offsets.includes(null) || lengths.includes(null)) {
       return null;
     }
 
-    return { offsets, lengths, totalLength };
-  }
+    const normalizedOffsets = offsets.map(Number);
+    const normalizedLengths = lengths.map(Number);
 
-  function extractLayoutArrayFromCandidates(layouts, expectedCount, key) {
-    for (const layout of layouts) {
-      const array = Array.isArray(layout?.[key]) ? layout[key].slice(0, expectedCount) : null;
-      if (!array || array.length !== expectedCount) continue;
-      const normalized = array.map(toFiniteNumber);
-      if (normalized.every(Number.isFinite)) {
-        return normalized;
+    if (!Number.isFinite(totalLength)) {
+      const lastIndex = normalizedOffsets.length - 1;
+      if (lastIndex >= 0) {
+        const derivedTotal = normalizedOffsets[lastIndex] + normalizedLengths[lastIndex];
+        if (Number.isFinite(derivedTotal)) {
+          totalLength = derivedTotal;
+        }
       }
     }
-    return null;
-  }
 
-  function mergeChunkLayouts(existing, incoming) {
-    if (!incoming) return existing || null;
-    if (!existing) return cloneChunkLayout(incoming);
-
-    const offsets = chooseBetterLayoutArray(existing.offsets, incoming.offsets);
-    const lengths = chooseBetterLayoutArray(existing.lengths, incoming.lengths);
-    const totalLength = Number.isFinite(incoming.totalLength) ? incoming.totalLength : existing.totalLength;
-
-    return {
-      offsets,
-      lengths,
-      totalLength
-    };
-  }
-
-  function cloneChunkLayout(layout) {
-    if (!layout) return null;
-    return {
-      offsets: Array.isArray(layout.offsets) ? layout.offsets.slice() : null,
-      lengths: Array.isArray(layout.lengths) ? layout.lengths.slice() : null,
-      totalLength: Number.isFinite(layout.totalLength) ? layout.totalLength : NaN
-    };
-  }
-
-  function chooseBetterLayoutArray(a, b) {
-    const normA = normalizeLayoutArray(a);
-    const normB = normalizeLayoutArray(b);
-    if (normA && normB) {
-      return normB.length > normA.length ? normB : normA;
+    if (!Number.isFinite(totalLength)) {
+      const maxExtent = normalizedOffsets.reduce((max, offset, idx) => {
+        const length = normalizedLengths[idx];
+        if (!Number.isFinite(offset) || !Number.isFinite(length)) return max;
+        const end = offset + length;
+        return Number.isFinite(end) && end > max ? end : max;
+      }, -Infinity);
+      if (Number.isFinite(maxExtent) && maxExtent >= 0) {
+        totalLength = maxExtent;
+      }
     }
-    return normB || normA || null;
-  }
 
-  function normalizeLayoutArray(value) {
-    if (!Array.isArray(value)) return null;
-    const normalized = value.map(toFiniteNumber);
-    return normalized.every(Number.isFinite) ? normalized : null;
-  }
-
-  function extractChunkLayout(env) {
-    if (!env || typeof env !== 'object') return null;
-    const offsets = normalizeLayoutArray(env.chunkOffsets);
-    const lengths = normalizeLayoutArray(env.chunkLengths);
-    const totalLength = toFiniteNumber(env.chunkTotalLength);
-    if (!offsets && !lengths && !Number.isFinite(totalLength)) {
+    if (!Number.isFinite(totalLength)) {
       return null;
     }
+
     return {
-      offsets,
-      lengths,
+      offsets: normalizedOffsets,
+      lengths: normalizedLengths,
       totalLength
     };
   }
+
 
   function toFiniteNumber(value) {
     const num = Number(value);
