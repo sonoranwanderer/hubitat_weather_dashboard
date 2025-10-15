@@ -360,11 +360,15 @@
     const avgCombinedText = `${avgDirText || '--'} ${avgSpeedText}`;
     const dailyMaxGustText = Number.isFinite(dailyMaxGust) ? `${formatNumber(dailyMaxGust, 1)} mph` : '--';
 
+    const generatedAt = data.metadata?.generatedAt;
+    const relativeGenerated = generatedAt ? formatRelativeTime(generatedAt) : null;
+    const updatedLabel = relativeGenerated ? `Updated ${relativeGenerated}` : '';
+
     return `
       <section class="wdash-card wdash-card--temp-wind">
         <header class="wdash-card-header">
           <h3>Outdoor Conditions</h3>
-          <span class="wdash-updated">${escapeHtml(data.metadata?.generatedAt ? 'Updated ' + formatRelativeTime(data.metadata.generatedAt) : '')}</span>
+          <span class="wdash-updated">${escapeHtml(updatedLabel)}</span>
         </header>
         <div class="wdash-temp-wind-main">
           <div class="wdash-temp">
@@ -881,15 +885,21 @@
 
     const buttons = card.querySelectorAll('[data-pressure-mode]');
     buttons.forEach(button => {
-      button.addEventListener('click', () => {
-        const mode = button.dataset.pressureMode === 'absolute' ? 'absolute' : 'relative';
-        if (!mode || mode === pressureMode) return;
-        pressureMode = mode;
-        updatePressureCard(card);
-      });
+      if (button.dataset.pressureListenerBound === 'true') return;
+      button.addEventListener('click', handlePressureToggleClick);
+      button.dataset.pressureListenerBound = 'true';
     });
 
     updatePressureCard(card);
+  }
+
+  function handlePressureToggleClick(event) {
+    const button = event.currentTarget;
+    if (!button) return;
+    const mode = button.dataset.pressureMode === 'absolute' ? 'absolute' : 'relative';
+    if (!mode || mode === pressureMode) return;
+    pressureMode = mode;
+    updatePressureCard(button.closest('.wdash-card--pressure'));
   }
 
   function updatePressureCard(card) {
@@ -907,12 +917,17 @@
     const button = container.querySelector('.wdash-ambient-timer');
     if (!button) return;
 
-    button.addEventListener('click', () => {
-      if (ambientRotation.sensors.length <= 1) return;
-      toggleAmbientRotationPause();
-    });
+    if (button.dataset.ambientListenerBound !== 'true') {
+      button.addEventListener('click', handleAmbientToggleClick);
+      button.dataset.ambientListenerBound = 'true';
+    }
 
     updateAmbientTimerDisplay();
+  }
+
+  function handleAmbientToggleClick() {
+    if (ambientRotation.sensors.length <= 1) return;
+    toggleAmbientRotationPause();
   }
 
   function toggleAmbientRotationPause(force) {
@@ -1399,18 +1414,27 @@
     return `
       <div class="${className}"${styleAttr}>
         ${items.map(item => {
-          const hasColor = !!item.color;
-          const colorStyle = hasColor ? ` style="background-color: #${item.color.replace('#', '')};"` : '';
-          const metricClass = hasColor ? 'wdash-metric wdash-metric--tinted' : 'wdash-metric';
+          const tintColor = sanitizeHexColor(item.color);
+          const metricClass = tintColor ? 'wdash-metric wdash-metric--tinted' : 'wdash-metric';
+          const colorStyle = tintColor ? ` style="background-color: ${tintColor};"` : '';
+          const value = item.value != null ? escapeHtml(item.value) : '--';
+          const sub = item.sub != null ? escapeHtml(item.sub) : null;
           return `
           <div class="${metricClass}"${colorStyle}>
             <span class="wdash-metric-label">${escapeHtml(item.label || '')}</span>
-            <span class="wdash-metric-value">${item.value != null ? item.value : '--'}</span>
-            ${item.sub ? `<span class="wdash-metric-sub">${item.sub}</span>` : ''}
+            <span class="wdash-metric-value">${value}</span>
+            ${sub ? `<span class="wdash-metric-sub">${sub}</span>` : ''}
           </div>
         `}).join('')}
       </div>
     `;
+  }
+
+  function sanitizeHexColor(value) {
+    if (typeof value !== 'string') return null;
+    const trimmed = value.trim();
+    const match = trimmed.match(/^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/);
+    return match ? `#${match[1]}` : null;
   }
 
   function injectCSS() {
@@ -1601,8 +1625,7 @@
 }
 @media (max-width: 720px) {
   .wdash-grid { grid-template-columns: 1fr; grid-template-rows: none; grid-auto-rows: minmax(240px, auto); grid-template-areas:
-    "temp"
-    "wind"
+    "temp-wind"
     "ambient"
     "rain"
     "pressure"
