@@ -2043,8 +2043,8 @@
 .wdash-grid > * { min-height: 0; }
 .wdash-empty { width: 100%; text-align: center; font-size: 1.1rem; opacity: 0.7; }
 .wdash-card { background: linear-gradient(145deg, rgba(27,35,58,0.92), rgba(13,18,32,0.92)); border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 10px; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05); height: 100%; min-height: 0; }
-.wdash-card-header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.72rem; color: #8ea0c8; }
-.wdash-card-header h3 { margin: 0; font-size: 0.82rem; font-weight: 700; color: #c9d8ff; }
+.wdash-card-header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 0.72rem; color: #8ea0c8; }
+.wdash-card-header h3 { margin: 0; font-size: 0.82rem; font-weight: 700; color: #c9d8ff; text-transform: uppercase; letter-spacing: 0.08em; }
 .wdash-updated { display: inline-flex; flex-direction: column; align-items: flex-end; text-align: right; gap: 2px; }
 .wdash-updated-line { font-size: 0.68rem; opacity: 0.7; line-height: 1.2; white-space: nowrap; }
 .wdash-updated-line--secondary { font-size: 0.62rem; opacity: 0.6; }
