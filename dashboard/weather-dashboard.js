@@ -14,6 +14,7 @@
   const INIT_RETRY_LIMIT = 40;
   const INIT_RETRY_DELAY = 250;
   const DATA_REFRESH_INTERVAL = 5000;
+  const MAX_CHUNK_TILES = 10;
   const BASE_WIDTH = 1200;
   const BASE_HEIGHT = 900;
 
@@ -121,7 +122,11 @@
   let scaleResizeHandler = null;
   const placeholderLogged = new Set();
   let pressureMode = 'relative';
+  let lastSuccessfulPayload = null;
+  let lastSuccessfulRawPayload = null;
+  let lastSuccessfulFingerprint = null;
 
+  patchDashboardGlitches();
   whenDomReady(init);
 
   function whenDomReady(callback) {
@@ -129,6 +134,41 @@
       document.addEventListener('DOMContentLoaded', callback, { once: true });
     } else {
       callback();
+    }
+  }
+
+  function patchDashboardGlitches() {
+    if (typeof window === 'undefined') return;
+
+    if (!window.__wdashHistoryPatched && typeof window.addToDashboardHistory === 'function') {
+      const original = window.addToDashboardHistory;
+      window.addToDashboardHistory = function patchedAddToDashboardHistory(...args) {
+        try {
+          return original.apply(this, args);
+        } catch (err) {
+          console.warn('[WeatherDashboard] Suppressed dashboard history error', err);
+          return undefined;
+        }
+      };
+      window.__wdashHistoryPatched = true;
+    }
+
+    if (!window.__wdashSocketGuard) {
+      window.addEventListener('error', event => {
+        if (!event) return;
+        const message = String(event.message || '');
+        if (message.includes("Cannot set properties of undefined (setting 'value')") && event.filename && event.filename.indexOf('app.js') !== -1) {
+          event.preventDefault();
+          if (typeof event.stopImmediatePropagation === 'function') {
+            event.stopImmediatePropagation();
+          }
+          console.warn('[WeatherDashboard] Ignored dashboard socket value update error', {
+            message: event.message,
+            filename: event.filename
+          });
+        }
+      }, true);
+      window.__wdashSocketGuard = true;
     }
   }
 
@@ -230,44 +270,66 @@
   function readPayloads() {
     const tile1 = byId('tile-1');
     const text1 = getTileText(tile1);
-    if (!text1) return [];
+    if (!text1) return lastSuccessfulPayload ? [lastSuccessfulPayload] : [];
 
     const json1 = extractJson(text1);
-    if (!json1) return [];
+    if (!json1) return lastSuccessfulPayload ? [lastSuccessfulPayload] : [];
 
-    try {
-      const parsed1 = JSON.parse(json1);
-      if (!isChunkEnvelope(parsed1)) {
-        // Not chunked, return as a single payload
-        return [parsed1];
-      }
+      try {
+        const parsed1 = JSON.parse(json1);
+        const normalized1 = normalizeChunkEnvelope(parsed1);
+        if (!normalized1) {
+          // Not chunked, return as a single payload
+          lastSuccessfulPayload = parsed1;
+          lastSuccessfulRawPayload = json1;
+          lastSuccessfulFingerprint = null;
+          return [parsed1];
+        }
 
-      // It's chunked, find out how many chunks to expect
-      const totalChunks = parsed1.chunkCount;
-      if (!Number.isInteger(totalChunks) || totalChunks < 1) {
-        console.warn('[WeatherDashboard] Invalid chunkCount found in tile-1', parsed1);
-        return [];
-      }
+        const totalChunks = normalized1.count;
+        if (!Number.isInteger(totalChunks) || totalChunks < 1) {
+          console.warn('[WeatherDashboard] Invalid chunkCount found in tile-1', parsed1);
+          return lastSuccessfulPayload ? [lastSuccessfulPayload] : [];
+        }
 
-      const chunkEnvelopes = [parsed1];
-      // Read the rest of the chunks
-      for (let i = 2; i <= totalChunks; i++) {
+        const chunkEnvelopes = [parsed1];
+      // Read every chunk tile that could contain weather dashboard data. This protects against
+      // scenarios where a refreshed payload updates later chunks before earlier tiles repaint.
+      for (let i = 2; i <= MAX_CHUNK_TILES; i++) {
         const tile = byId(`tile-${i}`);
         const text = getTileText(tile);
         if (!text) continue;
         const json = extractJson(text);
         if (!json) continue;
-        const parsed = JSON.parse(json);
-        if (isChunkEnvelope(parsed)) {
-          chunkEnvelopes.push(parsed);
+        try {
+          const parsed = JSON.parse(json);
+          if (isChunkEnvelope(parsed)) {
+            chunkEnvelopes.push(parsed);
+          }
+        } catch (err) {
+          console.warn(
+            `[WeatherDashboard] Failed to parse payload from tile-${i}`,
+            err && err.message ? err.message : err
+          );
         }
       }
 
-      const assembled = assembleChunkPayload(chunkEnvelopes);
-      return assembled ? [assembled] : [];
+      const assembled = assembleChunkPayload(chunkEnvelopes, {
+        lastSuccessfulPayload,
+        lastSuccessfulRawPayload,
+        lastSuccessfulFingerprint
+      });
+      if (assembled) {
+        lastSuccessfulPayload = assembled.payload;
+        lastSuccessfulRawPayload = assembled.raw;
+        lastSuccessfulFingerprint = assembled.fingerprint || null;
+        return [assembled.payload];
+      }
+
+      return lastSuccessfulPayload ? [lastSuccessfulPayload] : [];
     } catch (err) {
       console.warn('[WeatherDashboard] Failed to parse payload from tile-1', err, json1.slice(0, 200));
-      return [];
+      return lastSuccessfulPayload ? [lastSuccessfulPayload] : [];
     }
   }
 
@@ -282,8 +344,7 @@
   }
 
   function ensureDataTileObservers() {
-    const count = ambientRotation.chunkCount || 1;
-    for (let i = 1; i <= count; i++) {
+    for (let i = 1; i <= MAX_CHUNK_TILES; i++) {
       const id = `tile-${i}`;
       const tile = byId(id);
       const existing = dataTileObservers.get(id);
@@ -1908,48 +1969,544 @@
   }
 
   function isChunkEnvelope(payload) {
-    if (!payload || typeof payload !== 'object' || payload.chunkNamespace !== 'weather-dashboard') return false;
-    if (!Number.isInteger(payload.chunkIndex) || !Number.isInteger(payload.chunkCount)) return false;
-    if (payload.chunkIndex < 1 || payload.chunkCount < 1) return false;
-    return typeof payload.chunkData === 'string';
+    return normalizeChunkEnvelope(payload) != null;
   }
 
-  function assembleChunkPayload(envelopes) {
-    if (!envelopes || envelopes.length === 0) return null;
-    const valid = envelopes.filter(isChunkEnvelope);
-    if (!valid.length) return null;
+  function normalizeChunkEnvelope(envelope) {
+    if (!envelope || typeof envelope !== 'object') return null;
 
-    valid.sort((a, b) => a.chunkIndex - b.chunkIndex);
-    const expectedCount = valid[0].chunkCount;
-    if (valid.some(env => env.chunkCount !== expectedCount)) {
-      console.warn('[WeatherDashboard] Chunk payload counts differ across tiles', valid);
-      return null;
+    const rawNamespace = typeof envelope.ns === 'string' ? envelope.ns : envelope.chunkNamespace;
+    const namespace = rawNamespace === 'wd' ? 'weather-dashboard' : rawNamespace;
+    if (namespace !== 'weather-dashboard') return null;
+
+    const rawIndex = envelope.i != null ? envelope.i : envelope.chunkIndex;
+    const rawCount = envelope.c != null ? envelope.c : envelope.chunkCount;
+    const index = Number(rawIndex);
+    const count = Number(rawCount);
+    if (!Number.isInteger(index) || !Number.isInteger(count)) return null;
+    if (index < 1 || count < 1) return null;
+
+    const rawFingerprint = envelope.fp != null ? envelope.fp : envelope.chunkFingerprint;
+    const fingerprint = typeof rawFingerprint === 'string' && rawFingerprint.length ? rawFingerprint : null;
+
+    const rawOffset = envelope.o != null ? envelope.o : envelope.chunkOffset;
+    const rawLength = envelope.l != null ? envelope.l : envelope.chunkLength;
+    const rawTotal = envelope.t != null ? envelope.t : envelope.chunkTotalLength;
+    const offset = toFiniteNumber(rawOffset);
+    const length = toFiniteNumber(rawLength);
+    const totalLength = toFiniteNumber(rawTotal);
+
+    const rawData = envelope.d != null ? envelope.d : envelope.chunkData;
+    const data = typeof rawData === 'string' ? rawData : '';
+
+    return {
+      namespace,
+      index,
+      count,
+      fingerprint,
+      offset: Number.isFinite(offset) ? offset : NaN,
+      length: Number.isFinite(length) ? length : NaN,
+      totalLength: Number.isFinite(totalLength) ? totalLength : NaN,
+      data,
+      raw: envelope
+    };
+  }
+
+  function assembleChunkPayload(envelopes, context = {}) {
+    if (!envelopes || envelopes.length === 0) return null;
+    const normalized = envelopes
+      .map(normalizeChunkEnvelope)
+      .filter(Boolean);
+    if (!normalized.length) return null;
+
+    const groups = collectChunkGroups(normalized);
+    if (!groups.size) return null;
+
+    const completeCandidates = buildCompleteChunkCandidates(groups);
+    if (completeCandidates.length) {
+      const preferredComplete = selectPreferredChunkCandidate(completeCandidates);
+      if (preferredComplete) {
+        return preferredComplete;
+      }
     }
 
-    if (expectedCount > valid.length) {
+    const composite = buildCompositeChunkCandidate(groups, context);
+    if (composite) {
+      return composite;
+    }
+
+    console.warn('[WeatherDashboard] Unable to build dashboard payload from chunked data', normalized.map(entry => entry.raw));
+    return null;
+  }
+
+  function collectChunkGroups(envelopes) {
+    const groups = new Map();
+    let order = 0;
+
+    for (const env of envelopes) {
+      const fingerprint = env.fingerprint;
+      const key = fingerprint ? `fp:${fingerprint}` : `legacy:${env.count}`;
+      if (!groups.has(key)) {
+        order += 1;
+        groups.set(key, {
+          key,
+          fingerprint,
+          fingerprintInfo: decodeChunkFingerprint(fingerprint),
+          chunkCount: env.count,
+          chunkMap: new Map(),
+          hasDuplicate: false,
+          chunkCountMismatch: false,
+          groupOrder: order,
+          totalLength: Number.isFinite(env.totalLength) ? env.totalLength : NaN,
+          envelopes: []
+        });
+      }
+
+      const group = groups.get(key);
+      group.envelopes.push(env.raw);
+
+      if (group.chunkCount !== env.count) {
+        group.chunkCountMismatch = true;
+      }
+
+      const chunkInfo = {
+        index: env.index,
+        data: env.data,
+        offset: Number.isFinite(env.offset) ? env.offset : NaN,
+        length: Number.isFinite(env.length) ? env.length : NaN,
+        totalLength: Number.isFinite(env.totalLength) ? env.totalLength : NaN
+      };
+
+      if (group.chunkMap.has(env.index)) {
+        group.hasDuplicate = true;
+      }
+      group.chunkMap.set(env.index, chunkInfo);
+
+      if (!Number.isFinite(group.totalLength) && Number.isFinite(chunkInfo.totalLength)) {
+        group.totalLength = chunkInfo.totalLength;
+      }
+    }
+
+    return groups;
+  }
+
+  function buildCompleteChunkCandidates(groups) {
+    const candidates = [];
+
+    for (const group of groups.values()) {
+      if (!Number.isInteger(group.chunkCount) || group.chunkCount < 1) {
+        console.warn('[WeatherDashboard] Invalid chunkCount encountered while grouping dashboard chunks', group.envelopes);
+        continue;
+      }
+
+      if (group.chunkCountMismatch) {
+        console.warn('[WeatherDashboard] Chunk payload counts differ across tiles', group.envelopes);
+        continue;
+      }
+
+      if (group.hasDuplicate) {
+        console.warn(
+          `[WeatherDashboard] Duplicate dashboard data chunk index detected${group.fingerprint ? ` for ${group.fingerprint}` : ''}`,
+          group.envelopes
+        );
+        continue;
+      }
+
       const missing = [];
-      for (let i = 1; i <= expectedCount; i++) {
-        if (!valid.some(env => env.chunkIndex === i)) {
+      for (let i = 1; i <= group.chunkCount; i++) {
+        if (!group.chunkMap.has(i)) {
           missing.push(i);
         }
       }
-      console.warn('[WeatherDashboard] Missing dashboard data chunk(s)', missing);
+
+      if (missing.length) {
+        console.info(`[WeatherDashboard] Missing dashboard data chunk(s)${group.fingerprint ? ` for ${group.fingerprint}` : ''}`, missing);
+        continue;
+      }
+
+      const buffer = [];
+      for (let i = 1; i <= group.chunkCount; i++) {
+        const chunk = group.chunkMap.get(i);
+        buffer.push(chunk && typeof chunk.data === 'string' ? chunk.data : '');
+      }
+
+      const raw = buffer.join('');
+      if (!raw) continue;
+
+      try {
+        const payload = JSON.parse(raw);
+        const metadata = { ...(payload.metadata || {}) };
+        metadata.chunkCount = group.chunkCount;
+        if (group.fingerprint) metadata.chunkFingerprint = group.fingerprint;
+
+        const layout = resolveChunkLayout(group, groups);
+        if (layout && layout.offsets && layout.lengths) {
+          metadata.chunkLayout = {
+            offsets: layout.offsets.slice(),
+            lengths: layout.lengths.slice(),
+            totalLength: Number.isFinite(layout.totalLength) ? layout.totalLength : raw.length
+          };
+        } else if (Number.isFinite(group.totalLength)) {
+          metadata.chunkTotalLength = group.totalLength;
+        }
+
+        payload.metadata = metadata;
+
+        candidates.push({
+          payload,
+          raw,
+          fingerprint: group.fingerprint,
+          fingerprintInfo: group.fingerprintInfo,
+          chunkCount: group.chunkCount,
+          key: group.key,
+          groupOrder: group.groupOrder
+        });
+      } catch (err) {
+        console.warn('[WeatherDashboard] Failed to reassemble chunked payload', err, { key: group.key, chunkCount: group.chunkCount });
+      }
+    }
+
+    return candidates;
+  }
+
+  function buildCompositeChunkCandidate(groups, context = {}) {
+    const { lastSuccessfulRawPayload } = context || {};
+    if (typeof lastSuccessfulRawPayload !== 'string' || !lastSuccessfulRawPayload.length) return null;
+
+    const groupList = Array.from(groups.values()).filter(group => group.chunkMap && group.chunkMap.size);
+    if (!groupList.length) return null;
+
+    const target = selectPreferredChunkGroup(groupList);
+    if (!target) return null;
+
+    const layout = resolveChunkLayout(target, groups);
+    if (!layout || !Array.isArray(layout.offsets) || !Array.isArray(layout.lengths)) return null;
+    if (layout.offsets.length !== target.chunkCount || layout.lengths.length !== target.chunkCount) return null;
+
+    const totalLength = Number.isFinite(layout.totalLength)
+      ? layout.totalLength
+      : Number.isFinite(target.fingerprintInfo?.length)
+        ? target.fingerprintInfo.length
+        : layout.lengths.reduce((sum, len) => (Number.isFinite(len) ? sum + len : sum), 0);
+
+    if (!Number.isFinite(totalLength) || totalLength <= 0) return null;
+
+    const bufferLength = Math.max(totalLength, lastSuccessfulRawPayload.length);
+    const buffer = new Array(bufferLength).fill(null);
+
+    for (let i = 0; i < lastSuccessfulRawPayload.length && i < buffer.length; i++) {
+      buffer[i] = lastSuccessfulRawPayload[i];
+    }
+
+    const fallbackByIndex = buildFallbackChunkMap(groupList, target);
+
+    for (let idx = 1; idx <= target.chunkCount; idx++) {
+      const offset = layout.offsets[idx - 1];
+      const expectedLength = layout.lengths[idx - 1];
+      if (!Number.isFinite(offset) || !Number.isFinite(expectedLength) || expectedLength < 0) {
+        return null;
+      }
+
+      const end = offset + expectedLength;
+      if (end > buffer.length) {
+        for (let i = buffer.length; i < end; i++) {
+          buffer[i] = null;
+        }
+      }
+
+      let segment = null;
+      const chunk = target.chunkMap.get(idx);
+      if (chunk && typeof chunk.data === 'string' && chunk.data.length) {
+        segment = chunk.data;
+      } else {
+        const fallback = fallbackByIndex.get(idx);
+        if (fallback && typeof fallback.data === 'string' && fallback.data.length === expectedLength) {
+          segment = fallback.data;
+        }
+      }
+
+      if (segment) {
+        if (segment.length !== expectedLength) {
+          return null;
+        }
+        for (let i = 0; i < segment.length; i++) {
+          buffer[offset + i] = segment[i];
+        }
+        continue;
+      }
+
+      let missing = false;
+      for (let pos = offset; pos < end; pos++) {
+        if (buffer[pos] == null) {
+          missing = true;
+          break;
+        }
+      }
+      if (missing) {
+        return null;
+      }
+    }
+
+    if (buffer.some(ch => ch == null)) {
       return null;
     }
 
-    const buffer = valid.map(env => env.chunkData || '').join('');
-    if (!buffer) return null;
+    const raw = buffer.join('').slice(0, totalLength);
 
     try {
-      const payload = JSON.parse(buffer);
-      // Ensure the chunk count is preserved in the final payload for other functions to use.
-      if (payload.metadata) payload.metadata.chunkCount = expectedCount;
-      else payload.metadata = { chunkCount: expectedCount };
-      return payload;
+      const payload = JSON.parse(raw);
+      const metadata = { ...(payload.metadata || {}) };
+      metadata.chunkCount = target.chunkCount;
+      if (target.fingerprint) metadata.chunkFingerprint = target.fingerprint;
+      metadata.chunkLayout = {
+        offsets: layout.offsets.slice(),
+        lengths: layout.lengths.slice(),
+        totalLength: Number.isFinite(layout.totalLength) ? layout.totalLength : raw.length
+      };
+      payload.metadata = metadata;
+
+      return {
+        payload,
+        raw,
+        fingerprint: target.fingerprint,
+        fingerprintInfo: target.fingerprintInfo,
+        chunkCount: target.chunkCount,
+        key: target.key,
+        groupOrder: target.groupOrder,
+        composite: true
+      };
     } catch (err) {
-      console.warn('[WeatherDashboard] Failed to reassemble chunked payload', err);
+      console.warn('[WeatherDashboard] Failed to composite dashboard payload from partial chunks', err, { key: target.key, chunkCount: target.chunkCount });
       return null;
     }
+  }
+
+  function selectPreferredChunkGroup(groups) {
+    if (!groups || !groups.length) return null;
+    return groups.reduce((best, group) => {
+      if (!best) return group;
+      return compareChunkGroupRecency(group, best) > 0 ? group : best;
+    }, null);
+  }
+
+  function buildFallbackChunkMap(groups, target) {
+    const fallback = new Map();
+    const ordered = groups
+      .filter(group => group !== target)
+      .sort((a, b) => compareChunkGroupRecency(b, a));
+
+    for (const group of ordered) {
+      if (group.chunkCount !== target.chunkCount) continue;
+      for (const [index, chunk] of group.chunkMap.entries()) {
+        if (fallback.has(index)) continue;
+        if (chunk && typeof chunk.data === 'string') {
+          fallback.set(index, { data: chunk.data, source: group });
+        }
+      }
+    }
+
+    return fallback;
+  }
+
+  function compareChunkGroupRecency(a, b) {
+    if (!a) return -1;
+    if (!b) return 1;
+
+    const aInfo = a.fingerprintInfo || {};
+    const bInfo = b.fingerprintInfo || {};
+    const aHasTs = Number.isFinite(aInfo.timestamp);
+    const bHasTs = Number.isFinite(bInfo.timestamp);
+
+    if (aHasTs && bHasTs && aInfo.timestamp !== bInfo.timestamp) {
+      return aInfo.timestamp > bInfo.timestamp ? 1 : -1;
+    }
+
+    if (aHasTs && !bHasTs) return 1;
+    if (!aHasTs && bHasTs) return -1;
+
+    const aSeq = Number.isFinite(aInfo.sequence) ? aInfo.sequence : -Infinity;
+    const bSeq = Number.isFinite(bInfo.sequence) ? bInfo.sequence : -Infinity;
+    if (aSeq !== bSeq) {
+      return aSeq > bSeq ? 1 : -1;
+    }
+
+    const aAvailable = a.chunkMap ? a.chunkMap.size : 0;
+    const bAvailable = b.chunkMap ? b.chunkMap.size : 0;
+    if (aAvailable !== bAvailable) {
+      return aAvailable > bAvailable ? 1 : -1;
+    }
+
+    if (a.chunkCount !== b.chunkCount) {
+      return a.chunkCount > b.chunkCount ? 1 : -1;
+    }
+
+    return a.groupOrder > b.groupOrder ? 1 : -1;
+  }
+
+  function resolveChunkLayout(target, groups) {
+    if (!target || !Number.isInteger(target.chunkCount) || target.chunkCount < 1) return null;
+
+    const count = target.chunkCount;
+    const offsets = new Array(count).fill(null);
+    const lengths = new Array(count).fill(null);
+    let totalLength = Number.isFinite(target.totalLength) ? target.totalLength : NaN;
+
+    function applyGroupLayout(group) {
+      if (!group || !Number.isInteger(group.chunkCount) || group.chunkCount !== count) return;
+      if (!Number.isFinite(totalLength) && Number.isFinite(group.totalLength)) {
+        totalLength = group.totalLength;
+      }
+      if (!group.chunkMap || typeof group.chunkMap.get !== 'function') return;
+
+      for (let i = 1; i <= count; i++) {
+        const chunk = group.chunkMap.get(i);
+        if (!chunk) continue;
+
+        if (offsets[i - 1] == null) {
+          const offset = toFiniteNumber(chunk.offset);
+          if (Number.isFinite(offset)) offsets[i - 1] = offset;
+        }
+
+        if (lengths[i - 1] == null) {
+          const length = toFiniteNumber(chunk.length);
+          if (Number.isFinite(length)) lengths[i - 1] = length;
+        }
+      }
+    }
+
+    applyGroupLayout(target);
+
+    if (offsets.includes(null) || lengths.includes(null) || !Number.isFinite(totalLength)) {
+      for (const group of groups.values()) {
+        if (group === target) continue;
+        applyGroupLayout(group);
+
+        const missingOffsets = offsets.includes(null);
+        const missingLengths = lengths.includes(null);
+        const hasTotal = Number.isFinite(totalLength);
+        if (!missingOffsets && !missingLengths && hasTotal) {
+          break;
+        }
+      }
+    }
+
+    if (offsets.includes(null) || lengths.includes(null)) {
+      return null;
+    }
+
+    const normalizedOffsets = offsets.map(Number);
+    const normalizedLengths = lengths.map(Number);
+
+    if (!Number.isFinite(totalLength)) {
+      const lastIndex = normalizedOffsets.length - 1;
+      if (lastIndex >= 0) {
+        const derivedTotal = normalizedOffsets[lastIndex] + normalizedLengths[lastIndex];
+        if (Number.isFinite(derivedTotal)) {
+          totalLength = derivedTotal;
+        }
+      }
+    }
+
+    if (!Number.isFinite(totalLength)) {
+      const maxExtent = normalizedOffsets.reduce((max, offset, idx) => {
+        const length = normalizedLengths[idx];
+        if (!Number.isFinite(offset) || !Number.isFinite(length)) return max;
+        const end = offset + length;
+        return Number.isFinite(end) && end > max ? end : max;
+      }, -Infinity);
+      if (Number.isFinite(maxExtent) && maxExtent >= 0) {
+        totalLength = maxExtent;
+      }
+    }
+
+    if (!Number.isFinite(totalLength)) {
+      return null;
+    }
+
+    return {
+      offsets: normalizedOffsets,
+      lengths: normalizedLengths,
+      totalLength
+    };
+  }
+
+
+  function toFiniteNumber(value) {
+    const num = Number(value);
+    return Number.isFinite(num) ? num : NaN;
+  }
+
+  function selectPreferredChunkCandidate(candidates) {
+    if (!candidates || !candidates.length) return null;
+    return candidates.reduce((best, candidate) => {
+      if (!best) return candidate;
+
+      const aInfo = candidate.fingerprintInfo || {};
+      const bInfo = best.fingerprintInfo || {};
+      const aHasTs = Number.isFinite(aInfo.timestamp);
+      const bHasTs = Number.isFinite(bInfo.timestamp);
+
+      if (aHasTs && bHasTs && aInfo.timestamp !== bInfo.timestamp) {
+        return aInfo.timestamp > bInfo.timestamp ? candidate : best;
+      }
+
+      if (aHasTs && !bHasTs) {
+        return candidate;
+      }
+
+      if (!aHasTs && bHasTs) {
+        return best;
+      }
+
+      const aSeq = Number.isFinite(aInfo.sequence) ? aInfo.sequence : -Infinity;
+      const bSeq = Number.isFinite(bInfo.sequence) ? bInfo.sequence : -Infinity;
+      if (aSeq !== bSeq) {
+        return aSeq > bSeq ? candidate : best;
+      }
+
+      if (candidate.chunkCount !== best.chunkCount) {
+        return candidate.chunkCount > best.chunkCount ? candidate : best;
+      }
+
+      return candidate.groupOrder > best.groupOrder ? candidate : best;
+    }, null);
+  }
+
+  function decodeChunkFingerprint(fingerprint) {
+    if (typeof fingerprint !== 'string' || !fingerprint.length) {
+      return { raw: fingerprint || '', timestamp: -Infinity, sequence: -Infinity, length: NaN };
+    }
+
+    const parts = fingerprint.split('-');
+    if (parts.length !== 3) {
+      return { raw: fingerprint, timestamp: -Infinity, sequence: -Infinity, length: NaN };
+    }
+
+    const [tsPart, seqPart, lenPart] = parts;
+    return {
+      raw: fingerprint,
+      timestamp: parseFingerprintPart(tsPart),
+      sequence: parseFingerprintPart(seqPart),
+      length: parseFingerprintPart(lenPart)
+    };
+  }
+
+  function parseFingerprintPart(part) {
+    if (typeof part !== 'string' || !part.length) return NaN;
+    const normalized = part.trim();
+    if (!normalized) return NaN;
+
+    let value = NaN;
+    if (/^[0-9a-z]+$/i.test(normalized)) {
+      value = parseInt(normalized, 36);
+    }
+
+    if (!Number.isFinite(value)) {
+      const decimal = Number(normalized);
+      value = Number.isFinite(decimal) ? decimal : NaN;
+    }
+
+    return value;
   }
 
   function extractJson(text) {
@@ -1960,15 +2517,17 @@
   }
 
   function getTileText(tile) {
+    if (!tile) return '';
     const node = findContentElement(tile);
     if (!node) return '';
     return node.textContent.trim();
   }
 
   function findContentElement(tile) {
+    if (!tile) return null;
     const selectors = ['.tile-primary', '.tile-contents', '.tile-content', '.tile'];
     for (const sel of selectors) {
-      const el = tile.querySelector(sel);
+      const el = typeof tile.querySelector === 'function' ? tile.querySelector(sel) : null;
       if (el) return el;
     }
     return tile;
