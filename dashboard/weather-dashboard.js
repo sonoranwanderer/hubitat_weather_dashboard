@@ -502,7 +502,9 @@
       <section class="wdash-card wdash-card--temp-wind">
         <header class="wdash-card-header">
           <h3>Outdoor Conditions</h3>
-          <span class="wdash-updated">${escapeHtml(updatedLabel)}</span>
+          <span class="wdash-updated">
+            <span class="wdash-updated-line wdash-updated-line--primary">${escapeHtml(updatedLabel)}</span>
+          </span>
         </header>
         <div class="wdash-temp-wind-main">
           <div class="wdash-temp">
@@ -780,6 +782,12 @@
     const now = parseDateTime(data.metadata?.generatedAt);
     const stationReportedAt = data.metadata?.weatherStationTime || data.metadata?.generatedAt;
     const stationLabel = stationReportedAt ? formatHubDateTime(stationReportedAt) : null;
+    const stationZoneLabel = (() => {
+      const zone = data.metadata?.weatherStationTimezone;
+      if (!zone) return '';
+      const text = typeof zone === 'string' ? zone.trim() : String(zone);
+      return text;
+    })();
     const sunrise = parseDateTime(sun.sunrise);
     const sunset = parseDateTime(sun.sunset);
 
@@ -830,7 +838,19 @@
 
     return `
       <section class="wdash-card wdash-card--solar">
-        ${cardHeader(CARD_TITLES.sunMoon, data, stationLabel, { fallbackToRelative: false, clock: { mode: 'datetime', source: stationReportedAt } })}
+        ${cardHeader(
+          CARD_TITLES.sunMoon,
+          data,
+          stationLabel,
+          {
+            fallbackToRelative: false,
+            clock: {
+              mode: 'datetime',
+              source: stationReportedAt,
+              timezoneLabel: stationZoneLabel
+            }
+          }
+        )}
         <div class="wdash-solar">
           <div class="wdash-sun-graphic">
             <svg class="wdash-sun-svg" viewBox="0 0 200 100">
@@ -960,16 +980,28 @@
   }
 
   function setupHubClock(data) {
-    const target = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-updated[data-hub-clock]');
+    const target = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-updated [data-hub-clock]');
     if (!target) {
       stopHubClock();
       return;
     }
 
     const dataset = target.dataset || {};
-    const zone = data?.metadata?.weatherStationTimezone
-      || dataset.hubClockZone
-      || null;
+    const zone = (() => {
+      const raw = data?.metadata?.weatherStationTimezone || dataset.hubClockZone;
+      if (!raw) return null;
+      const text = String(raw).trim();
+      return text.length ? text : null;
+    })();
+    const timezoneEl = target.parentElement?.querySelector('[data-hub-clock-timezone]') || null;
+    const zoneLabel = (() => {
+      if (zone) return zone;
+      if (timezoneEl && timezoneEl.textContent) return timezoneEl.textContent.trim();
+      return '';
+    })();
+    if (timezoneEl) {
+      timezoneEl.textContent = zoneLabel;
+    }
     const isoSource = data?.metadata?.weatherStationTime
       || data?.metadata?.generatedAt
       || dataset.hubClockSource
@@ -1760,17 +1792,30 @@
       label = `Updated ${relative}`;
     }
     const spanAttributes = [];
+    let timezoneLabel = '';
     if (clock && clock !== false) {
       spanAttributes.push('data-hub-clock="true"');
       const mode = clock.mode ? String(clock.mode).toLowerCase() : '';
       if (mode) spanAttributes.push(`data-hub-clock-mode="${escapeHtml(mode)}"`);
       if (clock.source) spanAttributes.push(`data-hub-clock-source="${escapeHtml(clock.source)}"`);
+      if (clock.timezoneLabel != null) {
+        const tz = typeof clock.timezoneLabel === 'string' ? clock.timezoneLabel : String(clock.timezoneLabel);
+        if (tz && tz.trim().length) {
+          timezoneLabel = tz.trim();
+        }
+      }
     }
     const attrText = spanAttributes.length ? ' ' + spanAttributes.join(' ') : '';
+    const updatedLines = [
+      `<span class="wdash-updated-line wdash-updated-line--primary"${attrText}>${escapeHtml(label)}</span>`
+    ];
+    if (timezoneLabel) {
+      updatedLines.push(`<span class="wdash-updated-line wdash-updated-line--secondary" data-hub-clock-timezone="true">${escapeHtml(timezoneLabel)}</span>`);
+    }
     return `
       <header class="wdash-card-header">
         <h3>${escapeHtml(title)}</h3>
-        <span class="wdash-updated"${attrText}>${escapeHtml(label)}</span>
+        <span class="wdash-updated">${updatedLines.join('')}</span>
       </header>
     `;
   }
@@ -2000,7 +2045,9 @@
 .wdash-card { background: linear-gradient(145deg, rgba(27,35,58,0.92), rgba(13,18,32,0.92)); border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 10px; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05); height: 100%; min-height: 0; }
 .wdash-card-header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.72rem; color: #8ea0c8; }
 .wdash-card-header h3 { margin: 0; font-size: 0.82rem; font-weight: 700; color: #c9d8ff; }
-.wdash-updated { font-size: 0.68rem; opacity: 0.7; }
+.wdash-updated { display: inline-flex; flex-direction: column; align-items: flex-end; text-align: right; gap: 2px; }
+.wdash-updated-line { font-size: 0.68rem; opacity: 0.7; line-height: 1.2; white-space: nowrap; }
+.wdash-updated-line--secondary { font-size: 0.62rem; opacity: 0.6; }
 .wdash-card--temp-wind { grid-area: temp-wind; gap: 6px; padding-bottom: 10px; }
 .wdash-card--ambient { grid-area: ambient; gap: 6px; padding-bottom: 10px; }
 .wdash-card--rain { grid-area: rain; }
@@ -2431,9 +2478,10 @@
     const normalizedSecond = Number.isFinite(second) ? Math.max(0, Math.min(59, Math.floor(second))) : 0;
     const hour12 = normalizedHour % 12 === 0 ? 12 : normalizedHour % 12;
     const meridiem = normalizedHour >= 12 ? 'pm' : 'am';
+    const hourStr = String(hour12).padStart(2, '0');
     const minuteStr = String(normalizedMinute).padStart(2, '0');
     const secondStr = String(normalizedSecond).padStart(2, '0');
-    return `${hour12}:${minuteStr}:${secondStr} ${meridiem}`;
+    return `${hourStr}:${minuteStr}:${secondStr} ${meridiem}`;
   }
 
   function formatHubDateFromParts(parts) {
