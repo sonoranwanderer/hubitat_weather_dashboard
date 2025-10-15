@@ -495,7 +495,7 @@
 
     const generatedAt = data.metadata?.generatedAt;
     const stationReportedAt = data.metadata?.weatherStationTime || generatedAt;
-    const stationLabel = stationReportedAt ? formatHubClock(stationReportedAt) : null;
+    const stationLabel = stationReportedAt ? formatHubClock(stationReportedAt, { includeSeconds: false }) : null;
     const updatedLabel = stationLabel ? `Updated ${stationLabel}` : '';
 
     return `
@@ -1028,14 +1028,21 @@
       return;
     }
 
-    const baseUtc = hubClockPartsToUtc(parts);
-    if (!Number.isFinite(baseUtc)) {
+    const baseUtcFromSource = hubClockPartsToUtc(parts);
+    if (!Number.isFinite(baseUtcFromSource)) {
       target.textContent = fallbackLabel;
       stopHubClock();
       return;
     }
 
-    const offsetMinutes = determineHubClockOffsetMinutes(baseUtc, parts, zone);
+    const nowUtc = Date.now();
+    const useLiveZoneTime = !!zone;
+    const offsetMinutes = determineHubClockOffsetMinutes(
+      baseUtcFromSource,
+      parts,
+      zone,
+      useLiveZoneTime ? nowUtc : baseUtcFromSource
+    );
 
     if (hubClockState.timer) {
       clearInterval(hubClockState.timer);
@@ -1053,8 +1060,8 @@
         delete target.dataset.hubClockZone;
       }
     }
-    hubClockState.baseUtc = baseUtc;
-    hubClockState.deltaUtcMs = baseUtc - Date.now();
+    hubClockState.baseUtc = useLiveZoneTime ? nowUtc : baseUtcFromSource;
+    hubClockState.deltaUtcMs = useLiveZoneTime ? 0 : baseUtcFromSource - nowUtc;
     hubClockState.offsetMinutes = Number.isFinite(offsetMinutes) ? offsetMinutes : null;
     hubClockState.zone = zone;
     hubClockState.sourceParts = {
@@ -1212,12 +1219,13 @@
     return null;
   }
 
-  function determineHubClockOffsetMinutes(baseUtc, parts, zone) {
+  function determineHubClockOffsetMinutes(baseUtc, parts, zone, referenceUtc) {
     if (parts && Number.isFinite(parts.offsetMinutes)) {
       return Number(parts.offsetMinutes);
     }
     if (zone) {
-      const zoneOffset = computeTimeZoneOffsetMinutes(baseUtc, zone);
+      const basis = Number.isFinite(referenceUtc) ? referenceUtc : baseUtc;
+      const zoneOffset = computeTimeZoneOffsetMinutes(basis, zone);
       if (Number.isFinite(zoneOffset)) {
         return zoneOffset;
       }
@@ -2574,7 +2582,7 @@
     };
   }
 
-  function clockSegmentsFromParts(parts) {
+  function clockSegmentsFromParts(parts, options = {}) {
     if (!parts || !parts.hasTime) return null;
     const hour = Number(parts.hour);
     const minute = Number(parts.minute);
@@ -2590,18 +2598,21 @@
     const hourStr = String(hour12).padStart(2, '0');
     const minuteStr = String(normalizedMinute).padStart(2, '0');
     const secondStr = String(normalizedSecond).padStart(2, '0');
-    const time = `${hourStr}:${minuteStr}:${secondStr}`;
+    const includeSeconds = options && options.includeSeconds !== false;
+    const time = includeSeconds
+      ? `${hourStr}:${minuteStr}:${secondStr}`
+      : `${hourStr}:${minuteStr}`;
     return { time, meridiem, text: `${time} ${meridiem}` };
   }
 
-  function formatHubClock(value) {
+  function formatHubClock(value, options) {
     const parts = value && typeof value === 'object' && 'hour' in value
       ? value
       : parseIsoDateParts(value);
     if (!parts || !parts.hasTime) {
       return value != null ? String(value) : '';
     }
-    const segments = clockSegmentsFromParts(parts);
+    const segments = clockSegmentsFromParts(parts, options);
     if (!segments) {
       return parts.original || (value != null ? String(value) : '');
     }
