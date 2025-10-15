@@ -63,6 +63,7 @@ def mainPage() {
             attributeInputs("Yearly rain", "attrRainYearly", "rainYearly", deviceOptions)
             attributeInputs("UV index", "attrUVIndex", "uv", deviceOptions)
             attributeInputs("Solar radiation", "attrSolarRadiation", "solarRadiation", deviceOptions)
+            attributeInputs("Weather station update time", "attrStationUpdatedAt", "lastUpdateTime", deviceOptions)
         }
 
         section("Outdoor Air Quality (optional)") {
@@ -237,6 +238,7 @@ private List<Map> getAttributeSubscriptions() {
         "attrRainYearly",
         "attrUVIndex",
         "attrSolarRadiation",
+        "attrStationUpdatedAt",
         "attrOutdoorAQI",
         "attrOutdoorPM25",
         "attrIndoorAQI",
@@ -593,10 +595,21 @@ def refreshWeatherData() {
         if (ambient.humidityUnit) payload.ambientHumidityUnit = ambient.humidityUnit
     }
 
+    def stationUpdatedAt = readStringFor("attrStationUpdatedAt")
+    if (stationUpdatedAt instanceof CharSequence) {
+        stationUpdatedAt = stationUpdatedAt.toString().trim()
+        if (!stationUpdatedAt) {
+            stationUpdatedAt = null
+        }
+    }
+
     def metadata = [
         generatedAt: generated.format("yyyy-MM-dd'T'HH:mm:ssXXX", tz),
         sourceDevices: devices.collect { dev -> [id: dev.id, name: dev.displayName] }
     ]
+    if (stationUpdatedAt) {
+        metadata.weatherStationTime = stationUpdatedAt
+    }
     def primary = primaryWeatherDevice()
     if (primary) {
         metadata.sourceDevice = [id: primary.id, name: primary.displayName]

@@ -85,6 +85,9 @@
     air: 'Air Quality'
   };
 
+  const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
   const DEFAULT_MOON_PHASE_KEY = 'new-moon';
   const MOON_PHASE_NAME_MAP = {
     'new moon': 'new-moon',
@@ -475,8 +478,9 @@
     const dailyMaxGustText = Number.isFinite(dailyMaxGust) ? `${formatNumber(dailyMaxGust, 1)} mph` : '--';
 
     const generatedAt = data.metadata?.generatedAt;
-    const relativeGenerated = generatedAt ? formatRelativeTime(generatedAt) : null;
-    const updatedLabel = relativeGenerated ? `Updated ${relativeGenerated}` : '';
+    const stationReportedAt = data.metadata?.weatherStationTime || generatedAt;
+    const stationLabel = stationReportedAt ? formatHubClock(stationReportedAt) : null;
+    const updatedLabel = stationLabel ? `Updated ${stationLabel}` : '';
 
     return `
       <section class="wdash-card wdash-card--temp-wind">
@@ -572,21 +576,23 @@
     const sensor = sensors[0] || {};
     const tempUnit = data.ambientTemperatureUnit || '°F';
     const humidityUnit = data.ambientHumidityUnit || '%';
-    const countLabel = hasSensors
-      ? (sensors.length > 1 ? `${sensors.length} locations` : (sensor.name || ''))
+    const sensorName = typeof sensor.name === 'string' ? sensor.name.trim() : '';
+    const nameDisplay = hasSensors
+      ? (sensorName.length ? sensorName : 'Ambient Sensor')
+      : 'Ambient Sensors';
+    const rotationText = hasSensors
+      ? (sensors.length > 1 ? `Sensor 1 of ${sensors.length}` : '')
       : 'No sensors configured';
-    const rotationText = hasSensors && sensors.length > 1 ? `Sensor 1 of ${sensors.length}` : '';
     const tempDisplay = formatAmbientValue(sensor.temperatureF, tempUnit, 1);
     const humidityDisplay = formatAmbientValue(sensor.humidity, humidityUnit, 0);
-    const nameDisplay = sensor.name || (hasSensors ? '' : 'No sensors configured');
     const timerDisabledAttr = sensors.length > 1 ? '' : ' disabled';
     const timerLabel = sensors.length > 1 ? 'Pause ambient sensor rotation' : 'Ambient sensor rotation unavailable';
 
     return `
       <section class="wdash-card wdash-card--ambient${hasSensors ? '' : ' wdash-ambient--empty'}">
-        <header class="wdash-card-header">
-          <h3>Ambient Sensors</h3>
-          <span class="wdash-updated">${escapeHtml(countLabel)}</span>
+        <header class="wdash-card-header wdash-card-header--ambient">
+          <h3 class="wdash-ambient-name">${escapeHtml(nameDisplay)}</h3>
+          <span class="wdash-ambient-rotation">${escapeHtml(rotationText)}</span>
         </header>
         <div class="wdash-ambient" data-count="${sensors.length}">
           <div class="wdash-ambient-circles">
@@ -630,10 +636,6 @@
                 <span class="wdash-ambient-timer-countdown">--</span>
               </button>
             </div>
-          </div>
-          <div class="wdash-ambient-footer">
-            <div class="wdash-ambient-name">${escapeHtml(nameDisplay)}</div>
-            <div class="wdash-ambient-rotation">${escapeHtml(rotationText)}</div>
           </div>
         </div>
       </section>
@@ -758,6 +760,8 @@
     const solarRadiation = toNumber(solar.solarRadiationWm2); // Support multiple keys
 
     const now = parseDateTime(data.metadata?.generatedAt);
+    const stationReportedAt = data.metadata?.weatherStationTime || data.metadata?.generatedAt;
+    const stationLabel = stationReportedAt ? formatHubDateTime(stationReportedAt) : null;
     const sunrise = parseDateTime(sun.sunrise);
     const sunset = parseDateTime(sun.sunset);
 
@@ -808,7 +812,7 @@
 
     return `
       <section class="wdash-card wdash-card--solar">
-        ${cardHeader(CARD_TITLES.sunMoon, data)}
+        ${cardHeader(CARD_TITLES.sunMoon, data, stationLabel, { fallbackToRelative: false })}
         <div class="wdash-solar">
           <div class="wdash-sun-graphic">
             <svg class="wdash-sun-svg" viewBox="0 0 200 100">
@@ -860,7 +864,7 @@
     const currentSource = airQualityRotation.sources[airQualityRotation.index] || sources[0] || 'Outdoor';
     const airData = currentSource === 'Indoor' ? data.indoorAirQuality : data.outdoorAirQuality;
 
-    const metrics = buildAirQualityMetrics(airData, currentSource);
+    const metrics = padAirQualityMetrics(buildAirQualityMetrics(airData, currentSource));
     const headerLabel = sources.length > 1 ? currentSource : '';
 
     return `
@@ -914,6 +918,16 @@
     }
 
     return metrics.length > 0 ? metrics : [{ label: 'AQI', value: '--' }];
+  }
+
+  function padAirQualityMetrics(metrics, columns = 4, rows = 2) {
+    const list = Array.isArray(metrics) ? metrics.slice() : [];
+    const totalSlots = columns * rows;
+    if (list.length >= totalSlots) return list;
+    while (list.length < totalSlots) {
+      list.push({ label: '', value: '', placeholder: true });
+    }
+    return list;
   }
 
   /* ---------- helpers ---------- */
@@ -1412,12 +1426,24 @@
     card.outerHTML = newMarkup;
   }
 
-  function cardHeader(title, data, subLabel = null) {
-    const generated = data.metadata?.generatedAt ? formatRelativeTime(data.metadata.generatedAt) : null;
+  function cardHeader(title, data, subLabel = null, options = {}) {
+    const { fallbackToRelative = true } = options || {};
+    const generatedAt = data?.metadata?.generatedAt;
+    const relative = generatedAt ? formatRelativeTime(generatedAt) : null;
+    let label = '';
+    if (subLabel != null) {
+      const raw = typeof subLabel === 'string' ? subLabel : String(subLabel);
+      if (raw && raw.trim().length) {
+        label = raw.trim();
+      }
+    }
+    if (!label && fallbackToRelative && relative) {
+      label = `Updated ${relative}`;
+    }
     return `
       <header class="wdash-card-header">
-        <h3>${title}</h3>
-        <span class="wdash-updated">${subLabel || (generated ? 'Updated ' + generated : '')}</span>
+        <h3>${escapeHtml(title)}</h3>
+        <span class="wdash-updated">${escapeHtml(label)}</span>
       </header>
     `;
   }
@@ -1549,16 +1575,22 @@
     return `
       <div class="${className}"${styleAttr}>
         ${items.map(item => {
-          const tintColor = sanitizeHexColor(item.color);
-          const metricClass = tintColor ? 'wdash-metric wdash-metric--tinted' : 'wdash-metric';
-          const colorStyle = tintColor ? ` style="background-color: ${tintColor};"` : '';
-          const value = item.value != null ? escapeHtml(item.value) : '--';
-          const sub = item.sub != null ? escapeHtml(item.sub) : null;
+          const isPlaceholder = Boolean(item && item.placeholder);
+          const tintColor = !isPlaceholder ? sanitizeHexColor(item?.color) : null;
+          const baseClass = tintColor ? 'wdash-metric wdash-metric--tinted' : 'wdash-metric';
+          const metricClass = isPlaceholder ? `${baseClass} wdash-metric--placeholder` : baseClass;
+          const attrs = [];
+          if (tintColor) attrs.push(`style="background-color: ${tintColor};"`);
+          if (isPlaceholder) attrs.push('aria-hidden="true"');
+          const attrString = attrs.length ? ' ' + attrs.join(' ') : '';
+          const labelText = isPlaceholder ? '' : escapeHtml(item?.label || '');
+          const valueText = isPlaceholder ? '' : (item?.value != null ? escapeHtml(item.value) : '--');
+          const subText = !isPlaceholder && item?.sub != null ? escapeHtml(item.sub) : null;
           return `
-          <div class="${metricClass}"${colorStyle}>
-            <span class="wdash-metric-label">${escapeHtml(item.label || '')}</span>
-            <span class="wdash-metric-value">${value}</span>
-            ${sub ? `<span class="wdash-metric-sub">${sub}</span>` : ''}
+          <div class="${metricClass}"${attrString}>
+            <span class="wdash-metric-label">${labelText}</span>
+            <span class="wdash-metric-value">${valueText}</span>
+            ${subText ? `<span class="wdash-metric-sub">${subText}</span>` : ''}
           </div>
         `}).join('')}
       </div>
@@ -1642,17 +1674,19 @@
 .wdash-card-header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.72rem; color: #8ea0c8; }
 .wdash-card-header h3 { margin: 0; font-size: 0.82rem; font-weight: 700; color: #c9d8ff; }
 .wdash-updated { font-size: 0.68rem; opacity: 0.7; }
-.wdash-card--temp-wind { grid-area: temp-wind; }
-.wdash-card--ambient { grid-area: ambient; }
+.wdash-card--temp-wind { grid-area: temp-wind; gap: 6px; padding-bottom: 10px; }
+.wdash-card--ambient { grid-area: ambient; gap: 6px; padding-bottom: 10px; }
 .wdash-card--rain { grid-area: rain; }
 .wdash-card--pressure { grid-area: pressure; }
-.wdash-card--solar { grid-area: solar; }
-.wdash-card--air { grid-area: air; }
+.wdash-card--solar { grid-area: solar; gap: 6px; padding-bottom: 10px; }
+.wdash-card--air { grid-area: air; gap: 6px; padding-bottom: 10px; }
 .wdash-temp, .wdash-wind, .wdash-solar, .wdash-pressure { display: flex; flex-direction: column; gap: 10px; flex: 1; }
 .wdash-pressure { gap: 10px; }
 .wdash-temp-wind-main { display: flex; gap: 14px; flex: 1; }
 .wdash-temp-wind-main > .wdash-temp, .wdash-temp-wind-main > .wdash-wind { flex: 1; }
 .wdash-temp-wind-details { display: flex; justify-content: space-between; gap: 12px; }
+.wdash-card--temp-wind .wdash-temp-wind-main { padding-top: 2px; }
+.wdash-card--temp-wind .wdash-temp-wind-details { margin-top: 0; }
 .wdash-temp { align-items: center; }
 .wdash-wind { align-items: center; }
 .wdash-gauge, .wdash-wind-compass { position: relative; width: min(100%, 260px); aspect-ratio: 1 / 1; margin: 0 auto; }
@@ -1700,7 +1734,7 @@
 .wdash-compass-arrow--avg path { fill: none; stroke: rgba(208,213,220,0.95); stroke-width: 1.0; }
 .wdash-compass-avg { pointer-events: none; }
 .wdash-compass-current { pointer-events: none; }
-.wdash-ambient { display: flex; flex-direction: column; gap: 14px; flex: 1; /* ambient ring defaults (viewBox units) */ --ambient-ring-r: 45; --ambient-ring-stroke: 10; }
+.wdash-ambient { display: flex; flex-direction: column; gap: 10px; flex: 1; /* ambient ring defaults (viewBox units) */ --ambient-ring-r: 45; --ambient-ring-stroke: 10; }
 .wdash-ambient-circles { display: flex; gap: 12px; justify-content: center; }
 .wdash-ambient-circle { flex: 0 0 130px; width: 130px; aspect-ratio: 1; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: #fff; font-weight: 600; box-shadow: 0 10px 22px rgba(4,9,20,0.4); text-align: center; padding: 12px; position: relative; background: transparent; }
 .wdash-ambient-svg { position: absolute; inset: 4px; width: calc(100% - 8px); height: calc(100% - 8px); z-index: 1; pointer-events: none; }
@@ -1727,9 +1761,12 @@
 .wdash-ambient-timer-countdown { position: relative; z-index: 1; font-size: 0.76rem; font-weight: 700; letter-spacing: 0.02em; color: #f5f9ff; text-shadow: 0 2px 6px rgba(0,0,0,0.5); }
 .wdash-ambient-reading { font-size: 1.8rem; font-weight: 700; }
 .wdash-ambient-label { font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.8; }
-.wdash-ambient-footer { display: flex; justify-content: space-between; align-items: baseline; font-size: 0.76rem; color: #c9d8ff; }
+.wdash-card-header--ambient { align-items: center; }
+.wdash-card-header--ambient .wdash-ambient-name { margin: 0; }
+.wdash-card-header--ambient .wdash-ambient-rotation { margin-left: auto; }
 .wdash-ambient-name { font-weight: 700; }
 .wdash-ambient-rotation { font-size: 0.75rem; color: #8ea0c8; }
+.wdash-ambient-rotation:empty { display: none; }
 .wdash-ambient--empty .wdash-ambient-reading { opacity: 0.6; }
 .wdash-rain-main { display: grid; grid-template-columns: 120px 1fr 1fr; gap: 18px; align-items: center; flex: 1; }
 .wdash-rain-col--drop { display: flex; align-items: center; justify-content: center; }
@@ -1762,7 +1799,7 @@
 .wdash-pressure-outlook { background: rgba(255,255,255,0.06); border-radius: 10px; padding: 8px 10px; font-size: 0.76rem; display: grid; gap: 4px; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04); }
 .wdash-outlook-label { font-weight: 700; color: #ffb95a; text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.75rem; }
 .wdash-outlook-text { line-height: 1.35; }
-.wdash-solar { display: flex; flex-direction: column; gap: 8px; flex: 1; }
+.wdash-solar { display: flex; flex-direction: column; gap: 6px; flex: 1; }
 .wdash-sun-graphic { position: relative; width: 100%; aspect-ratio: 2.6 / 1; border-radius: 16px; background: transparent; overflow: hidden; }
 .wdash-sun-arc { position: absolute; inset: 16% 12% 42%; border: 2px solid rgba(255,255,255,0.25); border-bottom: none; border-radius: 100% 100% 0 0 / 100% 100% 0 0; }
 .wdash-sun-horizon { position: absolute; left: 12%; right: 12%; bottom: 42%; height: 2px; background: rgba(255,255,255,0.25); }
@@ -1799,7 +1836,9 @@
 .wdash-sun-time { position: absolute; font-size: 0.8rem; font-weight: 600; color: #c9d8ff; transform: translate(-50%, 8px); white-space: nowrap; }
 .wdash-sun-time--rise { /* Positioned by inline style */ }
 .wdash-sun-time--set { /* Positioned by inline style */ }
+.wdash-air-metrics .wdash-metric { flex: 1 1 calc(25% - 10px); }
 .wdash-air-metrics .wdash-metric-value { font-size: 1.02rem; }
+.wdash-air-metrics .wdash-metric--placeholder { visibility: hidden; pointer-events: none; }
 @media (max-width: 1100px) {
   .wdash-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: ${GRID_TEMPLATES.tablet.rows}; grid-template-areas:
     ${GRID_TEMPLATES.tablet.areas};
@@ -2003,6 +2042,98 @@
     if (hours < 24) return `${hours} hr ago`;
     const days = Math.round(hours / 24);
     return `${days} day${days !== 1 ? 's' : ''} ago`;
+  }
+
+  function parseIsoDateParts(value) {
+    if (value == null) return null;
+    const raw = typeof value === 'string' ? value : String(value);
+    const trimmed = raw.trim();
+    if (!trimmed) return null;
+    const match = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T\s](\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?(Z|[+-]\d{2}:?\d{2})?)?$/);
+    if (!match) return null;
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const hasTime = match[4] != null;
+    const hour = hasTime ? Number(match[4]) : null;
+    const minute = hasTime ? Number(match[5]) : null;
+    const second = hasTime && match[6] != null ? Number(match[6]) : 0;
+    let offsetMinutes = null;
+    const tzRaw = hasTime ? match[7] : null;
+    if (tzRaw) {
+      if (tzRaw === 'Z') {
+        offsetMinutes = 0;
+      } else {
+        const cleaned = tzRaw.replace(/:/g, '');
+        const sign = tzRaw.startsWith('-') ? -1 : 1;
+        const tzHour = Number(cleaned.slice(1, 3));
+        const tzMinute = Number(cleaned.slice(3, 5) || 0);
+        if (Number.isFinite(tzHour) && Number.isFinite(tzMinute)) {
+          offsetMinutes = sign * (tzHour * 60 + tzMinute);
+        }
+      }
+    }
+    return {
+      year,
+      month,
+      day,
+      hour,
+      minute,
+      second,
+      offsetMinutes,
+      hasTime,
+      original: trimmed
+    };
+  }
+
+  function formatHubClock(value) {
+    const parts = value && typeof value === 'object' && 'hour' in value
+      ? value
+      : parseIsoDateParts(value);
+    if (!parts || !parts.hasTime) {
+      return value != null ? String(value) : '';
+    }
+    const hour = Number(parts.hour);
+    const minute = Number(parts.minute);
+    const second = Number(parts.second);
+    if (!Number.isFinite(hour) || !Number.isFinite(minute)) {
+      return parts.original || (value != null ? String(value) : '');
+    }
+    const normalizedHour = ((Math.floor(hour) % 24) + 24) % 24;
+    const normalizedMinute = Math.max(0, Math.min(59, Math.floor(minute)));
+    const normalizedSecond = Number.isFinite(second) ? Math.max(0, Math.min(59, Math.floor(second))) : 0;
+    const hour12 = normalizedHour % 12 === 0 ? 12 : normalizedHour % 12;
+    const meridiem = normalizedHour >= 12 ? 'pm' : 'am';
+    const minuteStr = String(normalizedMinute).padStart(2, '0');
+    const secondStr = String(normalizedSecond).padStart(2, '0');
+    return `${hour12}:${minuteStr}:${secondStr} ${meridiem}`;
+  }
+
+  function formatHubDateFromParts(parts) {
+    if (!parts || !Number.isFinite(parts.year) || !Number.isFinite(parts.month) || !Number.isFinite(parts.day)) {
+      return '';
+    }
+    const monthIndex = Math.max(0, Math.min(11, Math.floor(parts.month) - 1));
+    const day = Math.max(1, Math.min(31, Math.floor(parts.day)));
+    const date = new Date(Date.UTC(parts.year, monthIndex, day));
+    if (isNaN(date)) return '';
+    const dayName = DAY_NAMES[date.getUTCDay()] || '';
+    const monthName = MONTH_NAMES[monthIndex] || '';
+    const dayStr = String(day).padStart(2, '0');
+    return `${dayName}, ${monthName} ${dayStr} ${parts.year}`;
+  }
+
+  function formatHubDateTime(value) {
+    const parts = parseIsoDateParts(value);
+    if (!parts) {
+      return value != null ? String(value) : '';
+    }
+    const dateText = formatHubDateFromParts(parts);
+    const timeText = parts.hasTime ? formatHubClock(parts) : '';
+    if (dateText && timeText) return `${dateText}, ${timeText}`;
+    if (dateText) return dateText;
+    if (timeText) return timeText;
+    return parts.original || (value != null ? String(value) : '');
   }
 
   function degreesToCardinal(deg) {
