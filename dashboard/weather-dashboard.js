@@ -648,7 +648,9 @@
     const dayNightClass = isDay ? 'is-day' : 'is-night';
 
     // Unified geometry for the arc and sun path, all within the SVG's viewBox
-    const arc = { cx: 100, cy: 95, r: 95, startAngle: 180, endAngle: 360 };
+    // A 150-degree arc (210 to 330) with padding so the sun marker doesn't clip.
+    // The radius is reduced and center y-offset to keep it within the viewbox.
+    const arc = { cx: 100, cy: 100, r: 85, startAngle: 210, endAngle: 330 };
     const startPoint = getPointOnArc(arc, 0);
     const endPoint = getPointOnArc(arc, 1);
     const arcPath = `M ${startPoint.x} ${startPoint.y} A ${arc.r} ${arc.r} 0 0 1 ${endPoint.x} ${endPoint.y}`;
