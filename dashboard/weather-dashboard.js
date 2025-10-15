@@ -649,7 +649,6 @@
 
     // Unified geometry for the arc and sun path, all within the SVG's viewBox
     // A 150-degree arc (210 to 330) with padding so the sun marker doesn't clip.
-    // The radius is reduced and center y-offset to keep it within the viewbox.
     const arc = { cx: 100, cy: 100, r: 85, startAngle: 210, endAngle: 330 };
     const startPoint = getPointOnArc(arc, 0);
     const endPoint = getPointOnArc(arc, 1);
@@ -658,6 +657,18 @@
     // Calculate sun's position using the same geometry and apply it as an SVG transform
     const sunPoint = getPointOnArc(arc, progress);
     const sunTransform = `translate(${sunPoint.x}, ${sunPoint.y})`;
+
+    // --- Metric Positioning ---
+    // UV Index (upper left)
+    const uvStyle = `left: ${35 / 2}%; top: ${28}%;`;
+    // Solar (center)
+    const solarStyle = `left: ${100 / 2}%; top: ${45}%;`;
+    // Illuminance (upper right)
+    const illuminanceStyle = `left: ${165 / 2}%; top: ${28}%;`;
+
+    // --- Time Label Positioning ---
+    const sunriseStyle = `left: ${startPoint.x / 2}%; top: ${startPoint.y}%`;
+    const sunsetStyle = `left: ${endPoint.x / 2}%; top: ${endPoint.y}%`;
 
     return `
       <section class="wdash-card wdash-card--solar">
@@ -676,16 +687,27 @@
                 <circle r="8" fill="url(#wdash-sun-gradient)" />
               </g>
             </svg>
-            <div class="wdash-sun-time wdash-sun-time--rise">
+            <!-- Metric Labels (HTML) -->
+            <div class="wdash-sun-html-metric" style="${uvStyle}">
+              <div class="wdash-sun-metric-label">UV Index</div>
+              <div class="wdash-sun-metric-value">${Number.isFinite(uvIndex) ? formatNumber(uvIndex, 1) : '--'}</div>
+            </div>
+            <div class="wdash-sun-html-metric" style="${solarStyle}">
+              <div class="wdash-sun-metric-label">Solar</div>
+              <div class="wdash-sun-metric-value">${Number.isFinite(solarRadiation) ? formatNumber(solarRadiation, 0) : '--'} <span class="wdash-sun-metric-unit">W/m²</span></div>
+            </div>
+            <div class="wdash-sun-html-metric" style="${illuminanceStyle}">
+              <div class="wdash-sun-metric-label">Illuminance</div>
+              <div class="wdash-sun-metric-value">${Number.isFinite(lightLux) ? formatNumber(lightLux, 0) : '--'} <span class="wdash-sun-metric-unit">lux</span></div>
+            </div>
+            <!-- Time Labels (HTML) -->
+            <div class="wdash-sun-time wdash-sun-time--rise" style="${sunriseStyle}">
               <span class="wdash-value">${formatTime(sun.sunrise)}</span>
             </div>
-            <div class="wdash-sun-time wdash-sun-time--set">
+            <div class="wdash-sun-time wdash-sun-time--set" style="${sunsetStyle}">
               <span class="wdash-value">${formatTime(sun.sunset)}</span>
             </div>
           </div>
-          ${buildMetricRow([
-            { label: 'UV Index', value: Number.isFinite(uvIndex) ? formatNumber(uvIndex, 1) : '--' }, { label: 'Solar', value: Number.isFinite(solarRadiation) ? `${formatNumber(solarRadiation, 0)} W/m²` : '--' }, { label: 'Illuminance', value: Number.isFinite(lightLux) ? `${formatNumber(lightLux, 0)} lux` : '--' }
-          ], 'wdash-solar-metrics')}
         </div>
       </section>
     `;
@@ -1558,9 +1580,13 @@
 .wdash-sun-svg .wdash-sun-marker { transition: transform 0.3s ease; will-change: transform; }
 .wdash-sun-svg .wdash-sun-marker.is-night { opacity: 0; }
 .wdash-sun-svg .wdash-sun-marker circle { filter: drop-shadow(0 0 8px rgba(255,200,110,0.6)); }
-.wdash-sun-time { position: absolute; bottom: 18%; font-size: 0.8rem; font-weight: 600; color: #c9d8ff; }
-.wdash-sun-time--rise { left: 12%; transform: translateX(-50%); }
-.wdash-sun-time--set { right: 12%; transform: translateX(50%); }
+.wdash-sun-html-metric { position: absolute; display: flex; flex-direction: column; align-items: center; gap: 2px; transform: translate(-50%, -50%); text-align: center; }
+.wdash-sun-metric-label { font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #8ea0c8; }
+.wdash-sun-metric-value { font-size: 0.8rem; font-weight: 600; color: #f4f6ff; }
+.wdash-sun-metric-unit { opacity: 0.8; }
+.wdash-sun-time { position: absolute; font-size: 0.8rem; font-weight: 600; color: #c9d8ff; transform: translate(-50%, 8px); white-space: nowrap; }
+.wdash-sun-time--rise { /* Positioned by inline style */ }
+.wdash-sun-time--set { /* Positioned by inline style */ }
 .wdash-air-metrics .wdash-metric-value { font-size: 1.02rem; }
 @media (max-width: 1100px) {
   .wdash-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: none; grid-auto-rows: minmax(260px, auto); grid-template-areas:
