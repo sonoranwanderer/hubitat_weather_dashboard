@@ -23,11 +23,11 @@ definition(
     iconX2Url: "https://raw.githubusercontent.com/sonoranwanderer/ecowitt_weather_hubitat_dashboard/main/assets/weather-dashboard-icon.svg"
 )
 
-@Field static final TimeZone UTC_ZONE = TimeZone.getTimeZone('UTC')
-@Field static final double SYNODIC_MONTH_DAYS = 29.530588853D
-@Field static final long MILLIS_PER_DAY = 86_400_000L
-@Field static final double TWO_PI = Math.PI * 2D
-@Field static final long KNOWN_NEW_MOON_MS = {
+@Field final TimeZone UTC_ZONE = TimeZone.getTimeZone('UTC')
+@Field final double SYNODIC_MONTH_DAYS = 29.530588853D
+@Field final long MILLIS_PER_DAY = 86_400_000L
+@Field final double TWO_PI = Math.PI * 2D
+@Field final long KNOWN_NEW_MOON_MS = {
     Calendar cal = Calendar.getInstance(UTC_ZONE)
     cal.set(Calendar.YEAR, 2000)
     cal.set(Calendar.MONTH, Calendar.JANUARY)
@@ -38,7 +38,7 @@ definition(
     cal.set(Calendar.MILLISECOND, 0)
     cal.timeInMillis
 }()
-@Field static final List<Map> MOON_PHASE_BOUNDS = [
+@Field final List<Map> MOON_PHASE_BOUNDS = [
     [limit: 1.84566D, key: 'new-moon', name: 'New Moon'],
     [limit: 5.53699D, key: 'waxing-crescent', name: 'Waxing Crescent'],
     [limit: 9.22831D, key: 'first-quarter', name: 'First Quarter'],
