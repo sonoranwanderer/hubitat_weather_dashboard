@@ -45,18 +45,62 @@ def mainPage() {
             attributeInputs("Indoor humidity", "attrIndoorHumidity", "humidityIndoor", deviceOptions)
             attributeInputs("Wind speed", "attrWindSpeed", "windSpeed", deviceOptions)
             attributeInputs("Wind gust", "attrWindGust", "windGust", deviceOptions)
+            attributeInputs("Max Daily Gust", "attrWindGustMaxDaily", "windGustMaxDaily", deviceOptions)
             attributeInputs("Wind direction (cardinal)", "attrWindDirection", "windDirection", deviceOptions)
             attributeInputs("Wind direction (degrees)", "attrWindDirectionDegrees", "windDirectionDegrees", deviceOptions)
             attributeInputs("Relative pressure", "attrPressure", "pressure", deviceOptions)
             attributeInputs("Absolute pressure", "attrAbsolutePressure", "pressureAbsolute", deviceOptions)
             attributeInputs("Rain rate", "attrRainRate", "rainRate", deviceOptions)
             attributeInputs("Daily rain", "attrRainDaily", "rainDaily", deviceOptions)
+            attributeInputs("Event rain", "attrRainEvent", "rainEvent", deviceOptions)
+            attributeInputs("Hourly rain", "attrRainHourly", "rainHourly", deviceOptions)
             attributeInputs("Weekly rain", "attrRainWeekly", "rainWeekly", deviceOptions)
             attributeInputs("Monthly rain", "attrRainMonthly", "rainMonthly", deviceOptions)
+            attributeInputs("Yearly rain", "attrRainYearly", "rainYearly", deviceOptions)
             attributeInputs("UV index", "attrUVIndex", "uv", deviceOptions)
             attributeInputs("Solar radiation", "attrSolarRadiation", "solarRadiation", deviceOptions)
-            attributeInputs("Air quality index", "attrAQI", "aqi", deviceOptions)
-            attributeInputs("PM2.5", "attrPM25", "pm25", deviceOptions)
+        }
+
+        section("Outdoor Air Quality (optional)") {
+            attributeInputs("AQI", "attrOutdoorAQI", "aqi", deviceOptions)
+            attributeInputs("AQI (24h Avg)", "attrOutdoorAQI24h", "aqi_avg_24h", deviceOptions)
+            attributeInputs("AQI Color", "attrOutdoorAQIColor", "aqiColor", deviceOptions)
+            attributeInputs("AQI Color (24h Avg)", "attrOutdoorAQIColor24h", "aqiColor_avg_24h", deviceOptions)
+            attributeInputs("AQI Danger", "attrOutdoorAQIDanger", "aqiDanger", deviceOptions)
+            attributeInputs("AQI Danger (24h Avg)", "attrOutdoorAQIDanger24h", "aqiDanger_avg_24h", deviceOptions)
+            attributeInputs("PM2.5", "attrOutdoorPM25", "pm25", deviceOptions)
+            attributeInputs("PM2.5 (24h Avg)", "attrOutdoorPM25_24h", "pm25_avg_24h", deviceOptions)
+            attributeInputs("Battery", "attrOutdoorAQIBattery", "battery", deviceOptions)
+        }
+
+        section("Indoor Air Quality (optional)") {
+            // Using the same structure as outdoor for consistency
+            attributeInputs("AQI",                  "attrIndoorAQI",              "aqi", deviceOptions)
+            attributeInputs("AQI (24h Avg)",        "attrIndoorAQI24h",           "aqi_avg_24h", deviceOptions)
+            attributeInputs("AQI Color",            "attrIndoorAQIColor",         "aqiColor", deviceOptions)
+            attributeInputs("AQI Color (24h Avg)",  "attrIndoorAQIColor24h",      "aqiColor_avg_24h", deviceOptions)
+            attributeInputs("AQI Danger",           "attrIndoorAQIDanger",        "aqiDanger", deviceOptions)
+            attributeInputs("AQI Danger (24h Avg)", "attrIndoorAQIDanger24h",     "aqiDanger_avg_24h", deviceOptions)
+            attributeInputs("CO2",                  "attrIndoorCO2",              "carbonDioxide", deviceOptions)
+            attributeInputs("CO2 (24h Avg)",        "attrIndoorCO2_24h",          "carbonDioxide_avg_24h", deviceOptions)
+            attributeInputs("PM10",                 "attrIndoorPM10",             "pm10", deviceOptions)
+            attributeInputs("PM10 (24h Avg)",       "attrIndoorPM10_24h",         "pm10_avg_24h", deviceOptions)
+            attributeInputs("PM2.5",                "attrIndoorPM25",             "pm25", deviceOptions)
+            attributeInputs("PM2.5 (24h Avg)",      "attrIndoorPM25_24h",         "pm25_avg_24h", deviceOptions)
+            attributeInputs("Battery",              "attrIndoorAQIBattery",       "battery", deviceOptions)
+        }
+
+        section("Lightning sensor (optional)") {
+            attributeInputs("Lightning count", "attrLightningCount", "lightningCount", deviceOptions)
+            attributeInputs("Lightning distance", "attrLightningDistance", "lightningDistance", deviceOptions)
+            attributeInputs("Lightning time", "attrLightningTime", "lightningTime", deviceOptions)
+        }
+
+        section("Battery attributes (optional)") {
+            attributeInputs("Outdoor sensor battery", "attrOutdoorBattery", "battery", deviceOptions)
+            attributeInputs("Wind sensor battery", "attrBatteryWind", "batteryWind", deviceOptions)
+            attributeInputs("Rain sensor battery", "attrBatteryRain", "batteryRain", deviceOptions)
+            attributeInputs("Lightning sensor battery", "attrLightningBattery", "battery", deviceOptions)
         }
 
         section("Ambient rotation sensors (optional)") {
@@ -64,6 +108,7 @@ def mainPage() {
             if (settings.ambientSensors) {
                 input name: "ambientTempAttr", type: "text", title: "Ambient temperature attribute", defaultValue: "temperature"
                 input name: "ambientHumidityAttr", type: "text", title: "Ambient humidity attribute", defaultValue: "humidity"
+                input name: "ambientBatteryAttr", type: "text", title: "Ambient battery attribute", defaultValue: "battery"
                 input name: "ambientTemperatureUnit", type: "text", title: "Ambient temperature unit label", defaultValue: "°F"
                 input name: "ambientHumidityUnit", type: "text", title: "Ambient humidity unit label", defaultValue: "%"
                 input name: "ambientRotationSeconds", type: "number", title: "Rotation interval (seconds)", defaultValue: 12, range: "3..120"
@@ -135,6 +180,8 @@ def initialize() {
     state.windHistory = state.windHistory ?: []
     state.pressureHistory = state.pressureHistory ?: []
     state.temperatureHistory = state.temperatureHistory ?: []
+    state.dailyOutdoorAQ = state.dailyOutdoorAQ ?: [:]
+    state.dailyIndoorAQ = state.dailyIndoorAQ ?: [:]
 
     subscribeToSource()
     runEvery1Minute("refreshWeatherData")
@@ -172,19 +219,45 @@ private List<Map> getAttributeSubscriptions() {
         "attrIndoorHumidity",
         "attrWindSpeed",
         "attrWindGust",
+        "attrWindGustMaxDaily",
         "attrWindDirection",
         "attrWindDirectionDegrees",
         "attrPressure",
         "attrAbsolutePressure",
         "attrRainRate",
         "attrRainDaily",
+        "attrRainEvent",
+        "attrRainHourly",
         "attrRainWeekly",
         "attrRainMonthly",
+        "attrRainYearly",
         "attrUVIndex",
         "attrSolarRadiation",
-        "attrAQI",
-        "attrPM25"
-    ]
+        "attrOutdoorAQI",
+        "attrOutdoorPM25",
+        "attrIndoorAQI",
+        "attrIndoorAQI24h",
+        "attrIndoorAQIColor",
+        "attrIndoorAQIColor24h",
+        "attrIndoorAQIDanger",
+        "attrIndoorAQIDanger24h",
+        "attrIndoorCO2",
+        "attrIndoorCO2_24h",
+        "attrIndoorPM10",
+        "attrIndoorPM10_24h",
+        "attrIndoorPM25",
+        "attrIndoorPM25_24h"
+    ].plus([
+        "attrLightningCount",
+        "attrLightningDistance",
+        "attrLightningTime",
+        "attrOutdoorBattery",
+        "attrBatteryWind",
+        "attrBatteryRain",
+        "attrLightningBattery",
+        "attrOutdoorAQIBattery",
+        "attrIndoorAQIBattery"
+    ])
 
     attrs.collect { settingName ->
         def config = attributeConfig(settingName)
@@ -200,6 +273,7 @@ private List<Map> getAmbientSubscriptions() {
 
     def tempAttr = settings.ambientTempAttr ?: "temperature"
     def humidityAttr = settings.ambientHumidityAttr ?: "humidity"
+    def batteryAttr = settings.ambientBatteryAttr ?: "battery"
 
     def subs = []
     sensors.each { dev ->
@@ -208,6 +282,9 @@ private List<Map> getAmbientSubscriptions() {
         }
         if (humidityAttr) {
             subs << [device: dev, attribute: humidityAttr]
+        }
+        if (batteryAttr) {
+            subs << [device: dev, attribute: batteryAttr]
         }
     }
     subs
@@ -329,6 +406,9 @@ def refreshWeatherData() {
     def humidity = readDecimalFor("attrOutdoorHumidity")
     if (humidity != null) outdoor.humidity = round(humidity, 1)
 
+    def outdoorBattery = readDecimalFor("attrOutdoorBattery")
+    if (outdoorBattery != null) outdoor.battery = outdoorBattery
+
     if (outdoor) payload.outdoor = outdoor
 
     def indoor = [:]
@@ -346,6 +426,14 @@ def refreshWeatherData() {
     def windGust = readDecimalFor("attrWindGust")
     if (windGust != null) {
         wind.gustMph = round(windGust, 1)
+    }
+    def dailyMaxGust = readDecimalFor("attrWindGustMaxDaily")
+    if (dailyMaxGust != null) {
+        wind.dailyMaxGustMph = round(dailyMaxGust, 1)
+    }
+    def windBattery = readDecimalFor("attrBatteryWind")
+    if (windBattery != null) {
+        wind.battery = windBattery
     }
 
     def directionDegrees = readDecimalFor("attrWindDirectionDegrees")
@@ -393,10 +481,18 @@ def refreshWeatherData() {
     if (rainRate != null) rain.rateInPerHour = round(rainRate, 2)
     def rainDaily = readDecimalFor("attrRainDaily")
     if (rainDaily != null) rain.dailyIn = round(rainDaily, 2)
+    def rainEvent = readDecimalFor("attrRainEvent")
+    if (rainEvent != null) rain.eventIn = round(rainEvent, 2)
+    def rainHourly = readDecimalFor("attrRainHourly")
+    if (rainHourly != null) rain.hourlyIn = round(rainHourly, 2)
     def rainWeekly = readDecimalFor("attrRainWeekly")
     if (rainWeekly != null) rain.weeklyIn = round(rainWeekly, 2)
     def rainMonthly = readDecimalFor("attrRainMonthly")
     if (rainMonthly != null) rain.monthlyIn = round(rainMonthly, 2)
+    def rainYearly = readDecimalFor("attrRainYearly")
+    if (rainYearly != null) rain.yearlyIn = round(rainYearly, 2)
+    def rainBattery = readDecimalFor("attrBatteryRain")
+    if (rainBattery != null) rain.battery = rainBattery
     if (rain) payload.rain = rain
 
     def solar = [:]
@@ -406,19 +502,75 @@ def refreshWeatherData() {
     if (solarRad != null) solar.solarRadiationWm2 = round(solarRad, 1)
     if (solar) payload.solar = solar
 
-    def air = [:]
-    def aqi = readDecimalFor("attrAQI")
-    if (aqi != null) air.aqi = Math.round(aqi)
-    def pm25 = readDecimalFor("attrPM25")
-    if (pm25 != null) air.pm25 = round(pm25, 1)
-    if (air) payload.airQuality = air
+    def outdoorAir = [:]
+    def outdoorAqi = readDecimalFor("attrOutdoorAQI")
+    if (outdoorAqi != null) outdoorAir.aqi = Math.round(outdoorAqi)
+    def outdoorPm25 = readDecimalFor("attrOutdoorPM25")
+    if (outdoorPm25 != null) outdoorAir.pm25 = round(outdoorPm25, 1)
 
+    def dailyOutdoorAQExtrema = updateDailyAQExtrema("outdoor", [aqi: outdoorAqi, pm25: outdoorPm25], now, tz)
+    if (dailyOutdoorAQExtrema?.aqiPeak != null) outdoorAir.aqiPeak = dailyOutdoorAQExtrema.aqiPeak
+    if (dailyOutdoorAQExtrema?.pm25Peak != null) outdoorAir.pm25Peak = dailyOutdoorAQExtrema.pm25Peak
+
+    outdoorAir.aqi_avg_24h = readDecimalFor("attrOutdoorAQI24h")
+    outdoorAir.aqiColor = readStringFor("attrOutdoorAQIColor")
+    outdoorAir.aqiColor_avg_24h = readStringFor("attrOutdoorAQIColor24h")
+    outdoorAir.aqiDanger = readStringFor("attrOutdoorAQIDanger")
+    outdoorAir.aqiDanger_avg_24h = readStringFor("attrOutdoorAQIDanger24h")
+    outdoorAir.pm25_avg_24h = readDecimalFor("attrOutdoorPM25_24h")
+    outdoorAir.battery = readDecimalFor("attrOutdoorAQIBattery")
+
+    if (outdoorAir.any { it.value != null }) payload.outdoorAirQuality = outdoorAir.findAll { it.value != null }
+
+    def indoorAir = [:]
+    def indoorAqi = readDecimalFor("attrIndoorAQI")
+    if (indoorAqi != null) indoorAir.aqi = Math.round(indoorAqi)
+    def indoorPm10 = readDecimalFor("attrIndoorPM10")
+    if (indoorPm10 != null) indoorAir.pm10 = round(indoorPm10, 1)
+    def indoorPm25 = readDecimalFor("attrIndoorPM25")
+    if (indoorPm25 != null) indoorAir.pm25 = round(indoorPm25, 1)
+    def indoorCo2 = readDecimalFor("attrIndoorCO2")
+    if (indoorCo2 != null) indoorAir.carbonDioxide = Math.round(indoorCo2)
+
+    def dailyIndoorAQExtrema = updateDailyAQExtrema("indoor", [aqi: indoorAqi, pm10: indoorPm10, pm25: indoorPm25, carbonDioxide: indoorCo2], now, tz)
+    if (dailyIndoorAQExtrema?.aqiPeak != null) indoorAir.aqiPeak = dailyIndoorAQExtrema.aqiPeak
+    if (dailyIndoorAQExtrema?.pm10Peak != null) indoorAir.pm10Peak = dailyIndoorAQExtrema.pm10Peak
+    if (dailyIndoorAQExtrema?.pm25Peak != null) indoorAir.pm25Peak = dailyIndoorAQExtrema.pm25Peak
+    if (dailyIndoorAQExtrema?.carbonDioxidePeak != null) indoorAir.carbonDioxidePeak = dailyIndoorAQExtrema.carbonDioxidePeak
+
+    indoorAir.aqi_avg_24h = readDecimalFor("attrIndoorAQI24h")
+    indoorAir.aqiColor = readStringFor("attrIndoorAQIColor")
+    indoorAir.aqiColor_avg_24h = readStringFor("attrIndoorAQIColor24h")
+    indoorAir.aqiDanger = readStringFor("attrIndoorAQIDanger")
+    indoorAir.aqiDanger_avg_24h = readStringFor("attrIndoorAQIDanger24h")
+    indoorAir.carbonDioxide_avg_24h = readDecimalFor("attrIndoorCO2_24h")
+    indoorAir.pm10_avg_24h = readDecimalFor("attrIndoorPM10_24h")
+    indoorAir.pm25_avg_24h = readDecimalFor("attrIndoorPM25_24h")
+    indoorAir.battery = readDecimalFor("attrIndoorAQIBattery")
+
+    if (indoorAir.any { it.value != null }) payload.indoorAirQuality = indoorAir.findAll { it.value != null }
+    
     def sun = [:]
     def sunriseDate = location?.sunrise
     if (sunriseDate) sun.sunrise = formatDateTime(sunriseDate, tz)
     def sunsetDate = location?.sunset
     if (sunsetDate) sun.sunset = formatDateTime(sunsetDate, tz)
     if (sun) payload.sun = sun
+
+    def lightning = [:]
+    def lightningCount = readDecimalFor("attrLightningCount")
+    if (lightningCount != null) lightning.count = lightningCount
+    def lightningDistance = readDecimalFor("attrLightningDistance")
+    if (lightningDistance != null) lightning.distance = lightningDistance
+    def lightningTime = readStringFor("attrLightningTime")
+    if (lightningTime != null) {
+        lightning.time = lightningTime
+    }
+    def lightningBattery = readDecimalFor("attrLightningBattery")
+    if (lightningBattery != null) {
+        lightning.battery = lightningBattery
+    }
+    if (lightning) payload.lightning = lightning
 
     if (!payload.outlook24h) {
         def outlook = computeOutlook(payload.pressure?.relativeInHg ?: payload.pressure?.absoluteInHg, trend?.ratePerHour, outdoor?.humidity)
@@ -462,6 +614,7 @@ private Map buildAmbientSensorsPayload() {
 
     def tempAttr = settings.ambientTempAttr ?: "temperature"
     def humidityAttr = settings.ambientHumidityAttr ?: "humidity"
+    def batteryAttr = settings.ambientBatteryAttr ?: "battery"
     Integer rotation = settings.ambientRotationSeconds ? (settings.ambientRotationSeconds as Integer) : 12
     if (rotation < 3) {
         rotation = 3
@@ -484,7 +637,11 @@ private Map buildAmbientSensorsPayload() {
         if (humidityVal != null) {
             entry.humidity = round(humidityVal, 1)
         }
-        if (entry.temperatureF != null || entry.humidity != null) {
+        def batteryVal = batteryAttr ? readDecimal(dev, batteryAttr) : null
+        if (batteryVal != null) {
+            entry.battery = batteryVal
+        }
+        if (entry.temperatureF != null || entry.humidity != null || entry.battery != null) {
             entries << entry
         }
     }
@@ -747,6 +904,30 @@ private Map updateDailyOutdoorExtrema(BigDecimal temperature, long timestamp, Ti
     record.updatedAt = timestamp
     state.dailyOutdoorTemp = record
     record
+}
+
+private Map updateDailyAQExtrema(String type, Map<String, BigDecimal> values, long timestamp, TimeZone tz) {
+    def stateKey = (type == "indoor") ? "dailyIndoorAQ" : "dailyOutdoorAQ"
+    def record = (state[stateKey] ?: [:]) as Map
+    def dayKey = dayKeyFor(timestamp, tz)
+
+    if (!record.day || record.day != dayKey) {
+        record = [day: dayKey]
+    }
+
+    values.each { key, value ->
+        if (value != null) {
+            def peakKey = "${key}Peak"
+            def rounded = (key == "aqi" || key == "carbonDioxide") ? Math.round(value) : round(value, 1)
+            if (record[peakKey] == null || rounded > record[peakKey]) {
+                record[peakKey] = rounded
+            }
+        }
+    }
+
+    record.updatedAt = timestamp
+    state[stateKey] = record
+    return record
 }
 
 private String dayKeyFor(long timestamp, TimeZone tz) {

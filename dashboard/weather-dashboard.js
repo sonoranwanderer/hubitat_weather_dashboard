@@ -8,12 +8,9 @@
 
 (() => {
   const DISPLAY_TILE_ID = 'tile-0';
-  const DATA_TILE_IDS = ['tile-1', 'tile-2', 'tile-3'];
-  const CHUNK_NAMESPACE = 'weather-dashboard';
   const CSS_ID = 'weather-dashboard-css';
   const TEMP_RANGE = { min: -40, max: 120 };
-  const AMBIENT_ROTATION_DEFAULT_SECONDS = 12;
-  const AMBIENT_ROTATION_MIN_SECONDS = 3;
+  const AMBIENT_ROTATION_INTERVAL_MS = 5000;
   const INIT_RETRY_LIMIT = 40;
   const INIT_RETRY_DELAY = 250;
   const DATA_REFRESH_INTERVAL = 5000;
@@ -33,12 +30,17 @@
     { max: Infinity, colors: ['#d83a2a', '#a52222'] }
   ];
 
+  // Ambient ring geometry (single source of truth)
+  const AMBIENT_RING = { r: 45, stroke: 10 };
+  // separate ring geometry for outdoor gauge and wind compass
+  const OUTDOOR_RING = { r: 45, stroke: 10 };
+
   const CARD_TITLES = {
     temperature: 'Outdoor Temperature',
     wind: 'Wind',
     rain: 'Rainfall',
     pressure: 'Barometer',
-    solarSun: 'Sun, Solar & UV',
+    solarSun: 'Sun & Solar',
     air: 'Air Quality'
   };
 
@@ -46,10 +48,32 @@
     timer: null,
     sensors: [],
     index: 0,
-    interval: AMBIENT_ROTATION_DEFAULT_SECONDS * 1000,
+    interval: AMBIENT_ROTATION_INTERVAL_MS,
     tempUnit: '°F',
-    humidityUnit: '%'
+    humidityUnit: '%',
+    countdownTimer: null,
+    nextSwitchAt: null,
+    paused: false
   };
+
+  let airQualityRotation = {
+    timer: null,
+    sources: [], // ['outdoor', 'indoor']
+    index: 0,
+    interval: 10000, // Rotate every 10 seconds
+    paused: false,
+    nextSwitchAt: null,
+    countdownTimer: null,
+    lastData: null
+  };
+
+  // remember last shown humidity per sensor (keyed by sensor name when available)
+  const ambientLastHumidity = new Map();
+  // remember the last displayed humidity value (single source) so when the card is
+  // rebuilt for a new sensor we can animate from the last visual state rather than 0%
+  let ambientLastDisplayedHumidity = null;
+  // track which ambient index we've initialized into the DOM to avoid re-init loops
+  let ambientLastInitIndex = null;
 
   const dataTileObservers = new Map();
   let domObserver = null;
@@ -127,53 +151,90 @@
       grid.innerHTML = `<div class="wdash-empty">Waiting for weather data…</div>`;
       clearAmbientRotation();
       toggleSourceTileMask(false);
+      clearAirQualityRotation();
       return;
     }
 
     grid.dataset.empty = 'false';
-    grid.innerHTML = buildMarkup(payload);
+    const newMarkup = buildMarkup(payload);
+    // Only replace the grid contents when markup actually changes to avoid
+    // spurious DOM rebuilds (which can make the ambient rings redraw)
+    if (grid.innerHTML !== newMarkup) {
+      grid.innerHTML = newMarkup;
+      // initialize ambient humidity circle from any remembered last value so it
+      // doesn't animate from 0% when the card is first built or when switching sensors
+      try {
+        const ambientContainer = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-ambient');
+        if (ambientContainer) initAmbientLastHum(ambientContainer);
+      } catch (e) { /* ignore */ }
+    }
     setupAmbientRotation(payload);
+    setupAirQualityRotation(payload);
     setupInteractiveComponents(grid);
+    // observe ambient container for size changes to keep ring geometry synchronized
+    try {
+      const ambientContainer = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-ambient');
+      if (ambientContainer && typeof ResizeObserver !== 'undefined') {
+        const ro = new ResizeObserver(() => { applyAmbientRingSizing(); applyOutdoorRingSizing(); });
+        ro.observe(ambientContainer);
+      } else {
+        // fallback: window resize
+        window.addEventListener('resize', () => { applyAmbientRingSizing(); applyOutdoorRingSizing(); });
+      }
+    } catch (e) {
+      // ignore observer setup failures in constrained environments
+    }
     toggleSourceTileMask(true);
   }
 
   function readPayloads() {
-    const payloads = [];
-    const chunkEnvelopes = [];
-    for (const id of DATA_TILE_IDS) {
-      const tile = byId(id);
-      if (!tile) continue;
-      const text = getTileText(tile);
-      if (!text) continue;
-      if (/please select an attribute/i.test(text)) {
-        if (!placeholderLogged.has(id)) {
-          placeholderLogged.add(id);
-          console.warn(`[WeatherDashboard] ${id} is still showing the Hubitat placeholder text. Confirm the tile template is set to Attribute and the dashboardData attribute is selected.`);
-        }
-        continue;
+    const tile1 = byId('tile-1');
+    const text1 = getTileText(tile1);
+    if (!text1) return [];
+
+    const json1 = extractJson(text1);
+    if (!json1) return [];
+
+    try {
+      const parsed1 = JSON.parse(json1);
+      if (!isChunkEnvelope(parsed1)) {
+        // Not chunked, return as a single payload
+        return [parsed1];
       }
-      const json = extractJson(text);
-      if (!json) continue;
-      try {
+
+      // It's chunked, find out how many chunks to expect
+      const totalChunks = parsed1.chunkCount;
+      if (!Number.isInteger(totalChunks) || totalChunks < 1) {
+        console.warn('[WeatherDashboard] Invalid chunkCount found in tile-1', parsed1);
+        return [];
+      }
+
+      const chunkEnvelopes = [parsed1];
+      // Read the rest of the chunks
+      for (let i = 2; i <= totalChunks; i++) {
+        const tile = byId(`tile-${i}`);
+        const text = getTileText(tile);
+        if (!text) continue;
+        const json = extractJson(text);
+        if (!json) continue;
         const parsed = JSON.parse(json);
         if (isChunkEnvelope(parsed)) {
-          chunkEnvelopes.push({ ...parsed, tileId: id });
-        } else {
-          payloads.push(parsed);
+          chunkEnvelopes.push(parsed);
         }
-      } catch (err) {
-        console.warn('[WeatherDashboard] Failed to parse payload from', id, err, json.slice(0, 1200));
       }
+
+      const assembled = assembleChunkPayload(chunkEnvelopes);
+      return assembled ? [assembled] : [];
+    } catch (err) {
+      console.warn('[WeatherDashboard] Failed to parse payload from tile-1', err, json1.slice(0, 200));
+      return [];
     }
-    const assembled = assembleChunkPayload(chunkEnvelopes);
-    if (assembled) {
-      payloads.push(assembled);
-    }
-    return payloads;
   }
 
   function toggleSourceTileMask(hide) {
-    for (const id of DATA_TILE_IDS) {
+    const count = ambientRotation.chunkCount || 1;
+    for (let i = 1; i <= count; i++) {
+      const id = `tile-${i}`;
       const tile = byId(id);
       if (!tile) continue;
       tile.classList.toggle('wdash-source-tile', hide);
@@ -181,7 +242,9 @@
   }
 
   function ensureDataTileObservers() {
-    for (const id of DATA_TILE_IDS) {
+    const count = ambientRotation.chunkCount || 1;
+    for (let i = 1; i <= count; i++) {
+      const id = `tile-${i}`;
       const tile = byId(id);
       const existing = dataTileObservers.get(id);
       if (!tile) {
@@ -250,18 +313,17 @@
   function buildMarkup(data) {
     return `
       ${[
-        buildTemperatureCard(data),
-        buildWindCard(data),
+        buildTempWindCard(data),
         buildAmbientSensorCard(data),
-        buildRainCard(data),
         buildPressureCard(data),
+        buildRainCard(data),
         buildSolarSunCard(data),
         buildAirQualityCard(data)
       ].join('')}
     `;
   }
 
-  function buildTemperatureCard(data) {
+  function buildTempWindCard(data) {
     const outdoor = data.outdoor || {};
     const temp = toNumber(outdoor.temperatureF);
     const high = toNumber(outdoor.dailyHighF);
@@ -271,49 +333,6 @@
     const humidity = toNumber(outdoor.humidity);
     const trend = toNumber(outdoor.trendFPerHour);
 
-    const tempColor = colorForTemp(temp);
-    const indicator = gaugeIndicator(temp);
-    const dewText = formatTemperature(dew);
-    const humidityText = formatPercent(humidity, 0);
-    const trendText = formatSigned(trend, 2, '°/hr');
-    const feelsText = formatTemperature(feels);
-    const highText = formatTemperature(high);
-    const lowText = formatTemperature(low);
-
-    return `
-      <section class="wdash-card wdash-card--temp">
-        ${cardHeader(CARD_TITLES.temperature, data)}
-        <div class="wdash-temp">
-          <div class="wdash-gauge" style="--gauge-indicator:${indicator};--gauge-color-a:${tempColor.colors[0]};--gauge-color-b:${tempColor.colors[1]};--gauge-color-mid:${tempColor.mid};--gauge-band-progress:${tempColor.progress};">
-            <div class="wdash-gauge-ring"></div>
-            <div class="wdash-gauge-pointer"></div>
-            <div class="wdash-gauge-center">
-              <div class="wdash-temp-extrema wdash-temp-extrema--high">
-                <span class="wdash-temp-extrema-label">High</span>
-                <span class="wdash-temp-extrema-value">${highText}</span>
-              </div>
-              <div class="wdash-gauge-current">
-                <span class="wdash-gauge-value">${formatTemperature(temp)}</span>
-                <span class="wdash-gauge-label">Current</span>
-              </div>
-              <div class="wdash-temp-extrema wdash-temp-extrema--low">
-                <span class="wdash-temp-extrema-label">Low</span>
-                <span class="wdash-temp-extrema-value">${lowText}</span>
-              </div>
-            </div>
-          </div>
-          ${buildMetricRow([
-            { label: 'Feels Like', value: feelsText },
-            { label: 'Dew Point', value: dewText },
-            { label: 'Humidity', value: humidityText },
-            { label: 'Trend', value: trendText }
-          ], 'wdash-temp-details', { variant: 'gauge', columns: 4 })}
-        </div>
-      </section>
-    `;
-  }
-
-  function buildWindCard(data) {
     const wind = data.wind || {};
     const avg = wind.average || {};
     const speed = toNumber(wind.speedMph);
@@ -324,46 +343,109 @@
     const avgDir = toNumber(avg.directionDegrees);
     const avgDirText = avg.directionCardinal || (Number.isFinite(avgDir) ? degreesToCardinal(avgDir) : null);
     const windowMins = wind.averageMinutes || avg.minutes || 10;
+    const dailyMaxGust = toNumber(wind.dailyMaxGustMph);
 
     const bearingLabel = dirText || (Number.isFinite(dirDegrees) ? degreesToCardinal(dirDegrees) : '--');
-    const compass = windCompassSvg(dirDegrees, avgDir);
+
+    const tempColor = colorForTemp(temp);
+    const indicator = gaugeIndicator(temp);
+    const dewText = formatTemperature(dew);
+    const humidityText = formatPercent(humidity, 0);
+    const trendText = formatSigned(trend, 1, '°/hr');
+    const feelsText = formatTemperature(feels);
+    const highText = formatTemperature(high);
+    const lowText = formatTemperature(low);
     const gustText = Number.isFinite(gust) ? `${formatNumber(gust, 1)} mph` : '--';
     const avgSpeedText = Number.isFinite(avgSpeed) ? `${formatNumber(avgSpeed, 1)} mph` : '--';
-
-    const headingParts = [];
-    if (bearingLabel && bearingLabel !== '--') headingParts.push(bearingLabel);
-    headingParts.push(formatDegrees(dirDegrees));
-    const headingValue = headingParts.join(' ').trim();
+    const avgCombinedText = `${avgDirText || '--'} ${avgSpeedText}`;
+    const dailyMaxGustText = Number.isFinite(dailyMaxGust) ? `${formatNumber(dailyMaxGust, 1)} mph` : '--';
 
     return `
-      <section class="wdash-card wdash-card--wind">
-        ${cardHeader(CARD_TITLES.wind, data)}
-        <div class="wdash-wind">
-          <div class="wdash-wind-compass" aria-label="Wind direction ${bearingLabel} ${formatDegrees(dirDegrees)}">
-            ${compass}
-            <div class="wdash-wind-overlay">
-              <span class="wdash-wind-bearing-line">
-                <span class="wdash-wind-bearing">${bearingLabel}</span>
-                <span class="wdash-wind-heading"> ${formatDegrees(dirDegrees)}</span>
-              </span>
-              <span class="wdash-wind-speed">
-                <span class="wdash-wind-speed-value">${formatNumber(speed, 1)}</span>
-                <span class="wdash-unit">mph</span>
-              </span>
-              <span class="wdash-wind-gust">
-                <span class="wdash-wind-gust-label">Gust: </span>
-                <span class="wdash-wind-gust-value">${gustText}</span>
-              </span>
+      <section class="wdash-card wdash-card--temp-wind">
+        <header class="wdash-card-header">
+          <h3>Outdoor Conditions</h3>
+          <span class="wdash-updated">${escapeHtml(data.metadata?.generatedAt ? 'Updated ' + formatRelativeTime(data.metadata.generatedAt) : '')}</span>
+        </header>
+        <div class="wdash-temp-wind-main">
+          <div class="wdash-temp">
+            <div class="wdash-gauge" style="--gauge-indicator:${indicator};--gauge-color-a:${tempColor.colors[0]};--gauge-color-b:${tempColor.colors[1]};--gauge-color-mid:${tempColor.mid};--gauge-band-progress:${tempColor.progress};">
+              <svg class="wdash-gauge-svg" viewBox="0 0 100 100" aria-hidden="true">
+                <defs>
+                  <linearGradient id="wdash-temp-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" stop-color="${tempColor.colors[0]}" />
+                    <stop offset="50%" stop-color="${tempColor.colors[1]}" />
+                    <stop offset="100%" stop-color="${tempColor.colors[1]}" />
+                  </linearGradient>
+                </defs>
+                <circle class="wdash-gauge-track" cx="50" cy="50" r="${OUTDOOR_RING.r + OUTDOOR_RING.stroke/2}" fill="transparent" stroke="rgba(255,255,255,0.12)" stroke-width="1" />
+                <circle cx="50" cy="50" r="${OUTDOOR_RING.r - OUTDOOR_RING.stroke/2}" class="wdash-gauge-inner-edge" fill="transparent" stroke="rgba(255,255,255,0.08)" stroke-width="1.4" stroke-dasharray="6 6" />
+                <circle class="wdash-gauge-inner-fill" cx="50" cy="50" r="${OUTDOOR_RING.r - OUTDOOR_RING.stroke/2}" fill="rgba(5,10,20,0.85)" />
+                <circle class="wdash-gauge-fill" cx="50" cy="50" r="${OUTDOOR_RING.r}" fill="none" stroke="url(#wdash-temp-gradient)" stroke-width="${OUTDOOR_RING.stroke}" stroke-linecap="round" transform="rotate(-90 50 50)" stroke-dasharray="${Math.round(2*Math.PI*OUTDOOR_RING.r)}" stroke-dashoffset="0" />
+              </svg>
+              <div class="wdash-gauge-center">
+                <div class="wdash-temp-extrema wdash-temp-extrema--high">
+                  <span class="wdash-temp-extrema-label">High</span>
+                  <span class="wdash-temp-extrema-value">${highText}</span>
+                </div>
+                <div class="wdash-gauge-current">
+                  <span class="wdash-gauge-value">${formatTemperature(temp)}</span>
+                </div>
+                <div class="wdash-temp-extrema wdash-temp-extrema--low">
+                  <span class="wdash-temp-extrema-label">Low</span>
+                  <span class="wdash-temp-extrema-value">${lowText}</span>
+                </div>
+              </div>
             </div>
           </div>
-          ${buildMetricRow([
-            { label: 'Gust', value: gustText },
-            { label: `${windowMins} min avg`, value: avgSpeedText, sub: `${avgDirText || '--'} (${formatDegrees(avgDir)})` },
-            { label: 'Heading', value: headingValue }
-          ], 'wdash-wind-metrics', { variant: 'gauge', columns: 3 })}
+          <div class="wdash-wind">
+            <div class="wdash-wind-compass" aria-label="Wind direction ${bearingLabel} ${formatDegrees(dirDegrees)}">
+              ${windCompassSvg(dirDegrees, avgDir)}
+              <div class="wdash-wind-overlay">
+                <span class="wdash-wind-bearing-line">
+                  <span class="wdash-wind-bearing">${bearingLabel}</span>
+                  <span class="wdash-wind-heading"> ${formatDegrees(dirDegrees)}</span>
+                </span>
+                <span class="wdash-wind-speed">
+                  <span class="wdash-wind-speed-value">${formatNumber(speed, 1)}</span>
+                  <span class="wdash-unit">mph</span>
+                </span>
+                <span class="wdash-wind-gust">
+                  <span class="wdash-wind-gust-label">Gust: </span>
+                  <span class="wdash-wind-gust-value">${gustText}</span>
+                </span>
+              </div>
+            </div>
+          </div>
         </div>
+        ${buildMetricRow([
+          { label: 'Feels Like', value: feelsText },
+          { label: 'Dew Point', value: dewText },
+          { label: 'Humidity', value: humidityText },
+          { label: 'Temp Trend', value: trendText },
+          { label: `${windowMins}m Avg`, value: avgCombinedText },
+          { label: 'Max Gust', value: dailyMaxGustText } ], 'wdash-temp-wind-details', { layout: 'fill', columns: 6 })}
       </section>
     `;
+  }
+
+  // after building the ambient card markup, if we have a remembered humidity for
+  // the first sensor, store it into the DOM element's data attribute so subsequent
+  // updateAmbientDisplay can animate from that value instead of from 0%.
+  function initAmbientLastHum(container) {
+    try {
+      const circle = container.querySelector('.wdash-ambient-circle--humidity .wdash-ambient-fill');
+      if (!circle) return;
+      const sensorName = container.querySelector('.wdash-ambient-name')?.textContent || '';
+      const last = ambientLastHumidity.get(sensorName);
+      if (last != null) {
+        const r = AMBIENT_RING.r;
+        const circumference = Math.round(2 * Math.PI * r);
+        const dash = Math.max(0, Math.min(1, last / 100)) * circumference;
+        const offset = Math.round(circumference - dash);
+        circle.setAttribute('stroke-dashoffset', String(offset));
+        circle.dataset.lastHum = String(last);
+      }
+    } catch (e) { /* ignore */ }
   }
 
   function buildAmbientSensorCard(data) {
@@ -379,22 +461,56 @@
     const tempDisplay = formatAmbientValue(sensor.temperatureF, tempUnit, 1);
     const humidityDisplay = formatAmbientValue(sensor.humidity, humidityUnit, 0);
     const nameDisplay = sensor.name || (hasSensors ? '' : 'No sensors configured');
+    const timerDisabledAttr = sensors.length > 1 ? '' : ' disabled';
+    const timerLabel = sensors.length > 1 ? 'Pause ambient sensor rotation' : 'Ambient sensor rotation unavailable';
 
     return `
       <section class="wdash-card wdash-card--ambient${hasSensors ? '' : ' wdash-ambient--empty'}">
         <header class="wdash-card-header">
-          <h3>Local Sensors</h3>
+          <h3>Ambient Sensors</h3>
           <span class="wdash-updated">${escapeHtml(countLabel)}</span>
         </header>
         <div class="wdash-ambient" data-count="${sensors.length}">
           <div class="wdash-ambient-circles">
-            <div class="wdash-ambient-circle wdash-ambient-circle--temp">
+                <div class="wdash-ambient-circle wdash-ambient-circle--temp" style="position: relative;">
+                <svg class="wdash-ambient-svg wdash-ambient-svg--temp" viewBox="0 0 100 100" aria-hidden="true">
+                <defs>
+                  <linearGradient id="wdash-ambient-temp-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop class="wdash-svg-stop" offset="0%" stop-color="#4aa3ff" />
+                      <stop class="wdash-svg-stop" offset="50%" stop-color="#6bc3ff" />
+                      <stop class="wdash-svg-stop" offset="100%" stop-color="#6bc3ff" />
+                  </linearGradient>
+                </defs>
+                <!-- inner filled background circle sized to match ring inner edge -->
+                <circle class="wdash-ambient-inner-circle" cx="50" cy="50" r="${AMBIENT_RING.r - AMBIENT_RING.stroke/2 + 0.5}" fill="rgba(5,10,20,0.95)" />
+                <circle class="wdash-ambient-track" cx="50" cy="50" r="${AMBIENT_RING.r}" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="${AMBIENT_RING.stroke}" stroke-linecap="butt" />
+                <circle class="wdash-ambient-fill" cx="50" cy="50" r="${AMBIENT_RING.r}" fill="none" stroke="url(#wdash-ambient-temp-gradient)" stroke-width="${AMBIENT_RING.stroke}" stroke-linecap="round" stroke-dasharray="${Math.round(2*Math.PI*AMBIENT_RING.r)}" stroke-dashoffset="0" />
+              </svg>
               <span class="wdash-ambient-reading wdash-ambient-reading--temp">${escapeHtml(tempDisplay)}</span>
               <span class="wdash-ambient-label">Temperature</span>
             </div>
             <div class="wdash-ambient-circle wdash-ambient-circle--humidity">
+              <svg class="wdash-ambient-svg wdash-ambient-svg--humidity" viewBox="0 0 100 100" aria-hidden="true">
+                <circle class="wdash-ambient-inner-circle" cx="50" cy="50" r="${AMBIENT_RING.r - AMBIENT_RING.stroke/2 + 0.5}" fill="rgba(5,10,20,0.95)" />
+                <circle class="wdash-ambient-track" cx="50" cy="50" r="${AMBIENT_RING.r}" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="${AMBIENT_RING.stroke}" stroke-linecap="butt" />
+                <circle class="wdash-ambient-fill" cx="50" cy="50" r="${AMBIENT_RING.r}" fill="none" stroke="#5b2fe6" stroke-width="${AMBIENT_RING.stroke}" stroke-linecap="round" stroke-dasharray="${Math.round(2*Math.PI*AMBIENT_RING.r)}" data-last-hum="" stroke-dashoffset="${Math.round(2*Math.PI*AMBIENT_RING.r)}" />
+              </svg>
               <span class="wdash-ambient-reading wdash-ambient-reading--humidity">${escapeHtml(humidityDisplay)}</span>
               <span class="wdash-ambient-label">Humidity</span>
+              <button type="button" class="wdash-ambient-timer" aria-label="${escapeHtml(timerLabel)}" aria-pressed="false"${timerDisabledAttr}>
+                <svg class="wdash-ambient-timer-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <!-- Simplified sync-style icon: two curved strokes with chevrons drawn as short stroked segments -->
+                  <g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <!-- top-right arc + chevron -->
+                    <path d="M4.5 12a8.2 8.2 0 0114.18-4.24"></path>
+                    <path d="M19.5 3v5.25H14.25"></path>
+                    <!-- bottom-left arc + chevron -->
+                    <path d="M19.5 12a8.2 8.2 0 01-14.18 4.24"></path>
+                    <path d="M4.5 21v-5.25H9.75"></path>
+                  </g>
+                </svg>
+                <span class="wdash-ambient-timer-countdown">--</span>
+              </button>
             </div>
           </div>
           <div class="wdash-ambient-footer">
@@ -408,16 +524,71 @@
 
   function buildRainCard(data) {
     const rain = data.rain || {};
-    const stats = [
-      { label: 'Rate', value: formatRain(rain.rateInPerHour) },
-      { label: 'Daily', value: formatRain(rain.dailyIn) },
+    const rate = toNumber(rain.rateInPerHour);
+    const hourlyIn = toNumber(rain.hourlyIn);
+
+    // Determine the fill ratio based on 8 discrete states of hourly rainfall
+    let fillRatio = 0;
+    if (hourlyIn > 1.2) {
+      fillRatio = 1; // State 8: > 1.2
+    } else if (hourlyIn > 1.0) {
+      fillRatio = 6 / 7; // State 7: > 1.0 to 1.2
+    } else if (hourlyIn > 0.8) {
+      fillRatio = 5 / 7; // State 6: > 0.8 to 1.0
+    } else if (hourlyIn > 0.6) {
+      fillRatio = 4 / 7; // State 5: > 0.6 to 0.8
+    } else if (hourlyIn > 0.4) {
+      fillRatio = 3 / 7; // State 4: > 0.4 to 0.6
+    } else if (hourlyIn > 0.2) {
+      fillRatio = 2 / 7; // State 3: > 0.2 to 0.4
+    } else if (hourlyIn > 0) {
+      fillRatio = 1 / 7; // State 2: > 0 to 0.2
+    } // State 1: 0 (default)
+
+    const DROP_HEIGHT = 140;
+    const DROP_BOTTOM_Y = 150;
+    const fillHeight = DROP_HEIGHT * fillRatio;
+    const fillY = DROP_BOTTOM_Y - fillHeight;
+
+    const rightColStats = [
+      { label: 'Event', value: formatRain(rain.eventIn) },
+      { label: 'Hourly', value: formatRain(rain.hourlyIn) },
       { label: 'Weekly', value: formatRain(rain.weeklyIn) },
-      { label: 'Monthly', value: formatRain(rain.monthlyIn) }
+      { label: 'Monthly', value: formatRain(rain.monthlyIn) },
+      { label: 'Yearly', value: formatRain(rain.yearlyIn) }
     ];
+
     return `
       <section class="wdash-card wdash-card--rain">
         ${cardHeader(CARD_TITLES.rain, data)}
-        ${buildMetricRow(stats, 'wdash-rain-stats')}
+        <div class="wdash-rain-main">
+          <div class="wdash-rain-col wdash-rain-col--drop">
+            <svg viewBox="0 0 120 160" role="img" aria-label="Rain rate visualization">
+              <defs>
+                <clipPath id="wdash-rain-clip"><path d="M60 10 C40 45 20 75 20 105 C20 135 38 150 60 150 C82 150 100 135 100 105 C100 75 80 45 60 10 Z" /></clipPath>
+                <linearGradient id="wdash-rain-gradient" x1="0" x2="0" y1="1" y2="0"><stop offset="0%" stop-color="#3d8bff" /><stop offset="100%" stop-color="#7dd3ff" /></linearGradient>
+              </defs>
+              <path class="wdash-rain-drop-bg" d="M60 10 C40 45 20 75 20 105 C20 135 38 150 60 150 C82 150 100 135 100 105 C100 75 80 45 60 10 Z" />
+              <rect class="wdash-rain-drop-fill" x="20" y="${fillY}" width="80" height="${fillHeight}" clip-path="url(#wdash-rain-clip)" rx="35" fill="url(#wdash-rain-gradient)" />
+              <path class="wdash-rain-drop-outline" d="M60 10 C40 45 20 75 20 105 C20 135 38 150 60 150 C82 150 100 135 100 105 C100 75 80 45 60 10 Z" />
+            </svg>
+          </div>
+          <div class="wdash-rain-col wdash-rain-col--center">
+            <div class="wdash-rain-rate-wrapper">
+              ${buildMetricRow([
+                { label: 'Rate', value: formatRain(rate) }
+              ], 'wdash-rain-stats wdash-metric-row--table', {
+              })}
+            </div>
+            <div class="wdash-rain-daily-metric">
+              <div class="wdash-rain-daily-value">${formatRain(rain.dailyIn)}</div>
+              <div class="wdash-rain-daily-label">Daily</div>
+            </div>
+          </div>
+          <div class="wdash-rain-col wdash-rain-col--stats">
+            ${buildMetricRow(rightColStats, 'wdash-rain-stats', { variant: 'table' })}
+          </div>
+        </div>
       </section>
     `;
   }
@@ -452,10 +623,10 @@
             </div>
           </div>
           ${buildMetricRow(stats, 'wdash-pressure-stats')}
-        </div>
-        <div class="wdash-pressure-outlook">
-          <span class="wdash-outlook-label">${outlook.category || 'Outlook'}</span>
-          <span class="wdash-outlook-text">${outlook.summary || 'No forecast available.'}</span>
+          <div class="wdash-pressure-outlook">
+            <span class="wdash-outlook-label">${outlook.category || 'Outlook'}</span>
+            <span class="wdash-outlook-text">${outlook.summary || 'No forecast available.'}</span>
+          </div>
         </div>
       </section>
     `;
@@ -465,73 +636,243 @@
     const solar = data.solar || {};
     const sun = data.sun || {};
     const uvIndex = toNumber(solar.uvIndex);
-    const solarRadiation = toNumber(solar.solarRadiationWm2);
+    const solarRadiation = toNumber(solar.solarRadiationWm2); // Support multiple keys
     const lightLux = toNumber(sun.illuminanceLux ?? sun.lightLux ?? solar.illuminanceLux);
-    const sunriseText = formatTime(sun.sunrise);
-    const sunsetText = formatTime(sun.sunset);
-    const progress = sunProgress(sun, data?.metadata?.generatedAt);
-    const progressStyle = Number.isFinite(progress) ? ` style="--sun-progress:${progress}"` : '';
+
+    const now = parseDateTime(data.metadata?.generatedAt);
+    const sunrise = parseDateTime(sun.sunrise);
+    const sunset = parseDateTime(sun.sunset);
+
+    const progress = sunProgress(sun, now);
+    const isDay = progress >= 0 && progress <= 1;
+    const dayNightClass = isDay ? 'is-day' : 'is-night';
+
+    // Unified geometry for the arc and sun path, all within the SVG's viewBox
+    // A 150-degree arc (210 to 330) with padding so the sun marker doesn't clip.
+    const arc = { cx: 100, cy: 100, r: 85, startAngle: 210, endAngle: 330 };
+    const startPoint = getPointOnArc(arc, 0);
+    const endPoint = getPointOnArc(arc, 1);
+    const arcPath = `M ${startPoint.x} ${startPoint.y} A ${arc.r} ${arc.r} 0 0 1 ${endPoint.x} ${endPoint.y}`;
+
+    // Calculate sun's position using the same geometry and apply it as an SVG transform
+    const sunPoint = getPointOnArc(arc, progress);
+    const sunTransform = `translate(${sunPoint.x}, ${sunPoint.y})`;
+
+    // --- Metric Positioning ---
+    // UV Index (upper left)
+    const uvStyle = `left: ${35 / 2}%; top: ${28}%;`;
+    // Solar (center)
+    const solarStyle = `left: ${100 / 2}%; top: ${45}%;`;
+    // Illuminance (upper right)
+    const illuminanceStyle = `left: ${165 / 2}%; top: ${28}%;`;
+
+    // --- Time Label Positioning ---
+    const sunriseStyle = `left: ${startPoint.x / 2}%; top: ${startPoint.y}%`;
+    const sunsetStyle = `left: ${endPoint.x / 2}%; top: ${endPoint.y}%`;
 
     return `
       <section class="wdash-card wdash-card--solar">
         ${cardHeader(CARD_TITLES.solarSun, data)}
         <div class="wdash-solar">
-          <div class="wdash-sun-graphic"${progressStyle}>
-            <div class="wdash-sun-arc"></div>
-            <div class="wdash-sun-horizon"></div>
-            <div class="wdash-sun-marker"></div>
-          </div>
-          <div class="wdash-sun-times">
-            <div class="wdash-sun-time">
-              <span class="wdash-label">Sunrise</span>
-              <span class="wdash-value">${sunriseText}</span>
+          <div class="wdash-sun-graphic">
+            <svg class="wdash-sun-svg" viewBox="0 0 200 100">
+              <defs>
+                <linearGradient id="wdash-sun-gradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                  <stop offset="0%" stop-color="#ffd45a" />
+                  <stop offset="100%" stop-color="#ff9445" />
+                </linearGradient>
+              </defs>
+              <path class="wdash-sun-arc" d="${arcPath}" />
+              <g class="wdash-sun-marker ${dayNightClass}" transform="${sunTransform}">
+                <circle r="8" fill="url(#wdash-sun-gradient)" />
+              </g>
+            </svg>
+            <!-- Metric Labels (HTML) -->
+            <div class="wdash-sun-html-metric" style="${uvStyle}">
+              <div class="wdash-sun-metric-label">UV Index</div>
+              <div class="wdash-sun-metric-value">${Number.isFinite(uvIndex) ? formatNumber(uvIndex, 1) : '--'}</div>
             </div>
-            <div class="wdash-sun-time">
-              <span class="wdash-label">Sunset</span>
-              <span class="wdash-value">${sunsetText}</span>
+            <div class="wdash-sun-html-metric" style="${solarStyle}">
+              <div class="wdash-sun-metric-label">Solar</div>
+              <div class="wdash-sun-metric-value">${Number.isFinite(solarRadiation) ? formatNumber(solarRadiation, 0) : '--'} <span class="wdash-sun-metric-unit">W/m²</span></div>
+            </div>
+            <div class="wdash-sun-html-metric" style="${illuminanceStyle}">
+              <div class="wdash-sun-metric-label">Illuminance</div>
+              <div class="wdash-sun-metric-value">${Number.isFinite(lightLux) ? formatNumber(lightLux, 0) : '--'} <span class="wdash-sun-metric-unit">lux</span></div>
+            </div>
+            <!-- Time Labels (HTML) -->
+            <div class="wdash-sun-time wdash-sun-time--rise" style="${sunriseStyle}">
+              <span class="wdash-value">${formatTime(sun.sunrise)}</span>
+            </div>
+            <div class="wdash-sun-time wdash-sun-time--set" style="${sunsetStyle}">
+              <span class="wdash-value">${formatTime(sun.sunset)}</span>
             </div>
           </div>
-          ${buildMetricRow([
-            { label: 'UV Index', value: Number.isFinite(uvIndex) ? formatNumber(uvIndex, 1) : '--' },
-            { label: 'Solar', value: Number.isFinite(solarRadiation) ? `${formatNumber(solarRadiation, 0)} W/m²` : '--' },
-            { label: 'Illuminance', value: Number.isFinite(lightLux) ? `${formatNumber(lightLux, 0)} lux` : '--' }
-          ], 'wdash-solar-metrics')}
         </div>
       </section>
     `;
   }
 
   function buildAirQualityCard(data) {
-    const air = data.airQuality || {};
-    const aqi = toNumber(air.aqi);
-    const pm25 = toNumber(air.pm25);
-    const pm10 = toNumber(air.pm10);
-    const co2 = toNumber(air.co2ppm);
+    const sources = [];
+    if (data.outdoorAirQuality) sources.push('Outdoor');
+    if (data.indoorAirQuality) sources.push('Indoor');
 
-    const metrics = [
-      { label: 'AQI', value: Number.isFinite(aqi) ? formatNumber(aqi, 0) : '--' },
-      { label: 'PM2.5', value: Number.isFinite(pm25) ? `${formatNumber(pm25, 1)} µg/m³` : '--' }
-    ];
+    const currentSource = airQualityRotation.sources[airQualityRotation.index] || sources[0] || 'Outdoor';
+    const airData = currentSource === 'Indoor' ? data.indoorAirQuality : data.outdoorAirQuality;
 
-    if (Number.isFinite(pm10)) {
-      metrics.push({ label: 'PM10', value: `${formatNumber(pm10, 1)} µg/m³` });
-    }
-    if (Number.isFinite(co2)) {
-      metrics.push({ label: 'CO₂', value: `${formatNumber(co2, 0)} ppm` });
-    }
+    const metrics = buildAirQualityMetrics(airData, currentSource);
+    const headerLabel = sources.length > 1 ? currentSource : '';
 
     return `
-      <section class="wdash-card wdash-card--air">
-        ${cardHeader(CARD_TITLES.air, data)}
+      <section class="wdash-card wdash-card--air" data-aq-source="${currentSource.toLowerCase()}">
+        ${cardHeader(CARD_TITLES.air, data, headerLabel)}
         ${buildMetricRow(metrics, 'wdash-air-metrics')}
       </section>
     `;
+  }
+
+  function buildAirQualityMetrics(air, type) {
+    if (!air) return [{ label: 'AQI', value: '--' }];
+
+    const metrics = [];
+    const aqi = toNumber(air.aqi);
+    const pm25 = toNumber(air.pm25);
+    const aqi24h = toNumber(air.aqi_avg_24h);
+    const pm25_24h = toNumber(air.pm25_avg_24h);
+
+    if (Number.isFinite(aqi)) {
+      metrics.push({ label: 'AQI', value: formatNumber(aqi, 0), color: air.aqiColor });
+    }
+    if (Number.isFinite(aqi24h)) {
+      metrics.push({ label: 'AQI 24h AVE', value: formatNumber(aqi24h, 0), color: air.aqiColor_avg_24h });
+    }
+    if (Number.isFinite(pm25)) {
+      metrics.push({ label: 'PM2.5', value: `${formatNumber(pm25, 1)} µg/m³` });
+    }
+    if (Number.isFinite(pm25_24h)) {
+      metrics.push({ label: 'PM2.5 24h AVE', value: `${formatNumber(pm25_24h, 1)} µg/m³` });
+    }
+
+    if (type === 'Indoor') {
+      const pm10 = toNumber(air.pm10);
+      const pm10_24h = toNumber(air.pm10_avg_24h);
+      const co2 = toNumber(air.carbonDioxide);
+      const co2_24h = toNumber(air.carbonDioxide_avg_24h);
+
+      if (Number.isFinite(pm10)) {
+        metrics.push({ label: 'PM10', value: `${formatNumber(pm10, 1)} µg/m³` });
+      }
+      if (Number.isFinite(pm10_24h)) {
+        metrics.push({ label: 'PM10 24h AVE', value: `${formatNumber(pm10_24h, 1)} µg/m³` });
+      }
+      if (Number.isFinite(co2)) {
+        metrics.push({ label: 'CO₂', value: `${formatNumber(co2, 0)} ppm` });
+      }
+      if (Number.isFinite(co2_24h)) {
+        metrics.push({ label: 'CO₂ 24h AVE', value: `${formatNumber(co2_24h, 0)} ppm` });
+      }
+    }
+
+    return metrics.length > 0 ? metrics : [{ label: 'AQI', value: '--' }];
   }
 
   /* ---------- helpers ---------- */
 
   function setupInteractiveComponents(container) {
     setupPressureToggle(container);
+    setupAmbientControls(container);
+    // ensure ambient ring sizing is applied on setup
+    applyAmbientRingSizing();
+    // also size outdoor gauge/compass
+    applyOutdoorRingSizing();
+  }
+
+  // Ensure ambient SVG rings use unified sizing derived from CSS variables
+  function applyAmbientRingSizing() {
+    const container = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-ambient');
+    if (!container) return;
+
+    const svgTemp = container.querySelector('.wdash-ambient-svg--temp');
+    const svgHum = container.querySelector('.wdash-ambient-svg--humidity');
+    const computed = getComputedStyle(container);
+    const rVar = Number(computed.getPropertyValue('--ambient-ring-r')) || AMBIENT_RING.r;
+    const strokeVar = Number(computed.getPropertyValue('--ambient-ring-stroke')) || AMBIENT_RING.stroke;
+
+    // Update AMBIENT_RING to reflect CSS-driven defaults so JS math can continue to use it
+    AMBIENT_RING.r = Number.isFinite(rVar) ? rVar : AMBIENT_RING.r;
+    AMBIENT_RING.stroke = Number.isFinite(strokeVar) ? strokeVar : AMBIENT_RING.stroke;
+
+    [svgTemp, svgHum].forEach(svg => {
+      if (!svg) return;
+      const viewBoxSize = 100; // our SVG uses 0..100
+      const px = svg.clientWidth || svg.getBoundingClientRect().width || viewBoxSize;
+      const scale = px / viewBoxSize;
+      const r = AMBIENT_RING.r;
+      const stroke = AMBIENT_RING.stroke;
+      const innerR = r - stroke/2 + 0.5; // small overlap for anti-alias
+
+      const track = svg.querySelector('.wdash-ambient-track');
+      const fill = svg.querySelector('.wdash-ambient-fill');
+      const inner = svg.querySelector('.wdash-ambient-inner-circle');
+
+      applyRingSizing(svg, AMBIENT_RING);
+    });
+  }
+
+  // Generic helper: update an SVG ring given a ring definition { r, stroke }
+  function applyRingSizing(svg, ringDef) {
+    if (!svg || !ringDef) return;
+    const r = ringDef.r;
+    const stroke = ringDef.stroke;
+    const outer = svg.querySelector('.wdash-gauge-outer, .wdash-gauge-track');
+  const fill = svg.querySelector('.wdash-ambient-fill, .wdash-gauge-fill');
+  const inner = svg.querySelector('.wdash-ambient-inner-circle, .wdash-gauge-inner, .wdash-gauge-inner-edge');
+  const innerFill = svg.querySelector('.wdash-gauge-inner-fill');
+
+    // compute edge radii (band centered at r, stroke spans r-stroke/2 .. r+stroke/2)
+    const outerEdge = r + stroke / 2;
+    const innerEdge = r - stroke / 2;
+
+    if (outer) {
+      outer.setAttribute('r', String(outerEdge));
+      // outer edge stroke is thin (1px visual) but keep attribute for potential theming
+      outer.setAttribute('stroke-width', String(1));
+    }
+    if (fill) {
+      // colored band (optional) remains centered at r
+      fill.setAttribute('r', String(r));
+      fill.setAttribute('stroke-width', String(stroke));
+      const circumference = Math.round(2 * Math.PI * r);
+      fill.setAttribute('stroke-dasharray', String(circumference));
+    }
+    if (inner) {
+      inner.setAttribute('r', String(innerEdge));
+      if (inner.classList && inner.classList.contains('wdash-gauge-inner')) {
+        // dashed inner edge uses a small stroke width
+        inner.setAttribute('stroke-width', String(1.4));
+      }
+    }
+      if (innerFill) {
+        innerFill.setAttribute('r', String(innerEdge));
+        // keep inner fill matching the dashboard center background; attribute left for theming
+        innerFill.setAttribute('fill', 'rgba(5,10,20,0.85)');
+      }
+  }
+
+  // Apply sizing for outdoor gauge and wind compass SVGs
+  function applyOutdoorRingSizing() {
+    const container = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-temp');
+    if (!container) return;
+    const gaugeSvg = container.querySelector('.wdash-gauge-svg');
+    if (gaugeSvg) applyRingSizing(gaugeSvg, OUTDOOR_RING);
+
+    // wind compass SVG(s)
+    const windContainer = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-wind');
+    if (windContainer) {
+      const compassSvgs = windContainer.querySelectorAll('svg.wdash-compass-svg');
+      compassSvgs.forEach(svg => applyRingSizing(svg, OUTDOOR_RING));
+    }
   }
 
   function setupPressureToggle(container) {
@@ -562,48 +903,179 @@
     });
   }
 
+  function setupAmbientControls(container) {
+    const button = container.querySelector('.wdash-ambient-timer');
+    if (!button) return;
+
+    button.addEventListener('click', () => {
+      if (ambientRotation.sensors.length <= 1) return;
+      toggleAmbientRotationPause();
+    });
+
+    updateAmbientTimerDisplay();
+  }
+
+  function toggleAmbientRotationPause(force) {
+    const desired = typeof force === 'boolean' ? force : !ambientRotation.paused;
+    if (desired === ambientRotation.paused) {
+      updateAmbientTimerDisplay();
+      return;
+    }
+
+    ambientRotation.paused = desired;
+    if (ambientRotation.paused) {
+      stopAmbientRotationTimer();
+    } else if (ambientRotation.sensors.length > 1) {
+      scheduleAmbientRotation();
+    }
+
+    updateAmbientTimerDisplay();
+  }
+
+  function scheduleAmbientRotation() {
+    resetAmbientTimerState();
+
+    if (ambientRotation.paused || ambientRotation.sensors.length <= 1) {
+      ambientRotation.nextSwitchAt = null;
+      clearAmbientCountdownTimer();
+      updateAmbientTimerDisplay();
+      return;
+    }
+
+    ambientRotation.nextSwitchAt = Date.now() + ambientRotation.interval;
+    ambientRotation.timer = setTimeout(() => {
+      ambientRotation.timer = null;
+      advanceAmbientSensor();
+    }, ambientRotation.interval);
+
+    ensureAmbientCountdownTimer();
+    updateAmbientTimerDisplay();
+  }
+
+  function advanceAmbientSensor() {
+    if (!ambientRotation.sensors.length) {
+      stopAmbientRotationTimer();
+      return;
+    }
+
+    ambientRotation.index = (ambientRotation.index + 1) % ambientRotation.sensors.length;
+    updateAmbientDisplay();
+
+    if (!ambientRotation.paused && ambientRotation.sensors.length > 1) {
+      scheduleAmbientRotation();
+    }
+  }
+
+  function resetAmbientTimerState() {
+    if (ambientRotation.timer) {
+      clearTimeout(ambientRotation.timer);
+      ambientRotation.timer = null;
+    }
+  }
+
+  function stopAmbientRotationTimer() {
+    resetAmbientTimerState();
+    ambientRotation.nextSwitchAt = null;
+    clearAmbientCountdownTimer();
+  }
+
+  function ensureAmbientCountdownTimer() {
+    if (ambientRotation.countdownTimer) return;
+    ambientRotation.countdownTimer = setInterval(() => {
+      updateAmbientTimerDisplay();
+    }, 250);
+  }
+
+  function clearAmbientCountdownTimer() {
+    if (!ambientRotation.countdownTimer) return;
+    clearInterval(ambientRotation.countdownTimer);
+    ambientRotation.countdownTimer = null;
+  }
+
+  function updateAmbientTimerDisplay() {
+    const button = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-ambient-timer');
+    if (!button) return;
+
+    const disabled = ambientRotation.sensors.length <= 1;
+    if (button.disabled !== disabled) {
+      button.disabled = disabled;
+    }
+
+    button.classList.toggle('is-paused', ambientRotation.paused && !disabled);
+    const label = ambientRotation.sensors.length > 1
+      ? (ambientRotation.paused ? 'Resume ambient sensor rotation' : 'Pause ambient sensor rotation')
+      : 'Ambient sensor rotation unavailable';
+    button.setAttribute('aria-label', label);
+    button.setAttribute('aria-pressed', disabled ? 'false' : String(ambientRotation.paused));
+
+    const countdownEl = button.querySelector('.wdash-ambient-timer-countdown');
+    if (countdownEl) {
+      if (disabled) {
+        countdownEl.textContent = '--';
+      } else if (ambientRotation.paused || !ambientRotation.nextSwitchAt) {
+        countdownEl.textContent = '--';
+      } else {
+        const remainingMs = ambientRotation.nextSwitchAt - Date.now();
+        const remaining = Math.max(0, Math.ceil(remainingMs / 1000));
+        countdownEl.textContent = String(remaining);
+      }
+    }
+  }
+
   function setupAmbientRotation(data) {
-    clearAmbientRotation();
     const container = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-ambient');
     if (!container) return;
 
     const sensors = Array.isArray(data?.ambientSensors) ? data.ambientSensors.filter(Boolean) : [];
-    if (!sensors.length) {
-      ambientRotation.sensors = [];
-    } else {
-      ambientRotation.sensors = sensors;
-    }
-    ambientRotation.index = 0;
+    ambientRotation.sensors = sensors;
     ambientRotation.tempUnit = data?.ambientTemperatureUnit || '°F';
+    ambientRotation.chunkCount = data?.metadata?.chunkCount || 1;
     ambientRotation.humidityUnit = data?.ambientHumidityUnit || '%';
+    ambientRotation.interval = AMBIENT_ROTATION_INTERVAL_MS;
 
-    const secondsRaw = Math.round(toNumber(data?.ambientRotationSeconds));
-    const seconds = Math.max(AMBIENT_ROTATION_MIN_SECONDS, Number.isFinite(secondsRaw) ? secondsRaw : AMBIENT_ROTATION_DEFAULT_SECONDS);
-    ambientRotation.interval = seconds * 1000;
+    if (ambientRotation.index >= ambientRotation.sensors.length) {
+      ambientRotation.index = ambientRotation.sensors.length ? ambientRotation.sensors.length - 1 : 0;
+    }
 
     updateAmbientDisplay();
 
-    if (ambientRotation.sensors.length > 1) {
-      ambientRotation.timer = setInterval(() => {
-        if (!ambientRotation.sensors.length) return;
-        ambientRotation.index = (ambientRotation.index + 1) % ambientRotation.sensors.length;
-        updateAmbientDisplay();
-      }, ambientRotation.interval);
+    if (ambientRotation.sensors.length <= 1) {
+      ambientRotation.index = 0;
+      stopAmbientRotationTimer();
+    } else if (ambientRotation.paused) {
+      stopAmbientRotationTimer();
+    } else if (!ambientRotation.timer) {
+      scheduleAmbientRotation();
     }
+
+    updateAmbientTimerDisplay();
   }
 
   function clearAmbientRotation() {
-    if (ambientRotation.timer) {
-      clearInterval(ambientRotation.timer);
-      ambientRotation.timer = null;
-    }
+    stopAmbientRotationTimer();
+    clearAirQualityRotation();
     ambientRotation.sensors = [];
     ambientRotation.index = 0;
+    ambientRotation.paused = false;
   }
 
   function updateAmbientDisplay() {
     const container = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-ambient');
     if (!container) return;
+
+    // If the ambient index changed since last init, (re)initialize the
+    // humidity circle from remembered values so the transition starts from the
+    // current visual state rather than empty.
+    try {
+      if (ambientLastInitIndex !== ambientRotation.index) {
+        initAmbientLastHum(container);
+        ambientLastInitIndex = ambientRotation.index;
+      }
+    } catch (e) { /* ignore */ }
+
+  // keep SVG ring sizing in sync with container scale
+  applyAmbientRingSizing();
+  applyOutdoorRingSizing();
 
     const sensor = ambientRotation.sensors[ambientRotation.index];
     const tempEl = container.querySelector('.wdash-ambient-reading--temp');
@@ -633,14 +1105,169 @@
         ? `Sensor ${ambientRotation.index + 1} of ${ambientRotation.sensors.length}`
         : '';
     }
+
+    updateAmbientTimerDisplay();
+
+    // Draw rings for temperature and humidity using inline SVG for better compatibility
+    try {
+      const tempFill = container.querySelector('.wdash-ambient-circle--temp .wdash-ambient-svg .wdash-ambient-fill');
+      const tempTrack = container.querySelector('.wdash-ambient-circle--temp .wdash-ambient-svg .wdash-ambient-track');
+      const humFill = container.querySelector('.wdash-ambient-circle--humidity .wdash-ambient-svg .wdash-ambient-fill');
+      const humTrack = container.querySelector('.wdash-ambient-circle--humidity .wdash-ambient-svg .wdash-ambient-track');
+
+      // Temperature: set stroke color to a blended mid color from the temperature band
+      if (tempFill && tempTrack) {
+        const t = toNumber(sensor.temperatureF);
+        const tempColors = colorForTemp(t);
+        const mid = tempColors.mid || mixColors(tempColors.colors[0], tempColors.colors[1], 0.5);
+        // If the temp fill uses a gradient, attempt to update its stops; otherwise fall back to mid color
+        const svg = tempFill.ownerSVGElement;
+        if (svg) {
+    const grad = svg.querySelector('#wdash-ambient-temp-gradient') || svg.querySelector('linearGradient');
+          if (grad) {
+            const stops = grad.querySelectorAll('stop');
+            if (stops[0]) stops[0].setAttribute('stop-color', tempColors.colors[0]);
+            if (stops[1]) stops[1].setAttribute('stop-color', tempColors.mid);
+            if (stops[2]) stops[2].setAttribute('stop-color', tempColors.colors[1]);
+          } else {
+            tempFill.setAttribute('stroke', tempColors.mid);
+          }
+        } else {
+          tempFill.setAttribute('stroke', tempColors.mid);
+        }
+        tempTrack.setAttribute('stroke', 'rgba(255,255,255,0.06)');
+        // prepare for potential arc animation by ensuring stroke-dasharray covers full circumference
+        try {
+          const r = AMBIENT_RING.r;
+          const circumference = Math.round(2 * Math.PI * r);
+          tempFill.setAttribute('stroke-dasharray', String(circumference));
+          // default to fully drawn (no offset) — we may animate this in future edits
+          tempFill.setAttribute('stroke-dashoffset', '0');
+          tempFill.setAttribute('stroke-linecap', 'round');
+        } catch (e) {/* ignore */}
+      }
+
+      // Humidity: use stroke-dashoffset on the circle to show percentage (counter-clockwise from top)
+      if (humFill && humTrack) {
+        const rawHum = toNumber(sensor.humidity);
+        const hum = Number.isFinite(rawHum) ? clamp(rawHum, 0, 100) : 0;
+        const r = AMBIENT_RING.r;
+        const circumference = Math.round(2 * Math.PI * r);
+        const fillFraction = hum / 100;
+        const dash = Math.max(0, Math.min(1, fillFraction)) * circumference;
+        const offset = Math.round(circumference - dash);
+
+        // Determine previous offset to animate from. Preference order:
+        // 1) explicit data-last-hum on the circle (set during build or previous update)
+        // 2) remembered in ambientLastHumidity map keyed by sensor name
+        // 3) fallback to current circle stroke-dashoffset (if present)
+        // 4) fallback to circumference (empty)
+        let prevHum = null;
+        try {
+          const sensorName = (container.querySelector('.wdash-ambient-name')?.textContent || '').trim();
+          if (humFill.dataset && humFill.dataset.lastHum) {
+            prevHum = Number(humFill.dataset.lastHum);
+          } else if (sensorName && ambientLastHumidity.has(sensorName)) {
+            prevHum = ambientLastHumidity.get(sensorName);
+          } else if (Number.isFinite(ambientLastDisplayedHumidity)) {
+            // fallback to the last displayed humidity value (across sensors)
+            prevHum = ambientLastDisplayedHumidity;
+          } else {
+            const existing = humFill.getAttribute('stroke-dashoffset');
+            if (existing != null) {
+              const cur = Number(existing);
+              if (!isNaN(cur)) {
+                // compute approximate previous hum fraction
+                const prevDash = Math.max(0, Math.min(circumference, cur));
+                prevHum = Math.round(((circumference - prevDash) / circumference) * 100);
+              }
+            }
+          }
+        } catch (e) { prevHum = null; }
+
+        // If prevHum is still null, animate from 0% (circumference offset)
+        const prevFraction = Number.isFinite(prevHum) ? clamp(prevHum / 100, 0, 1) : null;
+        const prevOffset = prevFraction != null ? Math.round(circumference - (prevFraction * circumference)) : circumference;
+
+        humFill.setAttribute('stroke-dasharray', String(circumference));
+        // Set starting offset only when it differs — this avoids jumping from 0 on every refresh
+        if (String(humFill.getAttribute('stroke-dashoffset')) !== String(offset)) {
+          // initialize from previous offset so CSS transition runs from previous→new
+          humFill.setAttribute('stroke-dashoffset', String(prevOffset));
+          // force a paint so the browser acknowledges the start value before we set the target
+          // using requestAnimationFrame to ensure transition triggers
+          window.requestAnimationFrame(() => {
+            try { humFill.setAttribute('stroke-dashoffset', String(offset)); } catch (e) {}
+          });
+        }
+
+        // persist latest humidity for next refresh/sensor reselect
+        try {
+          const sensorName = (container.querySelector('.wdash-ambient-name')?.textContent || '').trim();
+          if (sensorName) ambientLastHumidity.set(sensorName, hum);
+          if (humFill.dataset) humFill.dataset.lastHum = String(hum);
+          ambientLastDisplayedHumidity = hum;
+        } catch (e) { /* ignore */ }
+
+        humFill.setAttribute('stroke', '#5b2fe6');
+        humTrack.setAttribute('stroke', 'rgba(255,255,255,0.12)');
+      }
+    } catch (err) {
+      console.warn('[WeatherDashboard] ambient ring draw failed', err);
+    }
   }
 
-  function cardHeader(title, data) {
+  function setupAirQualityRotation(data) {
+    airQualityRotation.lastData = data;
+    const sources = [];
+    if (data?.outdoorAirQuality) sources.push('Outdoor');
+    if (data?.indoorAirQuality) sources.push('Indoor');
+    airQualityRotation.sources = sources;
+
+    if (airQualityRotation.index >= sources.length) {
+      airQualityRotation.index = 0;
+    }
+
+    if (sources.length > 1 && !airQualityRotation.timer) {
+      scheduleAirQualityRotation();
+    } else if (sources.length <= 1) {
+      clearAirQualityRotation();
+    }
+  }
+
+  function scheduleAirQualityRotation() {
+    if (airQualityRotation.timer) clearTimeout(airQualityRotation.timer);
+    airQualityRotation.timer = setTimeout(() => {
+      airQualityRotation.timer = null;
+      airQualityRotation.index = (airQualityRotation.index + 1) % airQualityRotation.sources.length;
+      updateAirQualityCard();
+      scheduleAirQualityRotation();
+    }, airQualityRotation.interval);
+  }
+
+  function clearAirQualityRotation() {
+    if (airQualityRotation.timer) {
+      clearTimeout(airQualityRotation.timer);
+      airQualityRotation.timer = null;
+    }
+    airQualityRotation.sources = [];
+    airQualityRotation.index = 0;
+  }
+
+  function updateAirQualityCard() {
+    const card = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-card--air');
+    if (!card || !airQualityRotation.lastData) return;
+
+    const newMarkup = buildAirQualityCard(airQualityRotation.lastData);
+    card.outerHTML = newMarkup;
+  }
+
+  function cardHeader(title, data, subLabel = null) {
     const generated = data.metadata?.generatedAt ? formatRelativeTime(data.metadata.generatedAt) : null;
     return `
       <header class="wdash-card-header">
         <h3>${title}</h3>
-        <span class="wdash-updated">${generated ? 'Updated ' + generated : ''}</span>
+        <span class="wdash-updated">${subLabel || (generated ? 'Updated ' + generated : '')}</span>
       </header>
     `;
   }
@@ -649,66 +1276,139 @@
     const dir = Number.isFinite(directionDegrees) ? ((directionDegrees % 360) + 360) % 360 : 0;
     const avg = Number.isFinite(averageDegrees) ? ((averageDegrees % 360) + 360) % 360 : null;
 
+    // Use same central geometry as gauges
+    const cx = 50;
+    const cy = 50;
+    const r = OUTDOOR_RING.r;
+    const stroke = OUTDOOR_RING.stroke;
+    const innerR = r - stroke / 2 + 0.5;
+  // Position ticks so they stay inside the ring stroke (between innerR and outer ring inner edge)
+  const outerEdge = r + stroke / 2; // absolute outer edge of band
+  const outerTick = r - (stroke / 4); // tick positions (inside band)
+  const minorInnerTick = innerR + (r - innerR) * 0.35;
+  const majorInnerTick = innerR + (r - innerR) * 0.15;
+
+    // Build 16 ticks (every 22.5deg)
     const ticks = [];
-    for (let d = 0; d < 360; d += 30) {
+    for (let i = 0; i < 16; i++) {
+      const d = i * (360 / 16);
       const rad = (d - 90) * Math.PI / 180;
-      const inner = d % 90 === 0 ? 38 : 44;
-      const outer = 52;
-      const x1 = 60 + inner * Math.cos(rad);
-      const y1 = 60 + inner * Math.sin(rad);
-      const x2 = 60 + outer * Math.cos(rad);
-      const y2 = 60 + outer * Math.sin(rad);
-      ticks.push(`<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" class="wdash-compass-tick${d % 90 === 0 ? ' wdash-compass-tick--major' : ''}" />`);
+      const isMajor = d % 90 === 0;
+      const inner = isMajor ? majorInnerTick : minorInnerTick;
+      const x1 = cx + inner * Math.cos(rad);
+      const y1 = cy + inner * Math.sin(rad);
+      const x2 = cx + outerTick * Math.cos(rad);
+      const y2 = cy + outerTick * Math.sin(rad);
+      ticks.push(`<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" class="wdash-compass-tick${isMajor ? ' wdash-compass-tick--major' : ''}" />`);
     }
 
-    const cardinals = [
-      { label: 'N', x: 60, y: 14 },
-      { label: 'E', x: 108, y: 64 },
-      { label: 'S', x: 60, y: 114 },
-      { label: 'W', x: 12, y: 64 }
-    ];
-    const cardinalMarkup = cardinals
-      .map(c => `<text x="${c.x}" y="${c.y}" text-anchor="middle" class="wdash-compass-cardinal">${c.label}</text>`)
-      .join('');
+    // Only label main cardinals N E S W placed between inner and outer rings
+    const cardinals = [ { label: 'N', deg: 0 }, { label: 'E', deg: 90 }, { label: 'S', deg: 180 }, { label: 'W', deg: 270 } ];
+    const labelRadius = innerR + (r - innerR) * 0.5; // midway between inner and outer
+    const fontSize = Math.max(8, Math.min(12, Math.floor((r - innerR) * 0.55)));
+    const cardinalMarkup = cardinals.map(c => {
+      const rad = (c.deg - 90) * Math.PI / 180;
+      const x = cx + labelRadius * Math.cos(rad);
+      const y = cy + labelRadius * Math.sin(rad);
+      // center text both horizontally and vertically inside the ring
+      return `<text x="${x.toFixed(2)}" y="${y.toFixed(2)}" text-anchor="middle" dominant-baseline="middle" font-size="${fontSize}" class="wdash-compass-cardinal">${c.label}</text>`;
+    }).join('');
 
-    const averageMarkup = avg === null ? '' : `
-        <g class="wdash-compass-arrow wdash-compass-arrow--avg" transform="rotate(${avg} 60 60)">
-          <path d="M60 26 L68 0 L60 6 L52 0 Z"></path>
-        </g>`;
+    // Compute triangle pointer geometry (isosceles with tip on innerR and base on outerTick)
+    // We need delta such that base B == s/2 where B = 2*outerR*sin(delta) and s is equal side length
+    function solveDelta(innerR, outerR) {
+      // Solve for alpha (degrees) where base B == s/2
+      const toRad = deg => deg * Math.PI / 180;
+      const f = (deg) => {
+        const a = toRad(deg);
+        const B = 2 * outerR * Math.sin(a);
+        const s = Math.sqrt(innerR*innerR + outerR*outerR - 2*innerR*outerR*Math.cos(a));
+        return B - s/2;
+      };
+      let lo = 1; let hi = 60;
+      let flo = f(lo); let fhi = f(hi);
+      if (isNaN(flo) || isNaN(fhi)) return toRad(15);
+      // If signs are same, expand range up to 89 degrees
+      let expand = 0;
+      while (flo * fhi > 0 && expand < 5) {
+        hi = Math.min(89, hi * 2);
+        fhi = f(hi);
+        expand++;
+      }
+      if (flo * fhi > 0) return toRad(15);
+      let bestDeg = (lo + hi)/2;
+      for (let iter = 0; iter < 40; iter++) {
+        const mid = (lo + hi) / 2;
+        const fm = f(mid);
+        if (Math.abs(fm) < 1e-4) { bestDeg = mid; break; }
+        if (flo * fm <= 0) {
+          hi = mid; fhi = fm;
+        } else {
+          lo = mid; flo = fm;
+        }
+        bestDeg = mid;
+      }
+      return toRad(bestDeg);
+    }
 
+    // Solve delta using outerEdge for pointer base so triangle spans full band depth
+  const delta = solveDelta(innerR, outerEdge);
+  // defensive fallback: if solver returns NaN or extremely small, use 15deg
+  const safeDelta = Number.isFinite(delta) && Math.abs(delta) > 1e-6 ? delta : (15 * Math.PI / 180);
+  // delta is already in radians; subtract PI/2 to rotate from up (-90deg)
+  const radL = safeDelta - (Math.PI / 2);
+  const radR = -safeDelta - (Math.PI / 2);
+  const tipX = cx;
+  const tipY = cy - innerR;
+  const leftBaseX = cx + outerEdge * Math.cos(radL);
+  const leftBaseY = cy + outerEdge * Math.sin(radL);
+  const rightBaseX = cx + outerEdge * Math.cos(radR);
+  const rightBaseY = cy + outerEdge * Math.sin(radR);
+    const currentPath = `M ${tipX.toFixed(2)} ${tipY.toFixed(2)} L ${rightBaseX.toFixed(2)} ${rightBaseY.toFixed(2)} L ${leftBaseX.toFixed(2)} ${leftBaseY.toFixed(2)} Z`;
+    const avgPath = currentPath;
+
+    // Render: current (filled) then avg (hollow stroke) on top
+    // Use CSS rotation (style) on the group so transitions animate the group transform and do not trigger SVG paint flashes
     return `
-      <svg viewBox="0 0 120 120" class="wdash-compass-svg" role="presentation">
-        <circle cx="60" cy="60" r="54" class="wdash-compass-ring" />
-        <circle cx="60" cy="60" r="44" class="wdash-compass-inner" />
+      <svg viewBox="0 0 100 100" class="wdash-compass-svg" role="presentation">
+        <circle cx="${cx}" cy="${cy}" r="${r}" class="wdash-gauge-track" fill="none" stroke="rgba(255,255,255,0.18)" stroke-width="${stroke}" stroke-linecap="butt" />
+        <circle cx="${cx}" cy="${cy}" r="${innerR}" class="wdash-gauge-inner" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="1.4" stroke-dasharray="6 8" />
         ${ticks.join('')}
         ${cardinalMarkup}
-        ${averageMarkup}
-        <g class="wdash-compass-arrow wdash-compass-arrow--current" transform="rotate(${dir} 60 60)">
-          <path d="M60 24 L66 2 L60 8 L54 2 Z"></path>
+        <g class="wdash-compass-arrow wdash-compass-arrow--current" style="transform: rotate(${dir}deg);">
+          <path d="${currentPath}" class="wdash-compass-current" fill="#4cc3ff" stroke="rgba(76,195,255,0.55)" stroke-width="0.8" stroke-linejoin="round" />
         </g>
+  ${avg === null ? '' : `<g class="wdash-compass-arrow wdash-compass-arrow--avg" style="transform: rotate(${avg}deg);"><path d="${avgPath}" class="wdash-compass-avg" fill="none" stroke="rgba(208,213,220,0.95)" stroke-width="1.0" stroke-linejoin="round" /></g>`}
       </svg>
     `;
   }
 
   function buildMetricRow(items, extraClass = '', options = {}) {
     if (!Array.isArray(items) || !items.length) return '';
-    const { variant, columns } = options || {};
+    const { variant, columns, layout } = options || {};
     const classes = ['wdash-metric-row', extraClass];
     if (variant) {
       classes.push(`wdash-metric-row--${variant}`);
     }
+    if (layout) {
+      classes.push(`wdash-metric-row--layout-${layout}`);
+    }
     const className = classes.filter(Boolean).join(' ');
     const columnValue = Number.isFinite(Number(columns)) ? Number(columns) : null;
-    const styleAttr = columnValue ? ` style="--wdash-columns:${columnValue}"` : '';
+    const styleAttr = columnValue ? ` style="--wdash-columns: ${columnValue};"` : '';
     return `
       <div class="${className}"${styleAttr}>
-        ${items.map(item => `
-          <div class="wdash-metric">
+        ${items.map(item => {
+          const hasColor = !!item.color;
+          const colorStyle = hasColor ? ` style="background-color: #${item.color.replace('#', '')};"` : '';
+          const metricClass = hasColor ? 'wdash-metric wdash-metric--tinted' : 'wdash-metric';
+          return `
+          <div class="${metricClass}"${colorStyle}>
             <span class="wdash-metric-label">${escapeHtml(item.label || '')}</span>
             <span class="wdash-metric-value">${item.value != null ? item.value : '--'}</span>
             ${item.sub ? `<span class="wdash-metric-sub">${item.sub}</span>` : ''}
           </div>
-        `).join('')}
+        `}).join('')}
       </div>
     `;
   }
@@ -724,10 +1424,25 @@
 .wdash-root { position: relative; width: 100%; height: 100%; --wdash-base-width: 1200px; --wdash-base-height: 900px; --wdash-scale: 1; --wdash-render-width: var(--wdash-base-width); --wdash-render-height: var(--wdash-base-height); background: rgba(4, 9, 20, 0.85); border-radius: 12px; overflow: hidden; box-sizing: border-box; display: flex; align-items: center; justify-content: center; }
 .wdash-frame { position: relative; width: var(--wdash-render-width); height: var(--wdash-render-height); display: flex; align-items: center; justify-content: center; overflow: hidden; }
 .wdash { width: var(--wdash-base-width); height: var(--wdash-base-height); font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif; color: #f4f6ff; background: linear-gradient(145deg, rgba(27,35,58,0.95), rgba(13,18,32,0.95)); backdrop-filter: blur(4px); border-radius: 12px; padding: 18px; box-sizing: border-box; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05); transform-origin: top left; transform: scale(var(--wdash-scale)); }
-.wdash-grid { display: grid; gap: 14px; height: 100%; width: 100%; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: 360px 250px 250px; grid-template-areas:
-  "temp wind ambient"
-  "rain pressure pressure"
-  "solar air air";
+.wdash-grid { display: grid; gap: 14px; height: 100%; width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(18, 1fr); grid-template-areas:
+  "temp-wind ambient"
+  "temp-wind ambient"
+  "temp-wind ambient"
+  "temp-wind ambient"
+  "temp-wind ambient"
+  "temp-wind rain"
+  "temp-wind rain"
+  "temp-wind rain"
+  "air       rain"
+  "air       rain"
+  "air       pressure"
+  "air       pressure"
+  "solar     pressure"
+  "solar     pressure"
+  "solar     pressure"
+  "solar     ."
+  "solar     ."
+  ".         ."
 }
 .wdash-grid[data-empty="true"] { display: flex; align-items: center; justify-content: center; }
 .wdash-grid > * { min-height: 0; }
@@ -736,8 +1451,7 @@
 .wdash-card-header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.72rem; color: #8ea0c8; }
 .wdash-card-header h3 { margin: 0; font-size: 0.82rem; font-weight: 700; color: #c9d8ff; }
 .wdash-updated { font-size: 0.68rem; opacity: 0.7; }
-.wdash-card--temp { grid-area: temp; }
-.wdash-card--wind { grid-area: wind; }
+.wdash-card--temp-wind { grid-area: temp-wind; }
 .wdash-card--ambient { grid-area: ambient; }
 .wdash-card--rain { grid-area: rain; }
 .wdash-card--pressure { grid-area: pressure; }
@@ -745,12 +1459,13 @@
 .wdash-card--air { grid-area: air; }
 .wdash-temp, .wdash-wind, .wdash-solar, .wdash-pressure { display: flex; flex-direction: column; gap: 10px; flex: 1; }
 .wdash-pressure { gap: 10px; }
+.wdash-temp-wind-main { display: flex; gap: 14px; flex: 1; }
+.wdash-temp-wind-main > .wdash-temp, .wdash-temp-wind-main > .wdash-wind { flex: 1; }
+.wdash-temp-wind-details { display: flex; justify-content: space-between; gap: 12px; }
 .wdash-temp { align-items: center; }
 .wdash-wind { align-items: center; }
 .wdash-gauge, .wdash-wind-compass { position: relative; width: min(100%, 260px); aspect-ratio: 1 / 1; margin: 0 auto; }
-.wdash-gauge-ring { position: absolute; inset: 11%; border-radius: 50%; background: conic-gradient(from -90deg, var(--gauge-color-a), var(--gauge-color-mid) calc(var(--gauge-band-progress, 0.5) * 360deg), var(--gauge-color-b) 360deg); mask: radial-gradient(closest-side, transparent calc(100% - 10px), black calc(100% - 8px)); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.1); }
-.wdash-gauge-pointer { position: absolute; inset: 11%; display: flex; align-items: flex-start; justify-content: center; transform: rotate(calc(var(--gauge-indicator, 0deg) - 90deg)); transform-origin: 50% 50%; pointer-events: none; }
-.wdash-gauge-pointer::after { content: ''; width: 4px; height: 54%; border-radius: 999px; background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.85)); box-shadow: 0 6px 16px rgba(0,0,0,0.45); }
+  .wdash-gauge-svg { position: absolute; inset: 11%; width: calc(100% - 22%); height: calc(100% - 22%); display: block; }
 .wdash-gauge-center { position: absolute; inset: 26%; border-radius: 50%; background: rgba(5,10,20,0.85); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 12px 10px; gap: 6px; text-align: center; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04); }
 .wdash-gauge-current { display: flex; flex-direction: column; gap: 4px; align-items: center; }
 .wdash-gauge-value { font-size: 2.32rem; font-weight: 800; letter-spacing: -0.02em; }
@@ -761,9 +1476,12 @@
 .wdash-temp-extrema--high .wdash-temp-extrema-value { color: #ffb95a; }
 .wdash-temp-extrema--low .wdash-temp-extrema-value { color: #7cc5ff; }
 .wdash-metric-row { display: flex; flex-wrap: wrap; gap: 10px; width: 100%; }
-.wdash-metric { flex: 1 1 0; min-width: 140px; background: rgba(255,255,255,0.05); border-radius: 12px; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px; text-align: center; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04); }
+.wdash-metric { flex: 1 1 auto; min-width: 0; background: rgba(255,255,255,0.05); border-radius: 12px; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px; text-align: center; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04); }
+.wdash-metric-row--layout-fill { flex-wrap: nowrap; }
+.wdash-metric-row--layout-fill .wdash-metric { flex-grow: 0; flex-shrink: 1; flex-basis: auto; }
 .wdash-metric-label { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.08em; color: #8ea0c8; }
-.wdash-metric-value { font-size: 0.98rem; font-weight: 600; color: #f4f6ff; }
+.wdash-metric-value { font-size: 0.98rem; font-weight: 600; color: #f4f6ff; white-space: nowrap; }
+.wdash-metric--tinted .wdash-metric-label { color: #f4f6ff; opacity: 0.9; }
 .wdash-metric-sub { font-size: 0.68rem; color: #9badcf; }
 .wdash-metric-row--gauge { display: grid; grid-template-columns: repeat(var(--wdash-columns, 3), minmax(0, 1fr)); width: 100%; max-width: 260px; margin: 0 auto; gap: 4px 12px; justify-items: center; align-items: end; }
 .wdash-metric-row--gauge .wdash-metric { background: transparent; box-shadow: none; padding: 0; gap: 3px; min-width: 0; align-items: center; }
@@ -777,31 +1495,70 @@
 .wdash-wind-speed { display: inline-flex; align-items: baseline; gap: 4px; font-weight: 700; }
 .wdash-wind-speed-value { font-size: 2.1rem; color: #5bd6ff; }
 .wdash-wind-heading { font-size: 0.78rem; color: #9badcf; letter-spacing: 0.08em; }
-.wdash-wind-compass svg { width: 100%; height: auto; display: block; filter: drop-shadow(0 8px 18px rgba(0,0,0,0.4)); }
+  .wdash-wind-compass svg { position: absolute; inset: 11%; width: calc(100% - 22%); height: calc(100% - 22%); display: block; filter: drop-shadow(0 8px 18px rgba(0,0,0,0.4)); }
 .wdash-wind-gust { display: inline-flex; align-items: baseline; gap: 4px; font-weight: 700; }
 .wdash-wind-gust-value { font-size: 0.98rem; font-weight: 600; color: #f4f6ff; }
 .wdash-wind-gust-label { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.08em; color: #8ea0c8; }
-.wdash-compass-ring { fill: none; stroke: rgba(255,255,255,0.18); stroke-width: 3; }
 .wdash-compass-inner { fill: none; stroke: rgba(255,255,255,0.1); stroke-width: 1.4; stroke-dasharray: 6 8; }
 .wdash-compass-tick { stroke: rgba(255,255,255,0.2); stroke-width: 1.4; stroke-linecap: round; }
 .wdash-compass-tick--major { stroke-width: 2.2; }
-.wdash-compass-cardinal { fill: rgba(255,255,255,0.68); font-size: 12px; font-weight: 700; letter-spacing: 0.08em; }
-.wdash-compass-arrow path { transition: fill 0.2s ease, stroke 0.2s ease; stroke-linejoin: round; stroke-linecap: round; }
+.wdash-compass-cardinal { fill: rgba(255,255,255,0.68); font-size: 10px; font-weight: 700; letter-spacing: 0.06em; }
+.wdash-compass-arrow { transition: transform 260ms cubic-bezier(.2,.9,.2,1); -webkit-transform-box: view-box; transform-box: view-box; -webkit-transform-origin: 50% 50%; transform-origin: 50% 50%; }
+.wdash-compass-arrow path { stroke-linejoin: round; stroke-linecap: round; }
 .wdash-compass-arrow--current path { fill: #4cc3ff; stroke: rgba(76,195,255,0.55); stroke-width: 1.5; }
-.wdash-compass-arrow--avg path { fill: transparent; stroke: rgba(208,213,220,0.85); stroke-width: 2; }
-.wdash-ambient { display: flex; flex-direction: column; gap: 14px; flex: 1; }
+.wdash-compass-arrow--avg path { fill: none; stroke: rgba(208,213,220,0.95); stroke-width: 1.0; }
+.wdash-compass-avg { pointer-events: none; }
+.wdash-compass-current { pointer-events: none; }
+.wdash-ambient { display: flex; flex-direction: column; gap: 14px; flex: 1; /* ambient ring defaults (viewBox units) */ --ambient-ring-r: 45; --ambient-ring-stroke: 10; }
 .wdash-ambient-circles { display: flex; gap: 12px; justify-content: center; }
-.wdash-ambient-circle { flex: 0 0 130px; width: 130px; aspect-ratio: 1; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: #fff; font-weight: 600; box-shadow: 0 10px 22px rgba(4,9,20,0.4); text-align: center; padding: 12px; }
-.wdash-ambient-circle--temp { background: radial-gradient(circle at 30% 30%, rgba(255,158,89,0.9), rgba(242,91,44,0.65)); }
-.wdash-ambient-circle--humidity { background: radial-gradient(circle at 30% 30%, rgba(90,160,255,0.9), rgba(51,96,255,0.6)); }
+.wdash-ambient-circle { flex: 0 0 130px; width: 130px; aspect-ratio: 1; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: #fff; font-weight: 600; box-shadow: 0 10px 22px rgba(4,9,20,0.4); text-align: center; padding: 12px; position: relative; background: transparent; }
+.wdash-ambient-svg { position: absolute; inset: 4px; width: calc(100% - 8px); height: calc(100% - 8px); z-index: 1; pointer-events: none; }
+.wdash-ambient-svg .wdash-ambient-track { transition: none; }
+.wdash-ambient-svg .wdash-ambient-fill { transition: stroke-dashoffset 260ms cubic-bezier(.2,.9,.2,1); transform-origin: 50% 50%; transform: rotate(-90deg); }
+.wdash-svg-stop { transition: none; }
+.wdash-ambient-svg .wdash-ambient-inner-circle { transition: none; }
+.wdash-gauge-svg circle, .wdash-wind-compass svg circle, .wdash-wind-compass svg stop { transition: none !important; }
+.wdash-wind-compass svg path, .wdash-wind-compass svg line { transition: none !important; }
+.wdash-ambient-circle > .wdash-ambient-reading,
+.wdash-ambient-circle > .wdash-ambient-reading + .wdash-ambient-label,
+.wdash-ambient-circle > .wdash-ambient-reading,
+.wdash-ambient-circle > .wdash-ambient-label { position: relative; z-index: 2; }
+.wdash-ambient-reading { font-size: 1.8rem; font-weight: 700; }
+.wdash-ambient-label { font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.8; }
+.wdash-ambient-circle--temp { background: transparent; }
+.wdash-ambient-circle--humidity { background: transparent; }
+.wdash-ambient-timer { --wdash-timer-color: #29d88b; position: absolute; top: 92px; right: -36px; width: 40px; height: 40px; border: none; padding: 0; border-radius: 50%; background: transparent; color: var(--wdash-timer-color); display: grid; place-items: center; cursor: pointer; filter: drop-shadow(0 8px 16px rgba(0,0,0,0.45)); transition: transform 0.2s ease, filter 0.2s ease, color 0.2s ease; }
+.wdash-ambient-timer:hover:not(:disabled) { transform: translateY(-1px); filter: drop-shadow(0 16px 26px rgba(0,0,0,0.55)); }
+.wdash-ambient-timer:active:not(:disabled) { transform: translateY(1px); filter: drop-shadow(0 10px 18px rgba(0,0,0,0.45)); }
+.wdash-ambient-timer.is-paused { --wdash-timer-color: #ff6b63; }
+.wdash-ambient-timer:disabled { cursor: not-allowed; opacity: 0.55; filter: drop-shadow(0 8px 16px rgba(0,0,0,0.35)); }
+.wdash-ambient-timer-icon { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.wdash-ambient-timer-countdown { position: relative; z-index: 1; font-size: 0.76rem; font-weight: 700; letter-spacing: 0.02em; color: #f5f9ff; text-shadow: 0 2px 6px rgba(0,0,0,0.5); }
 .wdash-ambient-reading { font-size: 1.8rem; font-weight: 700; }
 .wdash-ambient-label { font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.8; }
 .wdash-ambient-footer { display: flex; justify-content: space-between; align-items: baseline; font-size: 0.76rem; color: #c9d8ff; }
 .wdash-ambient-name { font-weight: 700; }
 .wdash-ambient-rotation { font-size: 0.75rem; color: #8ea0c8; }
 .wdash-ambient--empty .wdash-ambient-reading { opacity: 0.6; }
-.wdash-rain-stats .wdash-metric, .wdash-air-metrics .wdash-metric, .wdash-solar-metrics .wdash-metric, .wdash-pressure-stats .wdash-metric { min-width: 120px; }
-.wdash-pressure-main { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.wdash-rain-main { display: grid; grid-template-columns: 120px 1fr 1fr; gap: 18px; align-items: center; flex: 1; }
+.wdash-rain-col--drop { display: flex; align-items: center; justify-content: center; }
+.wdash-rain-col--drop svg { width: 100%; height: auto; display: block; filter: drop-shadow(0 6px 12px rgba(0,0,0,0.3)); }
+.wdash-rain-drop-outline { fill: none; stroke: #6ab9ff; stroke-width: 4; stroke-linejoin: round; }
+.wdash-rain-drop-bg { fill: rgba(80,160,255,0.15); }
+.wdash-rain-drop-fill { transition: all 0.4s ease-in-out; }
+.wdash-rain-col--center { display: flex; flex-direction: column; justify-content: space-between; height: 100%; text-align: center; }
+.wdash-rain-rate-wrapper { width: 75%; margin: 0 auto; }
+.wdash-rain-daily-metric { flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.wdash-rain-daily-value { font-size: 2.8rem; font-weight: 800; line-height: 1; }
+.wdash-rain-daily-label { font-size: 0.9rem; font-weight: 700; color: #c9d8ff; margin-top: 4px; }
+.wdash-rain-col--stats { align-self: start; }
+.wdash-rain-stats.wdash-metric-row--table { display: block; width: 100%; }
+.wdash-rain-stats.wdash-metric-row--table .wdash-metric { background: none; box-shadow: none; display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.07); }
+.wdash-rain-stats.wdash-metric-row--table .wdash-metric { flex-direction: row; align-items: baseline; }
+.wdash-rain-stats.wdash-metric-row--table .wdash-metric:last-child { border-bottom: none; }
+.wdash-rain-stats.wdash-metric-row--table .wdash-metric-label { text-align: left; font-size: 0.9rem; font-weight: 600; color: #c9d8ff; }
+.wdash-rain-stats.wdash-metric-row--table .wdash-metric-value { text-align: right; font-size: 0.9rem; font-weight: 600; color: #f4f6ff; font-variant-numeric: tabular-nums; }
+.wdash-pressure-main { display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 16px; }
 .wdash-pressure-toggle { display: inline-flex; gap: 4px; padding: 4px; border-radius: 999px; background: rgba(255,255,255,0.05); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04); }
 .wdash-pressure-button { border: none; background: transparent; color: #9badcf; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.12em; padding: 5px 12px; border-radius: 999px; cursor: pointer; transition: all 0.2s ease; }
 .wdash-pressure-button:hover { color: #f4f6ff; }
@@ -811,25 +1568,31 @@
 .wdash-card--pressure[data-pressure-mode="relative"] .wdash-pressure-value[data-pressure-value="relative"],
 .wdash-card--pressure[data-pressure-mode="absolute"] .wdash-pressure-value[data-pressure-value="absolute"] { display: inline-flex; }
 .wdash-pressure-stats .wdash-metric-value { font-size: 0.88rem; }
-.wdash-pressure-outlook { margin-top: auto; background: rgba(255,255,255,0.06); border-radius: 10px; padding: 8px 10px; font-size: 0.76rem; display: grid; gap: 4px; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04); }
+.wdash-pressure-outlook { background: rgba(255,255,255,0.06); border-radius: 10px; padding: 8px 10px; font-size: 0.76rem; display: grid; gap: 4px; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04); }
 .wdash-outlook-label { font-weight: 700; color: #ffb95a; text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.75rem; }
 .wdash-outlook-text { line-height: 1.35; }
 .wdash-solar { display: flex; flex-direction: column; gap: 8px; flex: 1; }
-.wdash-sun-graphic { position: relative; width: 100%; aspect-ratio: 2.6 / 1; border-radius: 16px; background: radial-gradient(circle at 50% 115%, rgba(255,194,120,0.18), rgba(255,255,255,0)); overflow: hidden; }
+.wdash-sun-graphic { position: relative; width: 100%; aspect-ratio: 2.6 / 1; border-radius: 16px; background: transparent; overflow: hidden; }
 .wdash-sun-arc { position: absolute; inset: 16% 12% 42%; border: 2px solid rgba(255,255,255,0.25); border-bottom: none; border-radius: 100% 100% 0 0 / 100% 100% 0 0; }
 .wdash-sun-horizon { position: absolute; left: 12%; right: 12%; bottom: 42%; height: 2px; background: rgba(255,255,255,0.25); }
-.wdash-sun-marker { position: absolute; left: 50%; bottom: 42%; width: 16px; height: 16px; border-radius: 50%; background: linear-gradient(180deg, #ffd45a, #ff9445); box-shadow: 0 0 20px rgba(255,200,110,0.6); transform-origin: 50% calc(100% + 6px); transform: rotate(calc((var(--sun-progress, 0.5) * 180deg) - 90deg)) translateY(calc(-50% - 6px)); transition: transform 0.3s ease; }
-.wdash-sun-times { display: flex; justify-content: space-between; gap: 10px; text-align: center; }
-.wdash-sun-time { flex: 1; display: flex; flex-direction: column; gap: 3px; background: rgba(255,255,255,0.04); border-radius: 10px; padding: 8px 9px; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.03); }
-.wdash-sun-time .wdash-label { font-size: 0.68rem; letter-spacing: 0.08em; text-transform: uppercase; color: #8ea0c8; }
-.wdash-sun-time .wdash-value { font-size: 1.05rem; font-weight: 600; color: #f4f6ff; }
+.wdash-sun-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.wdash-sun-svg .wdash-sun-arc { fill: none; stroke: rgba(255,255,255,0.25); stroke-width: 2.5; vector-effect: non-scaling-stroke; }
+.wdash-sun-svg .wdash-sun-marker { transition: transform 0.3s ease; will-change: transform; }
+.wdash-sun-svg .wdash-sun-marker.is-night { opacity: 0; }
+.wdash-sun-svg .wdash-sun-marker circle { filter: drop-shadow(0 0 8px rgba(255,200,110,0.6)); }
+.wdash-sun-html-metric { position: absolute; display: flex; flex-direction: column; align-items: center; gap: 2px; transform: translate(-50%, -50%); text-align: center; }
+.wdash-sun-metric-label { font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #8ea0c8; }
+.wdash-sun-metric-value { font-size: 0.8rem; font-weight: 600; color: #f4f6ff; }
+.wdash-sun-metric-unit { opacity: 0.8; }
+.wdash-sun-time { position: absolute; font-size: 0.8rem; font-weight: 600; color: #c9d8ff; transform: translate(-50%, 8px); white-space: nowrap; }
+.wdash-sun-time--rise { /* Positioned by inline style */ }
+.wdash-sun-time--set { /* Positioned by inline style */ }
 .wdash-air-metrics .wdash-metric-value { font-size: 1.02rem; }
 @media (max-width: 1100px) {
   .wdash-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: none; grid-auto-rows: minmax(260px, auto); grid-template-areas:
-    "temp wind"
-    "ambient ambient"
-    "rain pressure"
-    "solar pressure"
+    "temp-wind ambient"
+    "pressure rain"
+    "solar air"
     "air air";
   }
 }
@@ -909,12 +1672,24 @@
     if (!sun) return null;
     const sunrise = parseDateTime(sun.sunrise);
     const sunset = parseDateTime(sun.sunset);
-    if (!sunrise || !sunset || sunset <= sunrise) return null;
-    const now = parseDateTime(sun.currentTime) || parseDateTime(referenceTime) || new Date();
+    const now = referenceTime || new Date();
+
+    if (!sunrise || !sunset || sunset <= sunrise) return -1; // Return -1 if times are invalid
+
     const total = sunset.getTime() - sunrise.getTime();
     if (total <= 0) return null;
     const elapsed = now.getTime() - sunrise.getTime();
-    return clamp(elapsed / total, 0, 1);
+    // Return the raw progress, which can be < 0 or > 1
+    return elapsed / total;
+  }
+
+  function getPointOnArc(arc, progress) {
+    const angleDeg = arc.startAngle + (arc.endAngle - arc.startAngle) * clamp(progress, 0, 1);
+    const angleRad = angleDeg * (Math.PI / 180);
+    return {
+      x: arc.cx + arc.r * Math.cos(angleRad),
+      y: arc.cy + arc.r * Math.sin(angleRad)
+    };
   }
 
   function mixColors(colorA, colorB, ratio) {
@@ -1046,8 +1821,7 @@
   }
 
   function isChunkEnvelope(payload) {
-    if (!payload || typeof payload !== 'object') return false;
-    if (payload.chunkNamespace !== CHUNK_NAMESPACE) return false;
+    if (!payload || typeof payload !== 'object' || payload.chunkNamespace !== 'weather-dashboard') return false;
     if (!Number.isInteger(payload.chunkIndex) || !Number.isInteger(payload.chunkCount)) return false;
     if (payload.chunkIndex < 1 || payload.chunkCount < 1) return false;
     return typeof payload.chunkData === 'string';
@@ -1080,7 +1854,11 @@
     if (!buffer) return null;
 
     try {
-      return JSON.parse(buffer);
+      const payload = JSON.parse(buffer);
+      // Ensure the chunk count is preserved in the final payload for other functions to use.
+      if (payload.metadata) payload.metadata.chunkCount = expectedCount;
+      else payload.metadata = { chunkCount: expectedCount };
+      return payload;
     } catch (err) {
       console.warn('[WeatherDashboard] Failed to reassemble chunked payload', err);
       return null;
