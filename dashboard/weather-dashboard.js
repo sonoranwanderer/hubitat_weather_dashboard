@@ -124,6 +124,18 @@
     lastData: null
   };
 
+  const hubClockState = {
+    timer: null,
+    target: null,
+    baseUtc: null,
+    offsetMs: 0,
+    baseMonotonic: null,
+    mode: 'datetime',
+    fallbackLabel: '',
+    lastText: null,
+    sourceParts: null
+  };
+
   // remember last shown humidity per sensor (keyed by sensor name when available)
   const ambientLastHumidity = new Map();
   // remember the last displayed humidity value (single source) so when the card is
@@ -248,6 +260,7 @@
       clearAmbientRotation();
       toggleSourceTileMask(false);
       clearAirQualityRotation();
+      stopHubClock();
       return;
     }
 
@@ -267,6 +280,7 @@
     setupAmbientRotation(payload);
     setupAirQualityRotation(payload);
     setupInteractiveComponents(grid);
+    setupHubClock(payload);
     // observe ambient container for size changes to keep ring geometry synchronized
     try {
       const ambientContainer = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-ambient');
@@ -814,7 +828,7 @@
 
     return `
       <section class="wdash-card wdash-card--solar">
-        ${cardHeader(CARD_TITLES.sunMoon, data, stationLabel, { fallbackToRelative: false })}
+        ${cardHeader(CARD_TITLES.sunMoon, data, stationLabel, { fallbackToRelative: false, clock: { mode: 'datetime', source: stationReportedAt } })}
         <div class="wdash-solar">
           <div class="wdash-sun-graphic">
             <svg class="wdash-sun-svg" viewBox="0 0 200 100">
@@ -941,6 +955,173 @@
     applyAmbientRingSizing();
     // also size outdoor gauge/compass
     applyOutdoorRingSizing();
+  }
+
+  function setupHubClock(data) {
+    const target = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-updated[data-hub-clock]');
+    if (!target) {
+      stopHubClock();
+      return;
+    }
+
+    const dataset = target.dataset || {};
+    const isoSource = data?.metadata?.weatherStationTime
+      || data?.metadata?.generatedAt
+      || dataset.hubClockSource
+      || null;
+    if (!isoSource) {
+      target.textContent = '';
+      stopHubClock();
+      return;
+    }
+
+    const parts = parseIsoDateParts(isoSource);
+    const fallbackLabel = (() => {
+      if (parts) {
+        const formatted = formatHubDateTime(parts);
+        if (formatted) return formatted;
+        if (parts.original) return parts.original;
+      }
+      return isoSource != null ? String(isoSource) : '';
+    })();
+
+    if (!parts || !parts.hasTime) {
+      target.textContent = fallbackLabel;
+      stopHubClock();
+      return;
+    }
+
+    const baseUtc = hubClockPartsToUtc(parts);
+    if (!Number.isFinite(baseUtc)) {
+      target.textContent = fallbackLabel;
+      stopHubClock();
+      return;
+    }
+
+    if (hubClockState.timer) {
+      clearInterval(hubClockState.timer);
+      hubClockState.timer = null;
+    }
+
+    hubClockState.target = target;
+    hubClockState.mode = (dataset.hubClockMode || 'datetime').toLowerCase() === 'clock' ? 'clock' : 'datetime';
+    if (target.dataset) {
+      target.dataset.hubClockSource = String(isoSource);
+      target.dataset.hubClockMode = hubClockState.mode;
+    }
+    hubClockState.baseUtc = baseUtc;
+    hubClockState.offsetMs = Number.isFinite(parts.offsetMinutes) ? parts.offsetMinutes * 60000 : 0;
+    hubClockState.baseMonotonic = Date.now();
+    hubClockState.sourceParts = {
+      year: Number(parts.year),
+      month: Number(parts.month),
+      day: Number(parts.day),
+      hour: Number.isFinite(parts.hour) ? Number(parts.hour) : 0,
+      minute: Number.isFinite(parts.minute) ? Number(parts.minute) : 0,
+      second: Number.isFinite(parts.second) ? Number(parts.second) : 0,
+      offsetMinutes: Number.isFinite(parts.offsetMinutes) ? Number(parts.offsetMinutes) : null,
+      hasTime: !!parts.hasTime
+    };
+    hubClockState.fallbackLabel = fallbackLabel;
+    hubClockState.lastText = null;
+
+    renderHubClock(true);
+    hubClockState.timer = setInterval(renderHubClock, 1000);
+  }
+
+  function stopHubClock() {
+    if (hubClockState.timer) {
+      clearInterval(hubClockState.timer);
+      hubClockState.timer = null;
+    }
+    hubClockState.target = null;
+    hubClockState.baseUtc = null;
+    hubClockState.offsetMs = 0;
+    hubClockState.baseMonotonic = null;
+    hubClockState.mode = 'datetime';
+    hubClockState.fallbackLabel = '';
+    hubClockState.lastText = null;
+    hubClockState.sourceParts = null;
+  }
+
+  function renderHubClock(force = false) {
+    const target = hubClockState.target;
+    if (!target) return;
+    if (!document.contains(target)) {
+      stopHubClock();
+      return;
+    }
+
+    if (!Number.isFinite(hubClockState.baseUtc)) {
+      target.textContent = hubClockState.fallbackLabel || '';
+      stopHubClock();
+      return;
+    }
+
+    const now = Date.now();
+    const base = hubClockState.baseMonotonic != null ? hubClockState.baseMonotonic : now;
+    const elapsedMs = Math.max(0, now - base);
+    const elapsedSeconds = Math.floor(elapsedMs / 1000);
+    const parts = computeHubClockParts(elapsedSeconds);
+    if (!parts) {
+      target.textContent = hubClockState.fallbackLabel || '';
+      return;
+    }
+
+    const text = hubClockState.mode === 'clock'
+      ? formatHubClock(parts)
+      : formatHubDateTime(parts);
+
+    const finalText = text || hubClockState.fallbackLabel || '';
+    if (force || finalText !== hubClockState.lastText) {
+      target.textContent = finalText;
+      hubClockState.lastText = finalText;
+    }
+  }
+
+  function computeHubClockParts(elapsedSeconds) {
+    if (!Number.isFinite(hubClockState.baseUtc) || !hubClockState.sourceParts) {
+      return null;
+    }
+    const deltaMs = Number.isFinite(elapsedSeconds) ? elapsedSeconds * 1000 : 0;
+    const newUtc = hubClockState.baseUtc + deltaMs;
+    if (!Number.isFinite(newUtc)) return null;
+    const localMs = newUtc + (Number.isFinite(hubClockState.offsetMs) ? hubClockState.offsetMs : 0);
+    const date = new Date(localMs);
+    if (isNaN(date)) return null;
+
+    const hasTime = !!hubClockState.sourceParts.hasTime;
+    return {
+      year: date.getUTCFullYear(),
+      month: date.getUTCMonth() + 1,
+      day: date.getUTCDate(),
+      hour: hasTime ? date.getUTCHours() : null,
+      minute: hasTime ? date.getUTCMinutes() : null,
+      second: hasTime ? date.getUTCSeconds() : null,
+      hasTime,
+      offsetMinutes: Number.isFinite(hubClockState.sourceParts.offsetMinutes)
+        ? hubClockState.sourceParts.offsetMinutes
+        : null
+    };
+  }
+
+  function hubClockPartsToUtc(parts) {
+    if (!parts) return NaN;
+    const year = Number(parts.year);
+    const month = Number(parts.month);
+    const day = Number(parts.day);
+    if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
+      return NaN;
+    }
+    const monthIndex = Math.max(0, Math.min(11, Math.floor(month) - 1));
+    const dayValue = Math.max(1, Math.min(31, Math.floor(day)));
+    const hour = Number.isFinite(parts.hour) ? Math.max(0, Math.min(23, Math.floor(parts.hour))) : 0;
+    const minute = Number.isFinite(parts.minute) ? Math.max(0, Math.min(59, Math.floor(parts.minute))) : 0;
+    const second = Number.isFinite(parts.second) ? Math.max(0, Math.min(59, Math.floor(parts.second))) : 0;
+    const baseUtc = Date.UTC(year, monthIndex, dayValue, hour, minute, second, 0);
+    if (!Number.isFinite(baseUtc)) return NaN;
+    const offsetMinutes = Number.isFinite(parts.offsetMinutes) ? Number(parts.offsetMinutes) : 0;
+    return baseUtc - offsetMinutes * 60000;
   }
 
   // Ensure ambient SVG rings use unified sizing derived from CSS variables
@@ -1430,7 +1611,7 @@
   }
 
   function cardHeader(title, data, subLabel = null, options = {}) {
-    const { fallbackToRelative = true } = options || {};
+    const { fallbackToRelative = true, clock = null } = options || {};
     const generatedAt = data?.metadata?.generatedAt;
     const relative = generatedAt ? formatRelativeTime(generatedAt) : null;
     let label = '';
@@ -1443,10 +1624,18 @@
     if (!label && fallbackToRelative && relative) {
       label = `Updated ${relative}`;
     }
+    const spanAttributes = [];
+    if (clock && clock !== false) {
+      spanAttributes.push('data-hub-clock="true"');
+      const mode = clock.mode ? String(clock.mode).toLowerCase() : '';
+      if (mode) spanAttributes.push(`data-hub-clock-mode="${escapeHtml(mode)}"`);
+      if (clock.source) spanAttributes.push(`data-hub-clock-source="${escapeHtml(clock.source)}"`);
+    }
+    const attrText = spanAttributes.length ? ' ' + spanAttributes.join(' ') : '';
     return `
       <header class="wdash-card-header">
         <h3>${escapeHtml(title)}</h3>
-        <span class="wdash-updated">${escapeHtml(label)}</span>
+        <span class="wdash-updated"${attrText}>${escapeHtml(label)}</span>
       </header>
     `;
   }
@@ -2127,7 +2316,9 @@
   }
 
   function formatHubDateTime(value) {
-    const parts = parseIsoDateParts(value);
+    const parts = value && typeof value === 'object' && ('year' in value || 'month' in value || 'day' in value)
+      ? value
+      : parseIsoDateParts(value);
     if (!parts) {
       return value != null ? String(value) : '';
     }
