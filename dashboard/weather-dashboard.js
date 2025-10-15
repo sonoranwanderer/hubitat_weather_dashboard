@@ -27,11 +27,11 @@
       // defined beneath it automatically shift upward—the browser recalculates the
       // grid using the new track size so there's no extra work required to realign
       // the cards below.
-      { columns: ['temp-wind', 'ambient'], repeat: 5, height: 'minmax(0, 1fr)' },
-      { columns: ['temp-wind', 'rain'], repeat: 3, height: 'minmax(0, 1fr)' },
+      { columns: ['temp-wind', 'ambient'], repeat: 5, height: '0.82fr' },
+      { columns: ['temp-wind', 'rain'], repeat: 3, height: '0.92fr' },
       { columns: ['air', 'rain'], repeat: 2, height: 'minmax(0, 1fr)' },
       { columns: ['air', 'pressure'], repeat: 2, height: 'minmax(0, 1fr)' },
-      { columns: ['solar', 'pressure'], repeat: 3, height: 'minmax(0, 1fr)' },
+      { columns: ['solar', 'pressure'], repeat: 3, height: '0.95fr' },
       { columns: ['solar', '.'], repeat: 2, height: 'minmax(0, 1fr)' },
       { columns: ['.', '.'], repeat: 1, height: 'minmax(0, 1fr)' }
     ],
@@ -2120,18 +2120,18 @@
 .wdash-updated-line { font-size: 0.68rem; opacity: 0.7; line-height: 1.2; white-space: nowrap; }
 .wdash-updated-line--secondary { font-size: 0.62rem; opacity: 0.6; }
 .wdash-clock-time { font-family: 'SFMono-Regular', 'Roboto Mono', 'Menlo', 'Courier New', monospace; font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
-.wdash-card--temp-wind { grid-area: temp-wind; gap: 4px; padding-bottom: 6px; }
-.wdash-card--ambient { grid-area: ambient; gap: 4px; padding-bottom: 6px; }
+.wdash-card--temp-wind { grid-area: temp-wind; gap: 2px; padding-bottom: 2px; }
+.wdash-card--ambient { grid-area: ambient; gap: 2px; padding-bottom: 2px; }
 .wdash-card--rain { grid-area: rain; }
 .wdash-card--pressure { grid-area: pressure; }
 .wdash-card--solar { grid-area: solar; gap: 6px; padding-bottom: 10px; }
-.wdash-card--air { grid-area: air; gap: 4px; padding-bottom: 6px; }
+.wdash-card--air { grid-area: air; gap: 2px; padding-bottom: 2px; }
 .wdash-temp, .wdash-wind, .wdash-solar, .wdash-pressure { display: flex; flex-direction: column; gap: 10px; flex: 1; }
 .wdash-pressure { gap: 10px; }
 .wdash-temp-wind-main { display: flex; gap: 12px; flex: 0 0 auto; }
 .wdash-temp-wind-main > .wdash-temp, .wdash-temp-wind-main > .wdash-wind { flex: 1; }
 .wdash-temp-wind-details { display: flex; justify-content: space-between; gap: 12px; }
-.wdash-card--temp-wind .wdash-temp-wind-main { padding-top: 2px; }
+.wdash-card--temp-wind .wdash-temp-wind-main { padding-top: 0; }
 .wdash-card--temp-wind .wdash-temp-wind-details { margin-top: 0; }
 .wdash-temp { align-items: center; }
 .wdash-wind { align-items: center; }
@@ -2180,7 +2180,7 @@
 .wdash-compass-arrow--avg path { fill: none; stroke: rgba(208,213,220,0.95); stroke-width: 1.0; }
 .wdash-compass-avg { pointer-events: none; }
 .wdash-compass-current { pointer-events: none; }
-.wdash-ambient { display: flex; flex-direction: column; gap: 8px; flex: 0 0 auto; /* ambient ring defaults (viewBox units) */ --ambient-ring-r: 45; --ambient-ring-stroke: 10; }
+.wdash-ambient { display: flex; flex-direction: column; gap: 6px; flex: 0 0 auto; /* ambient ring defaults (viewBox units) */ --ambient-ring-r: 45; --ambient-ring-stroke: 10; }
 .wdash-ambient-circles { display: flex; gap: 12px; justify-content: center; }
 .wdash-ambient-circle { flex: 0 0 130px; width: 130px; aspect-ratio: 1; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: #fff; font-weight: 600; box-shadow: 0 10px 22px rgba(4,9,20,0.4); text-align: center; padding: 12px; position: relative; background: transparent; }
 .wdash-ambient-svg { position: absolute; inset: 4px; width: calc(100% - 8px); height: calc(100% - 8px); z-index: 1; pointer-events: none; }
@@ -2282,7 +2282,7 @@
 .wdash-sun-time { position: absolute; font-size: 0.8rem; font-weight: 600; color: #c9d8ff; transform: translate(-50%, 8px); white-space: nowrap; }
 .wdash-sun-time--rise { /* Positioned by inline style */ }
 .wdash-sun-time--set { /* Positioned by inline style */ }
-.wdash-air-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-rows: minmax(0, 1fr); gap: 8px 10px; align-content: start; }
+.wdash-air-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-rows: auto; gap: 8px 10px; align-content: start; }
 .wdash-air-metrics .wdash-metric { flex: unset; min-height: 0; width: 100%; height: 100%; }
 .wdash-air-metrics .wdash-metric-value { font-size: 1.02rem; }
 .wdash-air-metrics .wdash-metric--placeholder { visibility: hidden; pointer-events: none; }
