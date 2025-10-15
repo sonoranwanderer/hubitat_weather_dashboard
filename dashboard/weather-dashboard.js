@@ -123,6 +123,8 @@
   const placeholderLogged = new Set();
   let pressureMode = 'relative';
   let lastSuccessfulPayload = null;
+  let lastSuccessfulRawPayload = null;
+  let lastSuccessfulFingerprint = null;
 
   whenDomReady(init);
 
@@ -242,6 +244,8 @@
       if (!isChunkEnvelope(parsed1)) {
         // Not chunked, return as a single payload
         lastSuccessfulPayload = parsed1;
+        lastSuccessfulRawPayload = json1;
+        lastSuccessfulFingerprint = null;
         return [parsed1];
       }
 
@@ -273,10 +277,16 @@
         }
       }
 
-      const assembled = assembleChunkPayload(chunkEnvelopes);
+      const assembled = assembleChunkPayload(chunkEnvelopes, {
+        lastSuccessfulPayload,
+        lastSuccessfulRawPayload,
+        lastSuccessfulFingerprint
+      });
       if (assembled) {
-        lastSuccessfulPayload = assembled;
-        return [assembled];
+        lastSuccessfulPayload = assembled.payload;
+        lastSuccessfulRawPayload = assembled.raw;
+        lastSuccessfulFingerprint = assembled.fingerprint || null;
+        return [assembled.payload];
       }
 
       return lastSuccessfulPayload ? [lastSuccessfulPayload] : [];
@@ -1929,101 +1939,439 @@
     return typeof payload.chunkData === 'string';
   }
 
-  function assembleChunkPayload(envelopes) {
+  function assembleChunkPayload(envelopes, context = {}) {
     if (!envelopes || envelopes.length === 0) return null;
     const valid = envelopes.filter(isChunkEnvelope);
     if (!valid.length) return null;
 
-    const groups = new Map();
-    for (const env of valid) {
-      const hasFingerprint = typeof env.chunkFingerprint === 'string' && env.chunkFingerprint.length > 0;
-      const key = hasFingerprint ? `fp:${env.chunkFingerprint}` : `legacy:${env.chunkCount}`;
-      if (!groups.has(key)) {
-        groups.set(key, []);
+    const groups = collectChunkGroups(valid);
+    if (!groups.size) return null;
+
+    const completeCandidates = buildCompleteChunkCandidates(groups);
+    if (completeCandidates.length) {
+      const preferredComplete = selectPreferredChunkCandidate(completeCandidates);
+      if (preferredComplete) {
+        return preferredComplete;
       }
-      groups.get(key).push(env);
     }
 
+    const composite = buildCompositeChunkCandidate(groups, context);
+    if (composite) {
+      return composite;
+    }
+
+    console.warn('[WeatherDashboard] Unable to build dashboard payload from chunked data', valid);
+    return null;
+  }
+
+  function collectChunkGroups(envelopes) {
+    const groups = new Map();
+    let order = 0;
+
+    for (const env of envelopes) {
+      const fingerprint = typeof env.chunkFingerprint === 'string' && env.chunkFingerprint.length > 0
+        ? env.chunkFingerprint
+        : null;
+      const key = fingerprint ? `fp:${fingerprint}` : `legacy:${env.chunkCount}`;
+      if (!groups.has(key)) {
+        order += 1;
+        groups.set(key, {
+          key,
+          fingerprint,
+          fingerprintInfo: decodeChunkFingerprint(fingerprint),
+          chunkCount: env.chunkCount,
+          chunkMap: new Map(),
+          hasDuplicate: false,
+          chunkCountMismatch: false,
+          groupOrder: order,
+          totalLength: toFiniteNumber(env.chunkTotalLength),
+          layout: extractChunkLayout(env),
+          envelopes: []
+        });
+      }
+
+      const group = groups.get(key);
+      group.envelopes.push(env);
+
+      if (group.chunkCount !== env.chunkCount) {
+        group.chunkCountMismatch = true;
+      }
+
+      const chunkInfo = {
+        index: env.chunkIndex,
+        data: typeof env.chunkData === 'string' ? env.chunkData : '',
+        offset: toFiniteNumber(env.chunkOffset),
+        length: toFiniteNumber(env.chunkLength),
+        totalLength: toFiniteNumber(env.chunkTotalLength)
+      };
+
+      if (group.chunkMap.has(env.chunkIndex)) {
+        group.hasDuplicate = true;
+      }
+      group.chunkMap.set(env.chunkIndex, chunkInfo);
+
+      group.layout = mergeChunkLayouts(group.layout, extractChunkLayout(env));
+      if (!Number.isFinite(group.totalLength) && Number.isFinite(chunkInfo.totalLength)) {
+        group.totalLength = chunkInfo.totalLength;
+      }
+    }
+
+    return groups;
+  }
+
+  function buildCompleteChunkCandidates(groups) {
     const candidates = [];
-    let groupOrder = 0;
 
-    for (const [key, group] of groups.entries()) {
-      groupOrder += 1;
-      if (!group.length) continue;
-
-      group.sort((a, b) => a.chunkIndex - b.chunkIndex);
-      const expectedCount = group[0].chunkCount;
-      const fingerprint = typeof group[0].chunkFingerprint === 'string' ? group[0].chunkFingerprint : null;
-
-      if (!Number.isInteger(expectedCount) || expectedCount < 1) {
-        console.warn('[WeatherDashboard] Invalid chunkCount encountered while grouping dashboard chunks', group);
+    for (const group of groups.values()) {
+      if (!Number.isInteger(group.chunkCount) || group.chunkCount < 1) {
+        console.warn('[WeatherDashboard] Invalid chunkCount encountered while grouping dashboard chunks', group.envelopes);
         continue;
       }
 
-      if (group.some(env => env.chunkCount !== expectedCount)) {
-        console.warn('[WeatherDashboard] Chunk payload counts differ across tiles', group);
+      if (group.chunkCountMismatch) {
+        console.warn('[WeatherDashboard] Chunk payload counts differ across tiles', group.envelopes);
         continue;
       }
 
-      const seenIndexes = new Set();
-      let hasDuplicate = false;
-      for (const env of group) {
-        if (seenIndexes.has(env.chunkIndex)) {
-          hasDuplicate = true;
-          break;
-        }
-        seenIndexes.add(env.chunkIndex);
-      }
-
-      if (hasDuplicate) {
+      if (group.hasDuplicate) {
         console.warn(
-          `[WeatherDashboard] Duplicate dashboard data chunk index detected${fingerprint ? ` for ${fingerprint}` : ''}`,
-          group
+          `[WeatherDashboard] Duplicate dashboard data chunk index detected${group.fingerprint ? ` for ${group.fingerprint}` : ''}`,
+          group.envelopes
         );
         continue;
       }
 
       const missing = [];
-      for (let i = 1; i <= expectedCount; i++) {
-        if (!seenIndexes.has(i)) {
+      for (let i = 1; i <= group.chunkCount; i++) {
+        if (!group.chunkMap.has(i)) {
           missing.push(i);
         }
       }
 
       if (missing.length) {
-        console.warn(`[WeatherDashboard] Missing dashboard data chunk(s)${fingerprint ? ` for ${fingerprint}` : ''}`, missing);
+        console.warn(`[WeatherDashboard] Missing dashboard data chunk(s)${group.fingerprint ? ` for ${group.fingerprint}` : ''}`, missing);
         continue;
       }
 
-      const buffer = group.map(env => env.chunkData || '').join('');
-      if (!buffer) continue;
+      const buffer = [];
+      for (let i = 1; i <= group.chunkCount; i++) {
+        const chunk = group.chunkMap.get(i);
+        buffer.push(chunk && typeof chunk.data === 'string' ? chunk.data : '');
+      }
+
+      const raw = buffer.join('');
+      if (!raw) continue;
 
       try {
-        const payload = JSON.parse(buffer);
+        const payload = JSON.parse(raw);
         const metadata = { ...(payload.metadata || {}) };
-        metadata.chunkCount = expectedCount;
-        if (fingerprint) metadata.chunkFingerprint = fingerprint;
+        metadata.chunkCount = group.chunkCount;
+        if (group.fingerprint) metadata.chunkFingerprint = group.fingerprint;
+
+        const layout = resolveChunkLayout(group, groups);
+        if (layout && layout.offsets && layout.lengths) {
+          metadata.chunkLayout = {
+            offsets: layout.offsets.slice(),
+            lengths: layout.lengths.slice(),
+            totalLength: Number.isFinite(layout.totalLength) ? layout.totalLength : raw.length
+          };
+        } else if (Number.isFinite(group.totalLength)) {
+          metadata.chunkTotalLength = group.totalLength;
+        }
+
         payload.metadata = metadata;
+
         candidates.push({
           payload,
-          fingerprint,
-          fingerprintInfo: decodeChunkFingerprint(fingerprint),
-          chunkCount: expectedCount,
-          key,
-          groupOrder
+          raw,
+          fingerprint: group.fingerprint,
+          fingerprintInfo: group.fingerprintInfo,
+          chunkCount: group.chunkCount,
+          key: group.key,
+          groupOrder: group.groupOrder
         });
       } catch (err) {
-        console.warn('[WeatherDashboard] Failed to reassemble chunked payload', err, { key, chunkCount: expectedCount });
+        console.warn('[WeatherDashboard] Failed to reassemble chunked payload', err, { key: group.key, chunkCount: group.chunkCount });
       }
     }
 
-    if (!candidates.length) {
-      console.warn('[WeatherDashboard] Unable to build dashboard payload from chunked data', valid);
+    return candidates;
+  }
+
+  function buildCompositeChunkCandidate(groups, context = {}) {
+    const { lastSuccessfulRawPayload } = context || {};
+    if (typeof lastSuccessfulRawPayload !== 'string' || !lastSuccessfulRawPayload.length) return null;
+
+    const groupList = Array.from(groups.values()).filter(group => group.chunkMap && group.chunkMap.size);
+    if (!groupList.length) return null;
+
+    const target = selectPreferredChunkGroup(groupList);
+    if (!target) return null;
+
+    const layout = resolveChunkLayout(target, groups);
+    if (!layout || !Array.isArray(layout.offsets) || !Array.isArray(layout.lengths)) return null;
+    if (layout.offsets.length !== target.chunkCount || layout.lengths.length !== target.chunkCount) return null;
+
+    const totalLength = Number.isFinite(layout.totalLength)
+      ? layout.totalLength
+      : Number.isFinite(target.fingerprintInfo?.length)
+        ? target.fingerprintInfo.length
+        : layout.lengths.reduce((sum, len) => (Number.isFinite(len) ? sum + len : sum), 0);
+
+    if (!Number.isFinite(totalLength) || totalLength <= 0) return null;
+
+    const bufferLength = Math.max(totalLength, lastSuccessfulRawPayload.length);
+    const buffer = new Array(bufferLength).fill(null);
+
+    for (let i = 0; i < lastSuccessfulRawPayload.length && i < buffer.length; i++) {
+      buffer[i] = lastSuccessfulRawPayload[i];
+    }
+
+    const fallbackByIndex = buildFallbackChunkMap(groupList, target);
+
+    for (let idx = 1; idx <= target.chunkCount; idx++) {
+      const offset = layout.offsets[idx - 1];
+      const expectedLength = layout.lengths[idx - 1];
+      if (!Number.isFinite(offset) || !Number.isFinite(expectedLength) || expectedLength < 0) {
+        return null;
+      }
+
+      const end = offset + expectedLength;
+      if (end > buffer.length) {
+        for (let i = buffer.length; i < end; i++) {
+          buffer[i] = null;
+        }
+      }
+
+      let segment = null;
+      const chunk = target.chunkMap.get(idx);
+      if (chunk && typeof chunk.data === 'string' && chunk.data.length) {
+        segment = chunk.data;
+      } else {
+        const fallback = fallbackByIndex.get(idx);
+        if (fallback && typeof fallback.data === 'string' && fallback.data.length === expectedLength) {
+          segment = fallback.data;
+        }
+      }
+
+      if (segment) {
+        if (segment.length !== expectedLength) {
+          return null;
+        }
+        for (let i = 0; i < segment.length; i++) {
+          buffer[offset + i] = segment[i];
+        }
+        continue;
+      }
+
+      let missing = false;
+      for (let pos = offset; pos < end; pos++) {
+        if (buffer[pos] == null) {
+          missing = true;
+          break;
+        }
+      }
+      if (missing) {
+        return null;
+      }
+    }
+
+    if (buffer.some(ch => ch == null)) {
       return null;
     }
 
-    const preferred = selectPreferredChunkCandidate(candidates);
-    return preferred ? preferred.payload : null;
+    const raw = buffer.join('').slice(0, totalLength);
+
+    try {
+      const payload = JSON.parse(raw);
+      const metadata = { ...(payload.metadata || {}) };
+      metadata.chunkCount = target.chunkCount;
+      if (target.fingerprint) metadata.chunkFingerprint = target.fingerprint;
+      metadata.chunkLayout = {
+        offsets: layout.offsets.slice(),
+        lengths: layout.lengths.slice(),
+        totalLength: Number.isFinite(layout.totalLength) ? layout.totalLength : raw.length
+      };
+      payload.metadata = metadata;
+
+      return {
+        payload,
+        raw,
+        fingerprint: target.fingerprint,
+        fingerprintInfo: target.fingerprintInfo,
+        chunkCount: target.chunkCount,
+        key: target.key,
+        groupOrder: target.groupOrder,
+        composite: true
+      };
+    } catch (err) {
+      console.warn('[WeatherDashboard] Failed to composite dashboard payload from partial chunks', err, { key: target.key, chunkCount: target.chunkCount });
+      return null;
+    }
+  }
+
+  function selectPreferredChunkGroup(groups) {
+    if (!groups || !groups.length) return null;
+    return groups.reduce((best, group) => {
+      if (!best) return group;
+      return compareChunkGroupRecency(group, best) > 0 ? group : best;
+    }, null);
+  }
+
+  function buildFallbackChunkMap(groups, target) {
+    const fallback = new Map();
+    const ordered = groups
+      .filter(group => group !== target)
+      .sort((a, b) => compareChunkGroupRecency(b, a));
+
+    for (const group of ordered) {
+      if (group.chunkCount !== target.chunkCount) continue;
+      for (const [index, chunk] of group.chunkMap.entries()) {
+        if (fallback.has(index)) continue;
+        if (chunk && typeof chunk.data === 'string') {
+          fallback.set(index, { data: chunk.data, source: group });
+        }
+      }
+    }
+
+    return fallback;
+  }
+
+  function compareChunkGroupRecency(a, b) {
+    if (!a) return -1;
+    if (!b) return 1;
+
+    const aInfo = a.fingerprintInfo || {};
+    const bInfo = b.fingerprintInfo || {};
+    const aHasTs = Number.isFinite(aInfo.timestamp);
+    const bHasTs = Number.isFinite(bInfo.timestamp);
+
+    if (aHasTs && bHasTs && aInfo.timestamp !== bInfo.timestamp) {
+      return aInfo.timestamp > bInfo.timestamp ? 1 : -1;
+    }
+
+    if (aHasTs && !bHasTs) return 1;
+    if (!aHasTs && bHasTs) return -1;
+
+    const aSeq = Number.isFinite(aInfo.sequence) ? aInfo.sequence : -Infinity;
+    const bSeq = Number.isFinite(bInfo.sequence) ? bInfo.sequence : -Infinity;
+    if (aSeq !== bSeq) {
+      return aSeq > bSeq ? 1 : -1;
+    }
+
+    const aAvailable = a.chunkMap ? a.chunkMap.size : 0;
+    const bAvailable = b.chunkMap ? b.chunkMap.size : 0;
+    if (aAvailable !== bAvailable) {
+      return aAvailable > bAvailable ? 1 : -1;
+    }
+
+    if (a.chunkCount !== b.chunkCount) {
+      return a.chunkCount > b.chunkCount ? 1 : -1;
+    }
+
+    return a.groupOrder > b.groupOrder ? 1 : -1;
+  }
+
+  function resolveChunkLayout(target, groups) {
+    if (!target) return null;
+    const layouts = [];
+    if (target.layout) layouts.push(target.layout);
+
+    for (const group of groups.values()) {
+      if (group === target) continue;
+      if (group.chunkCount !== target.chunkCount) continue;
+      if (group.layout) layouts.push(group.layout);
+    }
+
+    const offsets = extractLayoutArrayFromCandidates(layouts, target.chunkCount, 'offsets');
+    const lengths = extractLayoutArrayFromCandidates(layouts, target.chunkCount, 'lengths');
+    let totalLength = Number.isFinite(target.totalLength) ? target.totalLength : NaN;
+
+    if (!Number.isFinite(totalLength)) {
+      for (const layout of layouts) {
+        if (Number.isFinite(layout?.totalLength)) {
+          totalLength = layout.totalLength;
+          break;
+        }
+      }
+    }
+
+    if (!offsets || !lengths) {
+      return null;
+    }
+
+    return { offsets, lengths, totalLength };
+  }
+
+  function extractLayoutArrayFromCandidates(layouts, expectedCount, key) {
+    for (const layout of layouts) {
+      const array = Array.isArray(layout?.[key]) ? layout[key].slice(0, expectedCount) : null;
+      if (!array || array.length !== expectedCount) continue;
+      const normalized = array.map(toFiniteNumber);
+      if (normalized.every(Number.isFinite)) {
+        return normalized;
+      }
+    }
+    return null;
+  }
+
+  function mergeChunkLayouts(existing, incoming) {
+    if (!incoming) return existing || null;
+    if (!existing) return cloneChunkLayout(incoming);
+
+    const offsets = chooseBetterLayoutArray(existing.offsets, incoming.offsets);
+    const lengths = chooseBetterLayoutArray(existing.lengths, incoming.lengths);
+    const totalLength = Number.isFinite(incoming.totalLength) ? incoming.totalLength : existing.totalLength;
+
+    return {
+      offsets,
+      lengths,
+      totalLength
+    };
+  }
+
+  function cloneChunkLayout(layout) {
+    if (!layout) return null;
+    return {
+      offsets: Array.isArray(layout.offsets) ? layout.offsets.slice() : null,
+      lengths: Array.isArray(layout.lengths) ? layout.lengths.slice() : null,
+      totalLength: Number.isFinite(layout.totalLength) ? layout.totalLength : NaN
+    };
+  }
+
+  function chooseBetterLayoutArray(a, b) {
+    const normA = normalizeLayoutArray(a);
+    const normB = normalizeLayoutArray(b);
+    if (normA && normB) {
+      return normB.length > normA.length ? normB : normA;
+    }
+    return normB || normA || null;
+  }
+
+  function normalizeLayoutArray(value) {
+    if (!Array.isArray(value)) return null;
+    const normalized = value.map(toFiniteNumber);
+    return normalized.every(Number.isFinite) ? normalized : null;
+  }
+
+  function extractChunkLayout(env) {
+    if (!env || typeof env !== 'object') return null;
+    const offsets = normalizeLayoutArray(env.chunkOffsets);
+    const lengths = normalizeLayoutArray(env.chunkLengths);
+    const totalLength = toFiniteNumber(env.chunkTotalLength);
+    if (!offsets && !lengths && !Number.isFinite(totalLength)) {
+      return null;
+    }
+    return {
+      offsets,
+      lengths,
+      totalLength
+    };
+  }
+
+  function toFiniteNumber(value) {
+    const num = Number(value);
+    return Number.isFinite(num) ? num : NaN;
   }
 
   function selectPreferredChunkCandidate(candidates) {

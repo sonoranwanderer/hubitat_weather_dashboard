@@ -112,25 +112,36 @@ private List<String> chunkPayload(String json) {
 
     // First, iterate through the entire JSON string to determine how many chunks are needed.
     // This is a "dry run" to get the final chunkCount.
-    def allSlices = []
+    def slices = []
+    def offsets = []
+    def lengths = []
     def offset = 0
     while (offset < json.size()) {
         def slice = buildSafeSlice(json, offset)
-        allSlices << slice
-        offset += slice.size()
+        def length = slice.size()
+        slices << [data: slice, offset: offset, length: length]
+        offsets << offset
+        lengths << length
+        offset += length
     }
-    def chunkCount = allSlices.size()
+    def chunkCount = slices.size()
+    def totalLength = json.size()
 
     def fingerprint = generateChunkFingerprint(json)
     def chunks = []
-    allSlices.eachWithIndex { slice, i ->
+    slices.eachWithIndex { slice, i ->
         def index = i + 1
         def chunk = JsonOutput.toJson([
             chunkNamespace: "weather-dashboard",
             chunkIndex: index,
             chunkCount: chunkCount,
             chunkFingerprint: fingerprint,
-            chunkData: slice
+            chunkOffset: slice.offset,
+            chunkLength: slice.length,
+            chunkTotalLength: totalLength,
+            chunkOffsets: offsets,
+            chunkLengths: lengths,
+            chunkData: slice.data
         ])
         if (chunk.size() > MAX_EVENT_VALUE_LENGTH) {
             log.warn "Generated chunk ${index} of ${chunkCount} is oversized (${chunk.size()} chars). This may cause dashboard errors."
