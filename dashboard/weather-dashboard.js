@@ -22,6 +22,10 @@
   const GRID_LAYOUT = {
     desktop: [
       // Desktop rows can also override `height` to trim or expand individual tracks.
+      // When you shorten a row (for example, changing 260px to 250px) the tracks
+      // defined beneath it automatically shift upward—the browser recalculates the
+      // grid using the new track size so there's no extra work required to realign
+      // the cards below.
       { columns: ['temp-wind', 'ambient'], repeat: 5, height: 'minmax(0, 1fr)' },
       { columns: ['temp-wind', 'rain'], repeat: 3, height: 'minmax(0, 1fr)' },
       { columns: ['air', 'rain'], repeat: 2, height: 'minmax(0, 1fr)' },
