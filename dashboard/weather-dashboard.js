@@ -557,7 +557,9 @@
     try {
       const circle = container.querySelector('.wdash-ambient-circle--humidity .wdash-ambient-fill');
       if (!circle) return;
-      const sensorName = container.querySelector('.wdash-ambient-name')?.textContent || '';
+      const card = container.closest('.wdash-card--ambient');
+      const scope = card || container;
+      const sensorName = scope.querySelector('.wdash-ambient-name')?.textContent || '';
       const last = ambientLastHumidity.get(sensorName);
       if (last != null) {
         const r = AMBIENT_RING.r;
@@ -1242,12 +1244,13 @@
   applyOutdoorRingSizing();
 
     const sensor = ambientRotation.sensors[ambientRotation.index];
+    const card = container.closest('.wdash-card--ambient');
+    const scope = card || container;
+
     const tempEl = container.querySelector('.wdash-ambient-reading--temp');
     const humidityEl = container.querySelector('.wdash-ambient-reading--humidity');
-    const nameEl = container.querySelector('.wdash-ambient-name');
-    const rotationEl = container.querySelector('.wdash-ambient-rotation');
-
-    const card = container.closest('.wdash-card--ambient');
+    const nameEl = scope.querySelector('.wdash-ambient-name');
+    const rotationEl = scope.querySelector('.wdash-ambient-rotation');
 
     if (!sensor) {
       if (tempEl) tempEl.textContent = formatAmbientValue(null, ambientRotation.tempUnit, 1);
@@ -1328,7 +1331,7 @@
         // 4) fallback to circumference (empty)
         let prevHum = null;
         try {
-          const sensorName = (container.querySelector('.wdash-ambient-name')?.textContent || '').trim();
+          const sensorName = (scope.querySelector('.wdash-ambient-name')?.textContent || '').trim();
           if (humFill.dataset && humFill.dataset.lastHum) {
             prevHum = Number(humFill.dataset.lastHum);
           } else if (sensorName && ambientLastHumidity.has(sensorName)) {
@@ -1367,7 +1370,7 @@
 
         // persist latest humidity for next refresh/sensor reselect
         try {
-          const sensorName = (container.querySelector('.wdash-ambient-name')?.textContent || '').trim();
+          const sensorName = (scope.querySelector('.wdash-ambient-name')?.textContent || '').trim();
           if (sensorName) ambientLastHumidity.set(sensorName, hum);
           if (humFill.dataset) humFill.dataset.lastHum = String(hum);
           ambientLastDisplayedHumidity = hum;
