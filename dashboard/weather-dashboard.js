@@ -2716,7 +2716,7 @@
 .wdash-sun-metric-value { font-size: 0.8rem; font-weight: 600; color: #f4f6ff; }
 .wdash-sun-metric-unit { opacity: 0.8; }
 .wdash-sun-html-metric--moon { gap: 6px; }
-.wdash-moon-icon { width: 16px; height: 16px; border-radius: 50%; background: #050913; box-shadow: inset 0 0 6px rgba(0,0,0,0.65); position: relative; display: inline-block; transform-origin: center; }
+.wdash-moon-icon { width: 16px; height: 16px; border-radius: 50%; background: #050913; box-shadow: 0 0 0 4px rgba(176,183,198,0.22), inset 0 0 6px rgba(0,0,0,0.65); position: relative; display: inline-block; transform-origin: center; }
 .wdash-moon-icon::after, .wdash-moon-icon::before { content: ''; position: absolute; inset: 0; border-radius: 50%; }
 .wdash-moon-icon::after { background: radial-gradient(circle at 50% 40%, #f7f9ff 0%, #e4ecff 60%, #cad5ff 100%); opacity: 0; }
 .wdash-moon-icon::before { background: radial-gradient(circle at 50% 60%, rgba(0,0,0,0.4) 0%, rgba(0,0,0,0.75) 65%, rgba(0,0,0,0.9) 100%); opacity: 0; }
