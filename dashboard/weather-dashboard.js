@@ -2724,7 +2724,7 @@
 .wdash-compass-avg { pointer-events: none; }
 .wdash-compass-current { pointer-events: none; }
 .wdash-ambient { display: flex; flex-direction: column; gap: 14px; flex: 1; /* ambient ring defaults (viewBox units) */ --ambient-ring-r: 45; --ambient-ring-stroke: 10; }
-.wdash-battery { --wdash-battery-width: 24px; --wdash-battery-height: 44px; --wdash-battery-fill-color: #4bd37b; display: inline-flex; align-items: center; justify-content: center; gap: 6px; color: inherit; }
+.wdash-battery { --wdash-battery-width: 18px; --wdash-battery-height: 33px; --wdash-battery-fill-color: #4bd37b; display: inline-flex; align-items: center; justify-content: center; gap: 6px; color: inherit; }
 .wdash-battery--portrait { flex-direction: column; gap: 3px; }
 .wdash-battery--landscape { flex-direction: row; gap: 0; }
 .wdash-battery-tip { display: block; background: var(--wdash-battery-fill-color, #4bd37b); border-radius: 3px; border: 2px solid var(--wdash-battery-fill-color, #4bd37b); }
