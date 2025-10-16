@@ -2120,21 +2120,17 @@
 .wdash-updated-line { font-size: 0.68rem; opacity: 0.7; line-height: 1.2; white-space: nowrap; }
 .wdash-updated-line--secondary { font-size: 0.62rem; opacity: 0.6; }
 .wdash-clock-time { font-family: 'SFMono-Regular', 'Roboto Mono', 'Menlo', 'Courier New', monospace; font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
-.wdash-card--temp-wind { grid-area: temp-wind; gap: 6px; padding: 8px 12px 10px; }
+.wdash-card--temp-wind { grid-area: temp-wind; }
 .wdash-card--ambient { grid-area: ambient; gap: 6px; padding: 8px 12px 10px; }
 .wdash-card--rain { grid-area: rain; }
 .wdash-card--pressure { grid-area: pressure; }
 .wdash-card--solar { grid-area: solar; gap: 6px; padding-bottom: 10px; }
 .wdash-card--air { grid-area: air; gap: 6px; padding: 8px 12px 10px; }
-.wdash-temp, .wdash-wind, .wdash-solar, .wdash-pressure { display: flex; flex-direction: column; gap: 8px; }
-.wdash-temp, .wdash-wind { flex: 0 0 auto; align-items: center; }
-.wdash-solar, .wdash-pressure { flex: 1 1 auto; }
+.wdash-temp, .wdash-wind, .wdash-solar, .wdash-pressure { display: flex; flex-direction: column; gap: 10px; flex: 1; }
 .wdash-pressure { gap: 10px; }
-.wdash-temp-wind-main { display: flex; gap: 10px; flex: 0 0 auto; }
-.wdash-temp-wind-main > .wdash-temp, .wdash-temp-wind-main > .wdash-wind { flex: 0 0 auto; }
-.wdash-temp-wind-details { display: flex; justify-content: space-between; gap: 10px; }
-.wdash-card--temp-wind .wdash-temp-wind-main { padding-top: 0; margin-top: -2px; }
-.wdash-card--temp-wind .wdash-temp-wind-details { margin-top: 2px; }
+.wdash-temp-wind-main { display: flex; gap: 14px; flex: 1; }
+.wdash-temp-wind-main > .wdash-temp, .wdash-temp-wind-main > .wdash-wind { flex: 1; }
+.wdash-temp-wind-details { display: flex; justify-content: space-between; gap: 12px; }
 .wdash-temp { align-items: center; }
 .wdash-wind { align-items: center; }
 .wdash-gauge, .wdash-wind-compass { position: relative; width: min(100%, 260px); aspect-ratio: 1 / 1; margin: 0 auto; }
