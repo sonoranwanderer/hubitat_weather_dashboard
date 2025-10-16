@@ -67,3 +67,25 @@ Example:
 
 Values you omit fall back to the defaults compiled into `weather-dashboard.js`, so you only need to supply the parts you want to adjust.
 
+### Controlling individual card heights and vertical placement
+
+Rows define the vertical tracks of the grid. Every card listed in the same row shares that track’s height. To make one card taller than another in the same column, split the column into multiple rows and repeat the card name in each row you want it to span. Cards only occupy the rows where their name appears, so you can leave a gap for the other column by using `"."` as a placeholder.
+
+For example, the snippet below keeps **Temp & Wind** at 420px tall while the **Ambient** card only occupies the first 220px of the right column. The `"."` placeholder leaves the lower portion of the right column empty so the next card can start higher up.
+
+```json
+{
+  "desktop": {
+    "rows": [
+      { "height": 220, "columns": ["temp-wind", "ambient"] },
+      { "height": 200, "columns": ["temp-wind", "."] },
+      { "height": 160, "columns": ["air", "rain"] },
+      { "height": 200, "columns": ["solar", "rain"] },
+      { "height": 160, "columns": ["solar", "pressure"] }
+    ]
+  }
+}
+```
+
+The top offset for any card is the sum of the row heights that precede the first row containing that card. Spanning multiple rows increases the card’s height by the additional row heights. This lets you dial in each card’s footprint without editing the JavaScript.
+
