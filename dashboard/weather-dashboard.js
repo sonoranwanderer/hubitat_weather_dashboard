@@ -15,44 +15,68 @@
   const INIT_RETRY_DELAY = 250;
   const DATA_REFRESH_INTERVAL = 5000;
   const MAX_CHUNK_TILES = 10;
-  const BASE_WIDTH = 1400;
-  const BASE_HEIGHT = 900;
+  const DEFAULT_BASE_WIDTH = 1200;
+  const DEFAULT_BASE_HEIGHT = 900;
 
-  // Declarative grid layout configuration so card heights/row spans can be adjusted
-  // by changing the repeat counts instead of editing CSS strings.
-  const GRID_LAYOUT = {
-    desktop: [
-      // Two-column desktop grid mirroring the Ecowitt console with the requested
-      // vertical ratios (left column: outdoor 50%, air 20%, sun/moon 30%; right column:
-      // ambient 40%, rain 40%, pressure 20%).
-      { columns: ['temp-wind', 'ambient'], repeat: 4, height: '1fr' },
-      { columns: ['temp-wind', 'rain'], repeat: 1, height: '1fr' },
-      { columns: ['air', 'rain'], repeat: 2, height: '1fr' },
-      { columns: ['solar', 'rain'], repeat: 1, height: '1fr' },
-      { columns: ['solar', 'pressure'], repeat: 2, height: '1fr' }
-    ],
-    tablet: [
-      // Medium screens keep the outdoor panel full-width and then pair the remaining
-      // cards to approximate the console stack.
-      { columns: ['temp-wind', 'temp-wind'], repeat: 1, height: 'minmax(360px, auto)' },
-      { columns: ['air', 'ambient'], repeat: 1, height: 'minmax(260px, auto)' },
-      { columns: ['solar', 'rain'], repeat: 1, height: 'minmax(320px, auto)' },
-      { columns: ['pressure', 'pressure'], repeat: 1, height: 'minmax(220px, auto)' }
-    ],
-    mobile: [
-      { columns: ['temp-wind'], repeat: 1, height: 'minmax(320px, auto)' },
-      { columns: ['air'], repeat: 1, height: 'minmax(220px, auto)' },
-      { columns: ['solar'], repeat: 1, height: 'minmax(320px, auto)' },
-      { columns: ['ambient'], repeat: 1, height: 'minmax(220px, auto)' },
-      { columns: ['rain'], repeat: 1, height: 'minmax(260px, auto)' },
-      { columns: ['pressure'], repeat: 1, height: 'minmax(220px, auto)' }
-    ]
+  const DEFAULT_LAYOUT = {
+    baseWidth: DEFAULT_BASE_WIDTH,
+    baseHeight: DEFAULT_BASE_HEIGHT,
+    desktop: {
+      columns: 'repeat(2, minmax(0, 1fr))',
+      gap: '18px',
+      rows: [
+        { columns: ['temp-wind', 'ambient'], height: 450 },
+        { columns: ['air', 'rain'], height: 160 },
+        { columns: ['solar', 'rain'], height: 180 },
+        { columns: ['solar', 'pressure'], height: 110 }
+      ]
+    },
+    tablet: {
+      columns: 'minmax(0, 1.25fr) minmax(0, 1fr)',
+      gap: '16px',
+      rows: [
+        { columns: ['temp-wind', 'temp-wind'], height: 380 },
+        { columns: ['air', 'ambient'], height: 240 },
+        { columns: ['solar', 'rain'], height: 320 },
+        { columns: ['pressure', 'pressure'], height: 220 }
+      ]
+    },
+    mobile: {
+      columns: '1fr',
+      gap: '14px',
+      rows: [
+        { columns: ['temp-wind'], height: 360 },
+        { columns: ['air'], height: 210 },
+        { columns: ['solar'], height: 320 },
+        { columns: ['ambient'], height: 220 },
+        { columns: ['rain'], height: 260 },
+        { columns: ['pressure'], height: 220 }
+      ]
+    }
   };
 
-  const GRID_TEMPLATES = {
-    desktop: compileGridTemplate(GRID_LAYOUT.desktop),
-    tablet: compileGridTemplate(GRID_LAYOUT.tablet),
-    mobile: compileGridTemplate(GRID_LAYOUT.mobile)
+  const DEFAULT_TEMPLATES = compileLayoutTemplates(DEFAULT_LAYOUT);
+  const DEFAULT_COLUMNS = {
+    desktop: DEFAULT_LAYOUT.desktop.columns,
+    tablet: DEFAULT_LAYOUT.tablet.columns,
+    mobile: DEFAULT_LAYOUT.mobile.columns
+  };
+  const DEFAULT_GAPS = {
+    desktop: DEFAULT_LAYOUT.desktop.gap,
+    tablet: DEFAULT_LAYOUT.tablet.gap,
+    mobile: DEFAULT_LAYOUT.mobile.gap
+  };
+
+  let currentBaseWidth = DEFAULT_BASE_WIDTH;
+  let currentBaseHeight = DEFAULT_BASE_HEIGHT;
+
+  const layoutState = {
+    baseWidth: DEFAULT_BASE_WIDTH,
+    baseHeight: DEFAULT_BASE_HEIGHT,
+    columns: { ...DEFAULT_COLUMNS },
+    gaps: { ...DEFAULT_GAPS },
+    templates: DEFAULT_TEMPLATES,
+    signature: null
   };
 
   const TEMP_COLORS = [
@@ -220,7 +244,7 @@
     }
 
     content.innerHTML = `
-      <div class="wdash-root" style="--wdash-base-width:${BASE_WIDTH}px;--wdash-base-height:${BASE_HEIGHT}px;">
+      <div class="wdash-root" style="--wdash-base-width:${DEFAULT_BASE_WIDTH}px;--wdash-base-height:${DEFAULT_BASE_HEIGHT}px;">
         <div class="wdash-frame">
           <div class="wdash" role="presentation">
             <div class="wdash-grid" data-empty="true"></div>
@@ -229,6 +253,7 @@
       </div>
     `;
 
+    applyLayoutOverrides();
     setupScaling(displayTile, content);
 
     ensureDataTileObservers();
@@ -251,6 +276,7 @@
     const grid = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-grid');
     if (!grid) return;
 
+    applyLayoutOverrides(payload?.metadata);
     applyScale();
 
     if (!payload) {
@@ -372,6 +398,70 @@
     }
   }
 
+  function applyLayoutOverrides(metadata) {
+    const root = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-root');
+    const dash = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash');
+    if (!root || !dash) return;
+
+    const override = metadata ? extractLayoutOverride(metadata.layout) : null;
+    const mergedLayout = deepMerge(DEFAULT_LAYOUT, override || {});
+    const compiled = compileLayoutTemplates(mergedLayout);
+
+    const columns = {
+      desktop: sanitizeColumns(mergedLayout.desktop?.columns, DEFAULT_COLUMNS.desktop),
+      tablet: sanitizeColumns(mergedLayout.tablet?.columns, DEFAULT_COLUMNS.tablet),
+      mobile: sanitizeColumns(mergedLayout.mobile?.columns, DEFAULT_COLUMNS.mobile)
+    };
+    const gaps = {
+      desktop: sanitizeGap(mergedLayout.desktop?.gap, DEFAULT_GAPS.desktop),
+      tablet: sanitizeGap(mergedLayout.tablet?.gap, DEFAULT_GAPS.tablet),
+      mobile: sanitizeGap(mergedLayout.mobile?.gap, DEFAULT_GAPS.mobile)
+    };
+
+    const baseWidth = sanitizeDimension(mergedLayout.baseWidth, DEFAULT_BASE_WIDTH);
+    const baseHeight = sanitizeDimension(mergedLayout.baseHeight, DEFAULT_BASE_HEIGHT);
+
+    const signature = JSON.stringify({
+      baseWidth,
+      baseHeight,
+      columns,
+      gaps,
+      templates: {
+        desktop: { rows: compiled.desktop.rows, areas: compiled.desktop.areas },
+        tablet: { rows: compiled.tablet.rows, areas: compiled.tablet.areas },
+        mobile: { rows: compiled.mobile.rows, areas: compiled.mobile.areas }
+      }
+    });
+
+    if (layoutState.signature === signature) return;
+
+    layoutState.signature = signature;
+    layoutState.baseWidth = baseWidth;
+    layoutState.baseHeight = baseHeight;
+    layoutState.columns = columns;
+    layoutState.gaps = gaps;
+    layoutState.templates = compiled;
+
+    currentBaseWidth = baseWidth;
+    currentBaseHeight = baseHeight;
+
+    root.style.setProperty('--wdash-base-width', `${baseWidth}px`);
+    root.style.setProperty('--wdash-base-height', `${baseHeight}px`);
+
+    dash.style.setProperty('--wdash-grid-columns-desktop', columns.desktop);
+    dash.style.setProperty('--wdash-grid-columns-tablet', columns.tablet);
+    dash.style.setProperty('--wdash-grid-columns-mobile', columns.mobile);
+    dash.style.setProperty('--wdash-grid-rows-desktop', compiled.desktop.rows);
+    dash.style.setProperty('--wdash-grid-rows-tablet', compiled.tablet.rows);
+    dash.style.setProperty('--wdash-grid-rows-mobile', compiled.mobile.rows);
+    dash.style.setProperty('--wdash-grid-areas-desktop', compiled.desktop.areas);
+    dash.style.setProperty('--wdash-grid-areas-tablet', compiled.tablet.areas);
+    dash.style.setProperty('--wdash-grid-areas-mobile', compiled.mobile.areas);
+    dash.style.setProperty('--wdash-grid-gap-desktop', gaps.desktop);
+    dash.style.setProperty('--wdash-grid-gap-tablet', gaps.tablet);
+    dash.style.setProperty('--wdash-grid-gap-mobile', gaps.mobile);
+  }
+
   function ensureDataTileObservers() {
     for (let i = 1; i <= MAX_CHUNK_TILES; i++) {
       const id = `tile-${i}`;
@@ -418,9 +508,11 @@
     const width = rect.width;
     const height = rect.height;
     if (!width || !height) return;
-    const scale = Math.max(0.1, Math.min(width / BASE_WIDTH, height / BASE_HEIGHT));
-    const renderWidth = BASE_WIDTH * scale;
-    const renderHeight = BASE_HEIGHT * scale;
+    const baseWidth = Math.max(1, Number(currentBaseWidth) || DEFAULT_BASE_WIDTH);
+    const baseHeight = Math.max(1, Number(currentBaseHeight) || DEFAULT_BASE_HEIGHT);
+    const scale = Math.max(0.1, Math.min(width / baseWidth, height / baseHeight));
+    const renderWidth = baseWidth * scale;
+    const renderHeight = baseHeight * scale;
     root.style.setProperty('--wdash-scale', `${scale}`);
     root.style.setProperty('--wdash-render-width', `${renderWidth}px`);
     root.style.setProperty('--wdash-render-height', `${renderHeight}px`);
@@ -2044,6 +2136,21 @@
     return match ? `#${match[1]}` : null;
   }
 
+  function compileLayoutTemplates(layoutConfig) {
+    const breakpoints = ['desktop', 'tablet', 'mobile'];
+    const result = {};
+    for (const key of breakpoints) {
+      const section = layoutConfig && layoutConfig[key];
+      const rows = Array.isArray(section)
+        ? section
+        : Array.isArray(section?.rows)
+          ? section.rows
+          : [];
+      result[key] = compileGridTemplate(rows);
+    }
+    return result;
+  }
+
   function compileGridTemplate(layout) {
     if (!Array.isArray(layout)) {
       return { areas: '"."', rows: 'repeat(1, minmax(0, 1fr))', rowCount: 1 };
@@ -2093,6 +2200,64 @@
     return defaultTrack;
   }
 
+  function sanitizeColumns(value, fallback) {
+    if (Array.isArray(value)) {
+      const tracks = value
+        .map(item => normalizeTrackSize(item))
+        .filter(Boolean);
+      if (tracks.length) {
+        return tracks.join(' ');
+      }
+    }
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (trimmed.length) return trimmed;
+    }
+    return fallback;
+  }
+
+  function sanitizeGap(value, fallback) {
+    if (value == null) return fallback;
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return `${Math.max(0, value)}px`;
+    }
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (trimmed.length) return trimmed;
+    }
+    return fallback;
+  }
+
+  function sanitizeDimension(value, fallback) {
+    if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+      return value;
+    }
+    if (typeof value === 'string') {
+      const match = value.trim().match(/^(-?\d+(?:\.\d+)?)/);
+      if (match) {
+        const numeric = Number(match[1]);
+        if (Number.isFinite(numeric) && numeric > 0) {
+          return numeric;
+        }
+      }
+    }
+    return fallback;
+  }
+
+  function extractLayoutOverride(raw) {
+    if (!raw) return null;
+    if (isPlainObject(raw)) return raw;
+    if (typeof raw === 'string') {
+      try {
+        const parsed = JSON.parse(raw);
+        if (isPlainObject(parsed)) return parsed;
+      } catch (err) {
+        console.warn('[WeatherDashboard] Ignored invalid layout override JSON', err);
+      }
+    }
+    return null;
+  }
+
   function injectCSS() {
     if (document.getElementById(CSS_ID)) return;
     const style = document.createElement('style');
@@ -2106,9 +2271,7 @@
 .wdash { width: var(--wdash-base-width); height: var(--wdash-base-height); font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif; color: #f4f6ff; background: radial-gradient(130% 130% at 0% 0%, rgba(32, 48, 88, 0.95), rgba(10, 15, 28, 0.94)); border-radius: 26px; padding: 28px; box-sizing: border-box; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04), 0 18px 46px rgba(0, 0, 0, 0.55); transform-origin: top left; transform: scale(var(--wdash-scale)); position: relative; overflow: hidden; }
 .wdash::before { content: ''; position: absolute; inset: -40% 38% 60% -20%; background: radial-gradient(58% 58% at 50% 50%, rgba(88, 134, 255, 0.28), rgba(88, 134, 255, 0)); pointer-events: none; }
 .wdash::after { content: ''; position: absolute; inset: 58% -25% -20% 48%; background: radial-gradient(54% 54% at 50% 50%, rgba(255, 120, 80, 0.22), rgba(255, 120, 80, 0)); pointer-events: none; }
-.wdash-grid { display: grid; gap: 18px; height: 100%; width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: ${GRID_TEMPLATES.desktop.rows}; grid-template-areas:
-  ${GRID_TEMPLATES.desktop.areas};
-}
+.wdash-grid { display: grid; gap: var(--wdash-grid-gap-desktop, ${DEFAULT_GAPS.desktop}); height: 100%; width: 100%; grid-template-columns: var(--wdash-grid-columns-desktop, ${DEFAULT_COLUMNS.desktop}); grid-template-rows: var(--wdash-grid-rows-desktop, ${DEFAULT_TEMPLATES.desktop.rows}); grid-template-areas: var(--wdash-grid-areas-desktop, ${DEFAULT_TEMPLATES.desktop.areas}); }
 .wdash-grid[data-empty="true"] { display: flex; align-items: center; justify-content: center; }
 .wdash-grid > * { min-height: 0; }
 .wdash-empty { width: 100%; text-align: center; font-size: 1.1rem; opacity: 0.7; }
@@ -2285,17 +2448,13 @@
 .wdash-air-metrics .wdash-metric-value { font-size: 1.02rem; }
 .wdash-air-metrics .wdash-metric--placeholder { visibility: hidden; pointer-events: none; }
 @media (max-width: 1100px) {
-  .wdash-grid { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); grid-template-rows: ${GRID_TEMPLATES.tablet.rows}; grid-template-areas:
-    ${GRID_TEMPLATES.tablet.areas};
-  }
+  .wdash-grid { gap: var(--wdash-grid-gap-tablet, ${DEFAULT_GAPS.tablet}); grid-template-columns: var(--wdash-grid-columns-tablet, ${DEFAULT_COLUMNS.tablet}); grid-template-rows: var(--wdash-grid-rows-tablet, ${DEFAULT_TEMPLATES.tablet.rows}); grid-template-areas: var(--wdash-grid-areas-tablet, ${DEFAULT_TEMPLATES.tablet.areas}); }
 }
 @media (max-width: 900px) {
   .wdash { padding: 20px; }
 }
 @media (max-width: 720px) {
-  .wdash-grid { grid-template-columns: 1fr; grid-template-rows: ${GRID_TEMPLATES.mobile.rows}; grid-template-areas:
-    ${GRID_TEMPLATES.mobile.areas};
-  }
+  .wdash-grid { gap: var(--wdash-grid-gap-mobile, ${DEFAULT_GAPS.mobile}); grid-template-columns: var(--wdash-grid-columns-mobile, ${DEFAULT_COLUMNS.mobile}); grid-template-rows: var(--wdash-grid-rows-mobile, ${DEFAULT_TEMPLATES.mobile.rows}); grid-template-areas: var(--wdash-grid-areas-mobile, ${DEFAULT_TEMPLATES.mobile.areas}); }
   .wdash-card { padding: 18px; }
   .wdash-metric-row { flex-direction: column; }
   .wdash-metric { min-width: unset; }

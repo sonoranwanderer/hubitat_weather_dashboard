@@ -6,6 +6,7 @@
  */
 
 import groovy.json.JsonOutput
+import groovy.json.JsonSlurper
 import groovy.transform.Field
 import java.math.RoundingMode
 import java.text.SimpleDateFormat
@@ -123,6 +124,11 @@ def mainPage() {
         section("Derived calculation settings") {
             input name: "windAverageMinutes", type: "number", title: "Wind average window (minutes)", defaultValue: 10, range: "5..60"
             input name: "pressureTrendHours", type: "number", title: "Pressure tendency window (hours)", defaultValue: 3, range: "1..12"
+        }
+
+        section("Layout overrides (optional)") {
+            paragraph "Provide JSON to fine-tune the dashboard canvas size and grid rows/columns. Leave blank to use the built-in defaults."
+            input name: "layoutOverrideJson", type: "textarea", title: "Layout configuration JSON", required: false
         }
 
         section("Dashboard device") {
@@ -613,6 +619,10 @@ def refreshWeatherData() {
     if (stationUpdatedAt) {
         metadata.weatherStationTime = stationUpdatedAt
     }
+    def layoutOverride = parseLayoutOverrideSetting()
+    if (layoutOverride) {
+        metadata.layout = layoutOverride
+    }
     def primary = primaryWeatherDevice()
     if (primary) {
         metadata.sourceDevice = [id: primary.id, name: primary.displayName]
@@ -630,6 +640,36 @@ def refreshWeatherData() {
     if (child) {
         child.updateDashboardData(json, pretty)
     }
+}
+
+private Map parseLayoutOverrideSetting() {
+    def raw = settings.layoutOverrideJson
+    if (!(raw instanceof CharSequence)) {
+        state.remove('lastLayoutOverrideError')
+        return null
+    }
+    def text = raw.toString().trim()
+    if (!text) {
+        state.remove('lastLayoutOverrideError')
+        return null
+    }
+    try {
+        def parsed = new JsonSlurper().parseText(text)
+        if (parsed instanceof Map) {
+            state.remove('lastLayoutOverrideError')
+            return parsed as Map
+        }
+        if (state.lastLayoutOverrideError != text) {
+            log.warn "Weather Dashboard App: Layout override JSON must be an object."
+            state.lastLayoutOverrideError = text
+        }
+    } catch (Exception ex) {
+        if (state.lastLayoutOverrideError != text) {
+            log.warn "Weather Dashboard App: Unable to parse layout override JSON (${ex?.message ?: ex})."
+            state.lastLayoutOverrideError = text
+        }
+    }
+    return null
 }
 
 private Map buildAmbientSensorsPayload() {
