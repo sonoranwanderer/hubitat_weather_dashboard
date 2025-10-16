@@ -145,7 +145,8 @@ def mainPage() {
         }
 
         section("Actions") {
-            href "refreshNow", title: "Refresh data now", description: "Tap to recompute and push the dashboard payload"
+            input name: "saveAndPreview", type: "button", title: "Save & Refresh"
+            input name: "refreshNow", type: "button", title: "Refresh"
         }
     }
 }
@@ -162,12 +163,19 @@ private Map weatherDeviceOptions() {
     }
 }
 
-def refreshNow() {
-    refreshWeatherData()
-    return dynamicPage(name: "refreshNow") {
-        section("Refresh queued") {
-            paragraph "The dashboard payload will update momentarily."
-        }
+def appButtonHandler(String buttonName) {
+    switch (buttonName) {
+        case 'saveAndPreview':
+            log.info "Weather Dashboard App save & refresh requested"
+            updated()
+            refreshWeatherData()
+            break
+        case 'refreshNow':
+            log.info "Weather Dashboard App manual refresh requested"
+            refreshWeatherData()
+            break
+        default:
+            log.warn "Unhandled button press: ${buttonName}"
     }
 }
 
