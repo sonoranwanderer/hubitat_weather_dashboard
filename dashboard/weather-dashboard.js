@@ -175,6 +175,7 @@
   let tempWindGaugeResizeHandler = null;
   let tempWindGaugeRaf = null;
   let tempWindGaugeRafType = null;
+  let tempWindGaugeLastSize = null;
   const placeholderLogged = new Set();
   let pressureMode = 'relative';
   let lastSuccessfulPayload = null;
@@ -1563,6 +1564,15 @@
     const main = card.querySelector('.wdash-temp-wind-main');
     if (!main) return;
 
+    if (Number.isFinite(tempWindGaugeLastSize) && tempWindGaugeLastSize > 0) {
+      card.dataset.tempWindGaugeSize = String(tempWindGaugeLastSize);
+      card.style.setProperty('--temp-wind-gauge-size', `${tempWindGaugeLastSize}px`);
+    } else {
+      card.style.removeProperty('--temp-wind-gauge-size');
+      delete card.dataset.tempWindGaugeSize;
+    }
+
+    applyTempWindGaugeSizing(card);
     scheduleTempWindGaugeSizing(card);
 
     if (typeof ResizeObserver === 'function') {
@@ -1576,11 +1586,15 @@
 
   function applyTempWindGaugeSizing(cardOverride) {
     const card = cardOverride || document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-card--temp-wind');
-    if (!card) return;
+    if (!card) {
+      tempWindGaugeLastSize = null;
+      return;
+    }
     const main = card.querySelector('.wdash-temp-wind-main');
     if (!main) {
       card.style.removeProperty('--temp-wind-gauge-size');
       delete card.dataset.tempWindGaugeSize;
+      tempWindGaugeLastSize = null;
       return;
     }
 
@@ -1632,6 +1646,7 @@
 
     const normalized = Math.max(0, Math.round(gaugeSize * 100) / 100);
     const previous = Number(card.dataset.tempWindGaugeSize);
+    tempWindGaugeLastSize = normalized;
     if (Number.isFinite(previous) && Math.abs(previous - normalized) < 0.5) return;
     card.dataset.tempWindGaugeSize = String(normalized);
     card.style.setProperty('--temp-wind-gauge-size', `${normalized}px`);

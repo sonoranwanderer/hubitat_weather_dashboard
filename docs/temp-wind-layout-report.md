@@ -60,8 +60,8 @@ This reference summarizes every selector in `dashboard/weather-dashboard.js` tha
 
 | Function | Location | Effect |
 | --- | --- | --- |
-| `setupTempWindGaugeSizing` / `teardownTempWindGaugeSizing` | lines 1548-1588 | Attach a `ResizeObserver` (or window resize fallback) to the Temp & Wind card, scheduling gauge recalculations whenever the card height changes. |
-| `applyTempWindGaugeSizing` | lines 1588-1630 | Measures the card’s available vertical space (subtracting header height, metric row height, padding, and flex gaps) and writes the result to `--temp-wind-gauge-size`, clamped to 0–260px. This lets the gauges shrink automatically when you reduce the grid row height (e.g., to 350px) without overflowing the card. |
+| `setupTempWindGaugeSizing` / `teardownTempWindGaugeSizing` | lines 1560-1585 | Attach a `ResizeObserver` (or window resize fallback) to the Temp & Wind card, scheduling gauge recalculations whenever the card height changes. The setup routine now reapplies the last measured gauge size immediately so redraws do not flash back to the 260px default before the observer fires. |
+| `applyTempWindGaugeSizing` | lines 1587-1652 | Measures the card’s available vertical space (subtracting header height, metric row height, padding, and flex gaps) and writes the result to `--temp-wind-gauge-size`, clamped to 0–260px. The helper also caches the normalized size so freshly rendered markup can reuse it before the next resize event. This lets the gauges shrink automatically when you reduce the grid row height (e.g., to 350px) without overflowing the card. |
 
 ## Overlapping influences
 
