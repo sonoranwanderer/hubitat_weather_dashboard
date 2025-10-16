@@ -609,11 +609,27 @@
     const stationLabel = stationReportedAt ? formatHubClock(stationReportedAt, { includeSeconds: false }) : null;
     const updatedLabel = stationLabel ? `Updated ${stationLabel}` : '';
 
+    const outdoorBatterySlot = buildBatterySlot(toNumber(outdoor.battery), {
+      orientation: 'portrait',
+      className: 'wdash-temp-wind-battery',
+      label: 'Outdoor sensor',
+      titlePrefix: 'Outdoor sensor battery'
+    });
+
     let gaugeSizeAttr = '';
     if (Number.isFinite(tempWindGaugeLastSize) && tempWindGaugeLastSize > 0) {
       const normalizedGaugeSize = Math.max(0, Math.round(tempWindGaugeLastSize * 100) / 100);
       gaugeSizeAttr = ` data-temp-wind-gauge-size="${normalizedGaugeSize}" style="--temp-wind-gauge-size:${normalizedGaugeSize}px;"`;
     }
+
+    const detailsRow = buildMetricRow([
+      { label: 'Feels Like', value: feelsText },
+      { label: 'Dew Point', value: dewText },
+      { label: 'Humidity', value: humidityText },
+      { label: 'Temp Trend', value: trendText },
+      { label: `${windowMins}m Avg`, value: avgCombinedText },
+      { label: 'Max Gust', value: dailyMaxGustText }
+    ], 'wdash-temp-wind-details', { layout: 'fill', columns: 6 });
 
     return `
       <section class="wdash-card wdash-card--temp-wind"${gaugeSizeAttr}>
@@ -674,13 +690,10 @@
             </div>
           </div>
         </div>
-        ${buildMetricRow([
-          { label: 'Feels Like', value: feelsText },
-          { label: 'Dew Point', value: dewText },
-          { label: 'Humidity', value: humidityText },
-          { label: 'Temp Trend', value: trendText },
-          { label: `${windowMins}m Avg`, value: avgCombinedText },
-          { label: 'Max Gust', value: dailyMaxGustText } ], 'wdash-temp-wind-details', { layout: 'fill', columns: 6 })}
+        <div class="wdash-temp-wind-footer">
+          ${outdoorBatterySlot}
+          ${detailsRow}
+        </div>
       </section>
     `;
   }
@@ -823,6 +836,14 @@
       : 'No sensors configured';
     const tempDisplay = formatAmbientValue(sensor.temperatureF, tempUnit, 1);
     const humidityDisplay = formatAmbientValue(sensor.humidity, humidityUnit, 0);
+    const batteryLevel = toNumber(sensor.battery);
+    const batteryLabel = sensorName.length ? sensorName : 'Ambient sensor';
+    const batterySlot = buildBatterySlot(batteryLevel, {
+      orientation: 'landscape',
+      className: 'wdash-ambient-battery',
+      label: batteryLabel,
+      titlePrefix: `${batteryLabel} battery`
+    });
     const timerDisabledAttr = sensors.length > 1 ? '' : ' disabled';
     const timerLabel = sensors.length > 1 ? 'Pause ambient sensor rotation' : 'Ambient sensor rotation unavailable';
 
@@ -848,7 +869,7 @@
         </header>
         <div class="wdash-ambient" data-count="${sensors.length}"${keyAttr}>
           <div class="wdash-ambient-circles">
-                <div class="wdash-ambient-circle wdash-ambient-circle--temp" style="position: relative;">
+            <div class="wdash-ambient-circle wdash-ambient-circle--temp" style="position: relative;">
                 <svg class="wdash-ambient-svg wdash-ambient-svg--temp" viewBox="0 0 100 100" aria-hidden="true">
                 <defs>
                   <linearGradient id="wdash-ambient-temp-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
@@ -864,6 +885,7 @@
               </svg>
               <span class="wdash-ambient-reading wdash-ambient-reading--temp">${escapeHtml(tempDisplay)}</span>
               <span class="wdash-ambient-label">Temperature</span>
+              ${batterySlot}
             </div>
             <div class="wdash-ambient-circle wdash-ambient-circle--humidity">
               <svg class="wdash-ambient-svg wdash-ambient-svg--humidity" viewBox="0 0 100 100" aria-hidden="true">
@@ -981,6 +1003,13 @@
       { label: 'Yearly', value: formatRain(rain.yearlyIn) }
     ];
 
+    const rainBatterySlot = buildBatterySlot(toNumber(rain.battery), {
+      orientation: 'portrait',
+      className: 'wdash-rain-battery',
+      label: 'Rain sensor',
+      titlePrefix: 'Rain sensor battery'
+    });
+
     return `
       <section class="wdash-card wdash-card--rain">
         ${cardHeader(CARD_TITLES.rain, data)}
@@ -1006,6 +1035,7 @@
             <div class="wdash-rain-daily-metric">
               <div class="wdash-rain-daily-value">${formatRain(rain.dailyIn)}</div>
               <div class="wdash-rain-daily-label">Daily</div>
+              ${rainBatterySlot}
             </div>
           </div>
           <div class="wdash-rain-col wdash-rain-col--stats">
@@ -1186,11 +1216,26 @@
     const airData = currentSource === 'Indoor' ? data.indoorAirQuality : data.outdoorAirQuality;
 
     const metrics = padAirQualityMetrics(buildAirQualityMetrics(airData, currentSource));
-    const headerLabel = sources.length > 1 ? currentSource : '';
+    const subtitle = sources.length > 1 ? currentSource : '';
+    const batteryLevel = toNumber(airData?.battery);
+    const batteryLabel = `${currentSource} air quality sensor`;
+    const batterySlot = buildBatterySlot(batteryLevel, {
+      orientation: 'portrait',
+      className: 'wdash-air-battery',
+      label: batteryLabel,
+      titlePrefix: `${batteryLabel} battery`
+    });
+
+    const headerHtml = cardHeader(CARD_TITLES.air, data, null, {
+      headerClass: 'wdash-card-header--air',
+      leading: batterySlot,
+      subtitle,
+      useSubLabelInUpdated: false
+    });
 
     return `
       <section class="wdash-card wdash-card--air" data-aq-source="${currentSource.toLowerCase()}">
-        ${cardHeader(CARD_TITLES.air, data, headerLabel)}
+        ${headerHtml}
         ${buildMetricRow(metrics, 'wdash-air-metrics')}
       </section>
     `;
@@ -2063,6 +2108,7 @@
     const humidityEl = container.querySelector('.wdash-ambient-reading--humidity');
     const nameEl = scope.querySelector('.wdash-ambient-name');
     const rotationEl = scope.querySelector('.wdash-ambient-rotation');
+    const batteryEl = container.querySelector('.wdash-ambient-battery');
 
     if (!sensor) {
       if (tempEl) tempEl.textContent = formatAmbientValue(null, ambientRotation.tempUnit, 1);
@@ -2071,12 +2117,20 @@
       if (rotationEl) rotationEl.textContent = '';
       container.classList.add('wdash-ambient--empty');
       if (card) card.classList.add('wdash-ambient--empty');
+      if (batteryEl) {
+        updateBatterySlot(batteryEl, null, {
+          orientation: 'landscape',
+          label: 'Ambient sensor',
+          titlePrefix: 'Ambient sensor battery'
+        });
+      }
       assignAmbientKeyToElements(container, card, null);
       return;
     }
 
     container.classList.remove('wdash-ambient--empty');
     if (card) card.classList.remove('wdash-ambient--empty');
+    const sensorName = sensor && typeof sensor.name === 'string' ? sensor.name.trim() : '';
     if (tempEl) tempEl.textContent = formatAmbientValue(sensor.temperatureF, ambientRotation.tempUnit, 1);
     if (humidityEl) humidityEl.textContent = formatAmbientValue(sensor.humidity, ambientRotation.humidityUnit, 0);
     if (nameEl) nameEl.textContent = sensor.name || 'Sensor';
@@ -2084,6 +2138,13 @@
       rotationEl.textContent = ambientRotation.sensors.length > 1
         ? `Sensor ${ambientRotation.index + 1} of ${ambientRotation.sensors.length}`
         : '';
+    }
+    if (batteryEl) {
+      updateBatterySlot(batteryEl, sensor ? sensor.battery : null, {
+        orientation: 'landscape',
+        label: sensorName || 'Ambient sensor',
+        titlePrefix: sensorName ? `${sensorName} battery` : 'Ambient sensor battery'
+      });
     }
 
     updateAmbientTimerDisplay();
@@ -2275,11 +2336,18 @@
   }
 
   function cardHeader(title, data, subLabel = null, options = {}) {
-    const { fallbackToRelative = true, clock = null } = options || {};
+    const {
+      fallbackToRelative = true,
+      clock = null,
+      headerClass = '',
+      leading = '',
+      subtitle = null,
+      useSubLabelInUpdated = true
+    } = options || {};
     const generatedAt = data?.metadata?.generatedAt;
     const relative = generatedAt ? formatRelativeTime(generatedAt) : null;
     let label = '';
-    if (subLabel != null) {
+    if (useSubLabelInUpdated !== false && subLabel != null) {
       const raw = typeof subLabel === 'string' ? subLabel : String(subLabel);
       if (raw && raw.trim().length) {
         label = raw.trim();
@@ -2335,9 +2403,35 @@
     if (timezoneLabel) {
       updatedLines.push(`<span class="wdash-updated-line wdash-updated-line--secondary" data-hub-clock-timezone="true">${escapeHtml(timezoneLabel)}</span>`);
     }
+    const headerClasses = ['wdash-card-header', headerClass].filter(Boolean).join(' ');
+    const leadingContent = typeof leading === 'string' ? leading : (leading != null ? String(leading) : '');
+    const leadingMarkup = leadingContent.trim();
+    const subtitleText = subtitle != null ? String(subtitle).trim() : '';
+    const hasStructuredLayout = (leadingMarkup.length > 0) || subtitleText.length > 0;
+
+    if (!hasStructuredLayout) {
+      return `
+        <header class="${headerClasses}">
+          <h3>${escapeHtml(title)}</h3>
+          <span class="wdash-updated">${updatedLines.join('')}</span>
+        </header>
+      `;
+    }
+
+    const leadingHtml = leadingMarkup.length > 0
+      ? `<span class="wdash-card-header-leading">${leadingMarkup}</span>`
+      : '';
+    const subtitleHtml = subtitleText
+      ? `<span class="wdash-card-subtitle">${escapeHtml(subtitleText)}</span>`
+      : '';
+
     return `
-      <header class="wdash-card-header">
-        <h3>${escapeHtml(title)}</h3>
+      <header class="${headerClasses}">
+        ${leadingHtml}
+        <div class="wdash-card-header-main">
+          <h3>${escapeHtml(title)}</h3>
+          ${subtitleHtml}
+        </div>
         <span class="wdash-updated">${updatedLines.join('')}</span>
       </header>
     `;
@@ -2649,10 +2743,16 @@
 .wdash-empty { width: 100%; text-align: center; font-size: 1.1rem; opacity: 0.7; }
 .wdash-card { background: linear-gradient(145deg, rgba(27,35,58,0.92), rgba(13,18,32,0.92)); border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 10px; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05); height: 100%; min-height: 0; }
 .wdash-card-header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.72rem; color: #8ea0c8; }
+.wdash-card-header-main { display: flex; flex-direction: column; gap: 2px; flex: 1 1 auto; min-width: 0; }
+.wdash-card-header-leading { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.wdash-card-subtitle { font-size: 0.62rem; letter-spacing: 0.08em; color: #9badcf; }
 .wdash-card-header h3 { margin: 0; font-size: 0.82rem; font-weight: 700; color: #c9d8ff; }
 .wdash-card-header--ambient { width: 100%; align-items: baseline; }
 .wdash-card-header--ambient .wdash-ambient-name { margin: 0; }
 .wdash-card-header--ambient .wdash-ambient-rotation { margin-left: auto; text-align: right; }
+.wdash-card-header--air { align-items: center; gap: 10px; }
+.wdash-card-header--air .wdash-card-header-main { align-items: flex-start; }
+.wdash-card-header--air .wdash-card-header-leading { align-self: stretch; }
 .wdash-updated { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 2px; font-size: 0.68rem; opacity: 0.7; text-align: right; }
 .wdash-updated-line { white-space: nowrap; line-height: 1.2; }
 .wdash-updated-line--secondary { font-size: 0.62rem; opacity: 0.65; }
@@ -2724,6 +2824,8 @@
 .wdash-compass-avg { pointer-events: none; }
 .wdash-compass-current { pointer-events: none; }
 .wdash-ambient { display: flex; flex-direction: column; gap: 14px; flex: 1; /* ambient ring defaults (viewBox units) */ --ambient-ring-r: 45; --ambient-ring-stroke: 10; }
+.wdash-battery-slot { display: inline-flex; align-items: center; justify-content: center; }
+.wdash-battery-slot.is-hidden { display: none !important; }
 .wdash-battery { --wdash-battery-width: 18px; --wdash-battery-height: 33px; --wdash-battery-fill-color: #4bd37b; display: inline-flex; align-items: center; justify-content: center; gap: 6px; color: inherit; }
 .wdash-battery--portrait { flex-direction: column; gap: 3px; }
 .wdash-battery--landscape { flex-direction: row; gap: 0; }
@@ -2761,6 +2863,8 @@
 .wdash-ambient-label { font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.8; }
 .wdash-ambient-circle--temp { background: transparent; }
 .wdash-ambient-circle--humidity { background: transparent; }
+.wdash-ambient-circle--temp .wdash-ambient-battery { position: absolute; top: 92px; left: -36px; }
+.wdash-ambient-battery .wdash-battery { --wdash-battery-width: 16px; --wdash-battery-height: 28px; }
 .wdash-ambient-timer { --wdash-timer-color: #29d88b; position: absolute; top: 92px; right: -36px; width: 40px; height: 40px; border: none; padding: 0; border-radius: 50%; background: transparent; color: var(--wdash-timer-color); display: grid; place-items: center; cursor: pointer; filter: drop-shadow(0 8px 16px rgba(0,0,0,0.45)); transition: transform 0.2s ease, filter 0.2s ease, color 0.2s ease; }
 .wdash-ambient-timer:hover:not(:disabled) { transform: translateY(-1px); filter: drop-shadow(0 16px 26px rgba(0,0,0,0.55)); }
 .wdash-ambient-timer:active:not(:disabled) { transform: translateY(1px); filter: drop-shadow(0 10px 18px rgba(0,0,0,0.45)); }
@@ -2785,6 +2889,8 @@
 .wdash-rain-daily-metric { flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; }
 .wdash-rain-daily-value { font-size: 2.8rem; font-weight: 800; line-height: 1; }
 .wdash-rain-daily-label { font-size: 0.9rem; font-weight: 700; color: #c9d8ff; margin-top: 4px; }
+.wdash-rain-battery { margin-top: 6px; }
+.wdash-rain-battery .wdash-battery { --wdash-battery-width: 15px; --wdash-battery-height: 26px; }
 .wdash-rain-col--stats { align-self: start; }
 .wdash-rain-stats.wdash-metric-row--table { display: block; width: 100%; }
 .wdash-rain-stats.wdash-metric-row--table .wdash-metric { background: none; box-shadow: none; display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.07); }
@@ -2798,6 +2904,11 @@
 .wdash-pressure-button:hover { color: #f4f6ff; }
 .wdash-pressure-button.is-active { background: linear-gradient(140deg, #5ab3ff, #3f8bff); color: #0d1426; box-shadow: 0 8px 16px rgba(74,150,255,0.35); }
 .wdash-pressure-reading { font-size: 1.82rem; font-weight: 700; color: #e3edff; min-height: 2.2rem; display: flex; align-items: center; justify-content: center; }
+.wdash-temp-wind-footer { position: relative; }
+.wdash-temp-wind-footer .wdash-temp-wind-details { position: relative; z-index: 1; }
+.wdash-temp-wind-battery { position: absolute; left: 0; bottom: calc(100% + 6px); }
+.wdash-temp-wind-battery .wdash-battery { --wdash-battery-width: 16px; --wdash-battery-height: 30px; }
+.wdash-air-battery .wdash-battery { --wdash-battery-width: 15px; --wdash-battery-height: 26px; }
 .wdash-pressure-value { display: none; }
 .wdash-card--pressure[data-pressure-mode="relative"] .wdash-pressure-value[data-pressure-value="relative"],
 .wdash-card--pressure[data-pressure-mode="absolute"] .wdash-pressure-value[data-pressure-value="absolute"] { display: inline-flex; }
@@ -3022,6 +3133,115 @@
   function formatDegrees(value) {
     if (!Number.isFinite(value)) return '--°';
     return `${value.toFixed(0)}°`;
+  }
+
+  function buildBatterySlot(levelInput, options = {}) {
+    const orientation = String(options.orientation || '').toLowerCase() === 'landscape'
+      ? 'landscape'
+      : 'portrait';
+    const showLabel = !!options.showLabel;
+    const hideWhenInvalid = options.hideWhenInvalid !== false;
+    const rawLabel = options.label != null ? String(options.label) : '';
+    const label = rawLabel.trim();
+    const titlePrefix = options.titlePrefix != null
+      ? String(options.titlePrefix).trim()
+      : (label ? `${label} battery` : '');
+    const className = options.className ? ` ${options.className}` : '';
+    const ariaHidden = options.ariaHidden ? ' aria-hidden="true"' : '';
+
+    const level = Number.isFinite(levelInput) ? clamp(levelInput, 0, 100) : null;
+    const iconTitle = level != null && titlePrefix
+      ? `${titlePrefix} ${Math.round(level)}%`
+      : (titlePrefix && level == null ? `${titlePrefix}` : '');
+    const iconHtml = level != null
+      ? renderBatteryIcon({
+          level,
+          orientation,
+          showLabel,
+          title: iconTitle
+        })
+      : '';
+
+    const classes = [
+      'wdash-battery-slot',
+      className,
+      hideWhenInvalid && level == null ? 'is-hidden' : ''
+    ].filter(Boolean).join(' ');
+
+    const dataset = [
+      `data-battery-orientation="${escapeHtml(orientation)}"`,
+      `data-battery-show-label="${showLabel ? 'true' : 'false'}"`,
+      `data-battery-hide-when-invalid="${hideWhenInvalid ? 'true' : 'false'}"`,
+      `data-battery-level="${level != null ? level : ''}"`
+    ];
+    if (label) dataset.push(`data-battery-label="${escapeHtml(label)}"`);
+    if (titlePrefix) dataset.push(`data-battery-title-prefix="${escapeHtml(titlePrefix)}"`);
+
+    return `
+      <div class="${classes}" ${dataset.join(' ')}${ariaHidden}>${iconHtml}</div>
+    `;
+  }
+
+  function updateBatterySlot(element, levelInput, options = {}) {
+    if (!element) return;
+    const orientation = options.orientation
+      ? (String(options.orientation).toLowerCase() === 'landscape' ? 'landscape' : 'portrait')
+      : (element.dataset.batteryOrientation === 'landscape' ? 'landscape' : 'portrait');
+    const showLabel = options.showLabel != null
+      ? !!options.showLabel
+      : element.dataset.batteryShowLabel === 'true';
+    const hideWhenInvalid = options.hideWhenInvalid != null
+      ? !!options.hideWhenInvalid
+      : element.dataset.batteryHideWhenInvalid !== 'false';
+    const rawLabel = options.label != null
+      ? String(options.label)
+      : (element.dataset.batteryLabel || '');
+    const label = rawLabel.trim();
+    const titlePrefix = options.titlePrefix != null
+      ? String(options.titlePrefix).trim()
+      : (element.dataset.batteryTitlePrefix || (label ? `${label} battery` : ''));
+
+    const level = Number.isFinite(levelInput) ? clamp(levelInput, 0, 100) : null;
+
+    element.dataset.batteryOrientation = orientation;
+    element.dataset.batteryShowLabel = showLabel ? 'true' : 'false';
+    element.dataset.batteryHideWhenInvalid = hideWhenInvalid ? 'true' : 'false';
+    if (label) {
+      element.dataset.batteryLabel = label;
+    } else {
+      delete element.dataset.batteryLabel;
+    }
+    if (titlePrefix) {
+      element.dataset.batteryTitlePrefix = titlePrefix;
+    } else {
+      delete element.dataset.batteryTitlePrefix;
+    }
+    element.dataset.batteryLevel = level != null ? String(level) : '';
+
+    if (level == null && hideWhenInvalid) {
+      element.classList.add('is-hidden');
+      element.innerHTML = '';
+      return;
+    }
+
+    if (hideWhenInvalid) {
+      element.classList.toggle('is-hidden', level == null);
+    } else {
+      element.classList.remove('is-hidden');
+    }
+
+    const title = titlePrefix
+      ? (level != null ? `${titlePrefix} ${Math.round(level)}%` : titlePrefix)
+      : '';
+    const iconHtml = level != null
+      ? renderBatteryIcon({
+          level,
+          orientation,
+          showLabel,
+          title
+        })
+      : '';
+    element.innerHTML = iconHtml;
   }
 
   function renderBatteryIcon(options = {}) {
