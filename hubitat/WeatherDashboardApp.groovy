@@ -128,6 +128,8 @@ def mainPage() {
 
         section("Layout overrides (optional)") {
             paragraph "Provide JSON to fine-tune the dashboard canvas size and grid rows/columns. Leave blank to use the built-in defaults."
+            paragraph "Set `baseWidth` and `baseHeight` (in pixels) to control the canvas size. Rows accept objects like `{ \"height\": 360, \"columns\": [\"temp-wind\", \"ambient\"] }`."
+            paragraph "Example:<br><code>{\n  \"baseWidth\": 1200,\n  \"baseHeight\": 900,\n  \"desktop\": {\n    \"gap\": \"18px\",\n    \"rows\": [\n      { \"height\": 450, \"columns\": [\"temp-wind\", \"ambient\"] }\n    ]\n  }\n}</code>"
             input name: "layoutOverrideJson", type: "textarea", title: "Layout configuration JSON", required: false
         }
 

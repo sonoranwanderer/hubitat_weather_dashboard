@@ -41,3 +41,29 @@ The app publishes a consolidated JSON document to the dashboard device. Hubitat 
 * The JSON payload is designed to be compact but descriptive, minimizing the number of attributes required on the virtual device.
 * Derived metrics (wind averages, pressure tendency, outlook) are recalculated every minute or whenever the underlying weather attributes change.
 
+## Runtime layout overrides
+
+The app exposes an optional **Layout configuration JSON** textarea that lets you change the dashboard canvas size and grid without editing the JavaScript. Provide a JSON object with the following keys:
+
+* `baseWidth` / `baseHeight` – numbers (pixels) that define the logical canvas size the renderer scales from.
+* `desktop`, `tablet`, `mobile` – objects that can override `columns`, `gap`, and `rows` for each breakpoint. Rows are arrays of objects with a `height` (pixels) and a `columns` array that names the cards to place in that row.
+
+Example:
+
+```json
+{
+  "baseWidth": 1200,
+  "baseHeight": 900,
+  "desktop": {
+    "columns": "repeat(2, minmax(0, 1fr))",
+    "gap": "18px",
+    "rows": [
+      { "height": 450, "columns": ["temp-wind", "ambient"] },
+      { "height": 180, "columns": ["air", "rain"] }
+    ]
+  }
+}
+```
+
+Values you omit fall back to the defaults compiled into `weather-dashboard.js`, so you only need to supply the parts you want to adjust.
+
