@@ -15,40 +15,34 @@
   const INIT_RETRY_DELAY = 250;
   const DATA_REFRESH_INTERVAL = 5000;
   const MAX_CHUNK_TILES = 10;
-  const BASE_WIDTH = 1200;
+  const BASE_WIDTH = 1600;
   const BASE_HEIGHT = 900;
 
   // Declarative grid layout configuration so card heights/row spans can be adjusted
   // by changing the repeat counts instead of editing CSS strings.
   const GRID_LAYOUT = {
     desktop: [
-      // Desktop rows can also override `height` to trim or expand individual tracks.
-      // When you shorten a row (for example, changing 260px to 250px) the tracks
-      // defined beneath it automatically shift upward—the browser recalculates the
-      // grid using the new track size so there's no extra work required to realign
-      // the cards below.
-      { columns: ['temp-wind', 'ambient'], repeat: 5, height: '0.82fr' },
-      { columns: ['temp-wind', 'rain'], repeat: 3, height: '0.92fr' },
-      { columns: ['air', 'rain'], repeat: 2, height: 'minmax(0, 1fr)' },
-      { columns: ['air', 'pressure'], repeat: 2, height: 'minmax(0, 1fr)' },
-      { columns: ['solar', 'pressure'], repeat: 3, height: '0.95fr' },
-      { columns: ['solar', '.'], repeat: 2, height: 'minmax(0, 1fr)' },
-      { columns: ['.', '.'], repeat: 1, height: 'minmax(0, 1fr)' }
+      // Three-column desktop grid with a dominant left column for the primary gauges
+      // so the composition mimics the Ecowitt console layout.
+      { columns: ['temp-wind', 'solar', 'ambient'], repeat: 3, height: '1.05fr' },
+      { columns: ['temp-wind', 'air', 'rain'], repeat: 2, height: '1fr' },
+      { columns: ['temp-wind', 'pressure', 'pressure'], repeat: 2, height: '1fr' }
     ],
     tablet: [
-      // Adjust the `height` value on any row to fine-tune card height (e.g. 250px trims 10px vs 260px).
-      { columns: ['temp-wind', 'ambient'], repeat: 1, height: 'minmax(260px, auto)' },
-      { columns: ['pressure', 'rain'], repeat: 1, height: 'minmax(260px, auto)' },
-      { columns: ['solar', 'air'], repeat: 1, height: 'minmax(260px, auto)' },
-      { columns: ['air', 'air'], repeat: 1, height: 'minmax(260px, auto)' }
+      // Two-column layout that keeps the outdoor panel spanning the first column
+      // while stacking supporting modules to the right.
+      { columns: ['temp-wind', 'temp-wind'], repeat: 4, height: 'minmax(280px, auto)' },
+      { columns: ['ambient', 'solar'], repeat: 1, height: 'minmax(260px, auto)' },
+      { columns: ['air', 'rain'], repeat: 1, height: 'minmax(260px, auto)' },
+      { columns: ['pressure', 'pressure'], repeat: 1, height: 'minmax(260px, auto)' }
     ],
     mobile: [
-      { columns: ['temp-wind'], repeat: 1, height: 'minmax(240px, auto)' },
-      { columns: ['ambient'], repeat: 1, height: 'minmax(240px, auto)' },
-      { columns: ['rain'], repeat: 1, height: 'minmax(240px, auto)' },
-      { columns: ['pressure'], repeat: 1, height: 'minmax(240px, auto)' },
-      { columns: ['solar'], repeat: 1, height: 'minmax(240px, auto)' },
-      { columns: ['air'], repeat: 1, height: 'minmax(240px, auto)' }
+      { columns: ['temp-wind'], repeat: 1, height: 'minmax(320px, auto)' },
+      { columns: ['ambient'], repeat: 1, height: 'minmax(260px, auto)' },
+      { columns: ['solar'], repeat: 1, height: 'minmax(260px, auto)' },
+      { columns: ['air'], repeat: 1, height: 'minmax(260px, auto)' },
+      { columns: ['rain'], repeat: 1, height: 'minmax(260px, auto)' },
+      { columns: ['pressure'], repeat: 1, height: 'minmax(260px, auto)' }
     ]
   };
 
@@ -2104,36 +2098,39 @@
 
 .wdash-host .tile-title, .wdash-host .tile-primary > .title { display: none !important; }
 .wdash-source-tile { opacity: 0 !important; pointer-events: none !important; }
-.wdash-root { position: relative; width: 100%; height: 100%; --wdash-base-width: 1200px; --wdash-base-height: 900px; --wdash-scale: 1; --wdash-render-width: var(--wdash-base-width); --wdash-render-height: var(--wdash-base-height); background: rgba(4, 9, 20, 0.85); border-radius: 12px; overflow: hidden; box-sizing: border-box; display: flex; align-items: center; justify-content: center; }
-.wdash-frame { position: relative; width: var(--wdash-render-width); height: var(--wdash-render-height); display: flex; align-items: center; justify-content: center; overflow: hidden; }
-.wdash { width: var(--wdash-base-width); height: var(--wdash-base-height); font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif; color: #f4f6ff; background: linear-gradient(145deg, rgba(27,35,58,0.95), rgba(13,18,32,0.95)); backdrop-filter: blur(4px); border-radius: 12px; padding: 18px; box-sizing: border-box; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05); transform-origin: top left; transform: scale(var(--wdash-scale)); }
-.wdash-grid { display: grid; gap: 14px; height: 100%; width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: ${GRID_TEMPLATES.desktop.rows}; grid-template-areas:
+.wdash-root { position: relative; width: 100%; height: 100%; --wdash-base-width: 1600px; --wdash-base-height: 900px; --wdash-scale: 1; --wdash-render-width: var(--wdash-base-width); --wdash-render-height: var(--wdash-base-height); background: rgba(3, 6, 12, 0.88); border-radius: 20px; overflow: hidden; box-sizing: border-box; display: flex; align-items: center; justify-content: center; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45), inset 0 0 0 1px rgba(255,255,255,0.04); }
+.wdash-frame { position: relative; width: var(--wdash-render-width); height: var(--wdash-render-height); display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 18px; box-sizing: border-box; }
+.wdash { width: var(--wdash-base-width); height: var(--wdash-base-height); font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif; color: #f4f6ff; background: radial-gradient(130% 130% at 0% 0%, rgba(32, 48, 88, 0.95), rgba(10, 15, 28, 0.94)); border-radius: 26px; padding: 28px; box-sizing: border-box; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04), 0 18px 46px rgba(0, 0, 0, 0.55); transform-origin: top left; transform: scale(var(--wdash-scale)); position: relative; overflow: hidden; }
+.wdash::before { content: ''; position: absolute; inset: -40% 38% 60% -20%; background: radial-gradient(58% 58% at 50% 50%, rgba(88, 134, 255, 0.28), rgba(88, 134, 255, 0)); pointer-events: none; }
+.wdash::after { content: ''; position: absolute; inset: 58% -25% -20% 48%; background: radial-gradient(54% 54% at 50% 50%, rgba(255, 120, 80, 0.22), rgba(255, 120, 80, 0)); pointer-events: none; }
+.wdash-grid { display: grid; gap: 18px; height: 100%; width: 100%; grid-template-columns: minmax(0, 2.4fr) minmax(0, 1.2fr) minmax(0, 1.2fr); grid-template-rows: ${GRID_TEMPLATES.desktop.rows}; grid-template-areas:
   ${GRID_TEMPLATES.desktop.areas};
 }
 .wdash-grid[data-empty="true"] { display: flex; align-items: center; justify-content: center; }
 .wdash-grid > * { min-height: 0; }
 .wdash-empty { width: 100%; text-align: center; font-size: 1.1rem; opacity: 0.7; }
-.wdash-card { background: linear-gradient(145deg, rgba(27,35,58,0.92), rgba(13,18,32,0.92)); border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 10px; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05); height: 100%; min-height: 0; }
-.wdash-card-header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 0.72rem; color: #8ea0c8; }
-.wdash-card-header h3 { margin: 0; font-size: 0.82rem; font-weight: 700; color: #c9d8ff; text-transform: uppercase; letter-spacing: 0.08em; }
+.wdash-card { background: rgba(9, 14, 28, 0.62); border-radius: 22px; padding: 20px 22px; display: flex; flex-direction: column; gap: 16px; box-shadow: 0 16px 36px rgba(0, 0, 0, 0.45), inset 0 0 0 1px rgba(255,255,255,0.04); height: 100%; min-height: 0; position: relative; overflow: hidden; backdrop-filter: blur(6px); }
+.wdash-card::before { content: ''; position: absolute; inset: 1px; border-radius: 20px; background: linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0)); opacity: 0.35; pointer-events: none; }
+.wdash-card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; font-size: 0.74rem; color: #8ea0c8; letter-spacing: 0.08em; text-transform: uppercase; }
+.wdash-card-header h3 { margin: 0; font-size: 0.94rem; font-weight: 700; color: #ecf2ff; text-transform: uppercase; letter-spacing: 0.12em; }
 .wdash-updated { display: inline-flex; flex-direction: column; align-items: flex-end; text-align: right; gap: 2px; }
 .wdash-updated-line { font-size: 0.68rem; opacity: 0.7; line-height: 1.2; white-space: nowrap; }
 .wdash-updated-line--secondary { font-size: 0.62rem; opacity: 0.6; }
 .wdash-clock-time { font-family: 'SFMono-Regular', 'Roboto Mono', 'Menlo', 'Courier New', monospace; font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
-.wdash-card--temp-wind { grid-area: temp-wind; }
-.wdash-card--ambient { grid-area: ambient; gap: 6px; padding: 8px 12px 10px; }
-.wdash-card--rain { grid-area: rain; }
-.wdash-card--pressure { grid-area: pressure; }
-.wdash-card--solar { grid-area: solar; gap: 6px; padding-bottom: 10px; }
-.wdash-card--air { grid-area: air; gap: 6px; padding: 8px 12px 10px; }
+.wdash-card--temp-wind { grid-area: temp-wind; padding: 26px 30px; gap: 24px; }
+.wdash-card--ambient { grid-area: ambient; gap: 12px; padding: 20px 22px; align-items: center; }
+.wdash-card--rain { grid-area: rain; padding: 20px 22px; gap: 18px; }
+.wdash-card--pressure { grid-area: pressure; padding: 20px 24px; gap: 18px; }
+.wdash-card--solar { grid-area: solar; gap: 16px; padding: 20px 22px; }
+.wdash-card--air { grid-area: air; gap: 16px; padding: 20px 22px; }
 .wdash-temp, .wdash-wind, .wdash-solar, .wdash-pressure { display: flex; flex-direction: column; gap: 10px; flex: 1; }
 .wdash-pressure { gap: 10px; }
-.wdash-temp-wind-main { display: flex; gap: 14px; flex: 1; }
+.wdash-temp-wind-main { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 32px; align-items: center; flex: 1; }
 .wdash-temp-wind-main > .wdash-temp, .wdash-temp-wind-main > .wdash-wind { flex: 1; }
-.wdash-temp-wind-details { display: flex; justify-content: space-between; gap: 12px; }
+.wdash-temp-wind-details { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 14px 18px; }
 .wdash-temp { align-items: center; }
 .wdash-wind { align-items: center; }
-.wdash-gauge, .wdash-wind-compass { position: relative; width: min(100%, 260px); aspect-ratio: 1 / 1; margin: 0 auto; }
+.wdash-gauge, .wdash-wind-compass { position: relative; width: min(100%, 340px); aspect-ratio: 1 / 1; margin: 0 auto; }
   .wdash-gauge-svg { position: absolute; inset: 11%; width: calc(100% - 22%); height: calc(100% - 22%); display: block; }
 .wdash-gauge-center { position: absolute; inset: 26%; border-radius: 50%; background: rgba(5,10,20,0.85); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 12px 10px; gap: 6px; text-align: center; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04); }
 .wdash-gauge-current { display: flex; flex-direction: column; gap: 4px; align-items: center; }
@@ -2144,11 +2141,11 @@
 .wdash-temp-extrema-value { font-size: 0.95rem; font-weight: 600; color: #dce8ff; }
 .wdash-temp-extrema--high .wdash-temp-extrema-value { color: #ffb95a; }
 .wdash-temp-extrema--low .wdash-temp-extrema-value { color: #7cc5ff; }
-.wdash-metric-row { display: flex; flex-wrap: wrap; gap: 10px; width: 100%; }
-.wdash-metric { flex: 1 1 auto; min-width: 0; background: rgba(255,255,255,0.05); border-radius: 12px; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px; text-align: center; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04); }
+.wdash-metric-row { display: flex; flex-wrap: wrap; gap: 14px; width: 100%; }
+.wdash-metric { flex: 1 1 auto; min-width: 0; background: rgba(255,255,255,0.06); border-radius: 16px; padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; text-align: center; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05), 0 6px 18px rgba(0,0,0,0.35); }
 .wdash-metric-row--layout-fill { flex-wrap: nowrap; }
 .wdash-metric-row--layout-fill .wdash-metric { flex-grow: 0; flex-shrink: 1; flex-basis: auto; }
-.wdash-metric-label { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.08em; color: #8ea0c8; }
+.wdash-metric-label { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.1em; color: #9fb4e2; }
 .wdash-metric-value { font-size: 0.98rem; font-weight: 600; color: #f4f6ff; white-space: nowrap; }
 .wdash-metric--tinted .wdash-metric-label { color: #f4f6ff; opacity: 0.9; }
 .wdash-metric-sub { font-size: 0.68rem; color: #9badcf; }
@@ -2285,17 +2282,18 @@
 .wdash-air-metrics .wdash-metric-value { font-size: 1.02rem; }
 .wdash-air-metrics .wdash-metric--placeholder { visibility: hidden; pointer-events: none; }
 @media (max-width: 1100px) {
-  .wdash-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: ${GRID_TEMPLATES.tablet.rows}; grid-template-areas:
+  .wdash-grid { grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); grid-template-rows: ${GRID_TEMPLATES.tablet.rows}; grid-template-areas:
     ${GRID_TEMPLATES.tablet.areas};
   }
 }
 @media (max-width: 900px) {
-  .wdash { padding: 14px; }
+  .wdash { padding: 20px; }
 }
 @media (max-width: 720px) {
   .wdash-grid { grid-template-columns: 1fr; grid-template-rows: ${GRID_TEMPLATES.mobile.rows}; grid-template-areas:
     ${GRID_TEMPLATES.mobile.areas};
   }
+  .wdash-card { padding: 18px; }
   .wdash-metric-row { flex-direction: column; }
   .wdash-metric { min-width: unset; }
   .wdash-ambient-circles { flex-direction: column; }
