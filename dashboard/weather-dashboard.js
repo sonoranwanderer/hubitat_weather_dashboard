@@ -593,8 +593,14 @@
     const stationLabel = stationReportedAt ? formatHubClock(stationReportedAt, { includeSeconds: false }) : null;
     const updatedLabel = stationLabel ? `Updated ${stationLabel}` : '';
 
+    let gaugeSizeAttr = '';
+    if (Number.isFinite(tempWindGaugeLastSize) && tempWindGaugeLastSize > 0) {
+      const normalizedGaugeSize = Math.max(0, Math.round(tempWindGaugeLastSize * 100) / 100);
+      gaugeSizeAttr = ` data-temp-wind-gauge-size="${normalizedGaugeSize}" style="--temp-wind-gauge-size:${normalizedGaugeSize}px;"`;
+    }
+
     return `
-      <section class="wdash-card wdash-card--temp-wind">
+      <section class="wdash-card wdash-card--temp-wind"${gaugeSizeAttr}>
         <header class="wdash-card-header">
           <h3>Outdoor Conditions</h3>
           <span class="wdash-updated">
@@ -681,6 +687,32 @@
     if (Number.isInteger(index) && index >= 0) {
       return `index:${index}`;
     }
+    return null;
+  }
+
+  function lookupAmbientCachedHumidity(sensor, sensorKey, headerName) {
+    const candidates = [];
+    if (sensorKey) candidates.push(sensorKey);
+    if (sensor && sensor.name != null) {
+      const sensorNameKey = getAmbientNameKey(sensor.name);
+      if (sensorNameKey) candidates.push(sensorNameKey);
+    }
+    if (headerName) {
+      const headerKey = getAmbientNameKey(headerName);
+      if (headerKey) candidates.push(headerKey);
+    }
+
+    for (const key of candidates) {
+      if (ambientLastHumidity.has(key)) {
+        const value = ambientLastHumidity.get(key);
+        if (Number.isFinite(value)) return value;
+      }
+    }
+
+    if (Number.isFinite(ambientLastDisplayedHumidity.value)) {
+      return ambientLastDisplayedHumidity.value;
+    }
+
     return null;
   }
 
@@ -781,6 +813,17 @@
     const sensorKey = getAmbientSensorKey(sensor, 0);
     const keyAttr = sensorKey ? ` data-active-sensor-key="${escapeHtml(sensorKey)}"` : '';
 
+    const humidityCircumference = Math.round(2 * Math.PI * AMBIENT_RING.r);
+    const cachedHumidity = lookupAmbientCachedHumidity(sensor, sensorKey, nameDisplay);
+    const humidityValue = Number.isFinite(cachedHumidity) ? clamp(cachedHumidity, 0, 100) : null;
+    const humidityOffset = humidityValue != null
+      ? Math.round(humidityCircumference - (humidityValue / 100) * humidityCircumference)
+      : humidityCircumference;
+    const humidityDataAttr = humidityValue != null
+      ? ` data-last-hum="${humidityValue}"`
+      : ' data-last-hum=""';
+    const humiditySensorAttr = sensorKey ? ` data-sensor-key="${escapeHtml(sensorKey)}"` : '';
+
     return `
       <section class="wdash-card wdash-card--ambient${hasSensors ? '' : ' wdash-ambient--empty'}"${keyAttr}>
         <header class="wdash-card-header wdash-card-header--ambient">
@@ -810,7 +853,7 @@
               <svg class="wdash-ambient-svg wdash-ambient-svg--humidity" viewBox="0 0 100 100" aria-hidden="true">
                 <circle class="wdash-ambient-inner-circle" cx="50" cy="50" r="${AMBIENT_RING.r - AMBIENT_RING.stroke/2 + 0.5}" fill="rgba(5,10,20,0.95)" />
                 <circle class="wdash-ambient-track" cx="50" cy="50" r="${AMBIENT_RING.r}" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="${AMBIENT_RING.stroke}" stroke-linecap="butt" />
-                <circle class="wdash-ambient-fill" cx="50" cy="50" r="${AMBIENT_RING.r}" fill="none" stroke="#5b2fe6" stroke-width="${AMBIENT_RING.stroke}" stroke-linecap="round" stroke-dasharray="${Math.round(2*Math.PI*AMBIENT_RING.r)}" data-last-hum="" stroke-dashoffset="${Math.round(2*Math.PI*AMBIENT_RING.r)}" />
+                <circle class="wdash-ambient-fill" cx="50" cy="50" r="${AMBIENT_RING.r}" fill="none" stroke="#5b2fe6" stroke-width="${AMBIENT_RING.stroke}" stroke-linecap="round" stroke-dasharray="${humidityCircumference}"${humidityDataAttr}${humiditySensorAttr} stroke-dashoffset="${humidityOffset}" />
               </svg>
               <span class="wdash-ambient-reading wdash-ambient-reading--humidity">${escapeHtml(humidityDisplay)}</span>
               <span class="wdash-ambient-label">Humidity</span>
