@@ -22,14 +22,14 @@
   // by changing the repeat counts instead of editing CSS strings.
   const GRID_LAYOUT = {
     desktop: [
-      // Two-column desktop grid that mirrors the Ecowitt console: outdoor gauges on the
-      // left, supporting cards stacked to the right.
-      { columns: ['temp-wind', 'ambient'], repeat: 1, height: '22fr' },
-      { columns: ['temp-wind', 'ambient'], repeat: 1, height: '18fr' },
-      { columns: ['temp-wind', 'rain'], repeat: 1, height: '10fr' },
-      { columns: ['air', 'rain'], repeat: 1, height: '17fr' },
-      { columns: ['solar', 'rain'], repeat: 1, height: '13fr' },
-      { columns: ['solar', 'pressure'], repeat: 1, height: '20fr' }
+      // Two-column desktop grid mirroring the Ecowitt console with the requested
+      // vertical ratios (left column: outdoor 50%, air 20%, sun/moon 30%; right column:
+      // ambient 40%, rain 40%, pressure 20%).
+      { columns: ['temp-wind', 'ambient'], repeat: 4, height: '1fr' },
+      { columns: ['temp-wind', 'rain'], repeat: 1, height: '1fr' },
+      { columns: ['air', 'rain'], repeat: 2, height: '1fr' },
+      { columns: ['solar', 'rain'], repeat: 1, height: '1fr' },
+      { columns: ['solar', 'pressure'], repeat: 2, height: '1fr' }
     ],
     tablet: [
       // Medium screens keep the outdoor panel full-width and then pair the remaining
@@ -2106,7 +2106,7 @@
 .wdash { width: var(--wdash-base-width); height: var(--wdash-base-height); font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif; color: #f4f6ff; background: radial-gradient(130% 130% at 0% 0%, rgba(32, 48, 88, 0.95), rgba(10, 15, 28, 0.94)); border-radius: 26px; padding: 28px; box-sizing: border-box; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04), 0 18px 46px rgba(0, 0, 0, 0.55); transform-origin: top left; transform: scale(var(--wdash-scale)); position: relative; overflow: hidden; }
 .wdash::before { content: ''; position: absolute; inset: -40% 38% 60% -20%; background: radial-gradient(58% 58% at 50% 50%, rgba(88, 134, 255, 0.28), rgba(88, 134, 255, 0)); pointer-events: none; }
 .wdash::after { content: ''; position: absolute; inset: 58% -25% -20% 48%; background: radial-gradient(54% 54% at 50% 50%, rgba(255, 120, 80, 0.22), rgba(255, 120, 80, 0)); pointer-events: none; }
-.wdash-grid { display: grid; gap: 18px; height: 100%; width: 100%; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); grid-template-rows: ${GRID_TEMPLATES.desktop.rows}; grid-template-areas:
+.wdash-grid { display: grid; gap: 18px; height: 100%; width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: ${GRID_TEMPLATES.desktop.rows}; grid-template-areas:
   ${GRID_TEMPLATES.desktop.areas};
 }
 .wdash-grid[data-empty="true"] { display: flex; align-items: center; justify-content: center; }
