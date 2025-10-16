@@ -917,7 +917,7 @@
     const countDisplay = Number.isFinite(count) ? formatNumber(count, 0) : '--';
     const batteryIcon = renderBatteryIcon({
       level: Number.isFinite(battery) ? clamp(battery, 0, 100) : null,
-      orientation: 'portrait',
+      orientation: 'landscape',
       showLabel: false,
       title: Number.isFinite(battery)
         ? `Lightning sensor battery ${Math.round(clamp(battery, 0, 100))}%`
@@ -926,24 +926,20 @@
 
     return `
       <section class="wdash-card wdash-card--lightning">
-        <header class="wdash-card-header">
+        <header class="wdash-card-header wdash-card-header--lightning">
           <h3>Lightning</h3>
+          <span class="wdash-lightning-header-icon" aria-hidden="true">${renderLightningBoltIcon()}</span>
         </header>
         <div class="wdash-lightning">
-          <div class="wdash-lightning-col wdash-lightning-col--icons">
-            <span class="wdash-lightning-icon wdash-lightning-icon--bolt" aria-hidden="true">${renderLightningBoltIcon()}</span>
-            <span class="wdash-lightning-icon wdash-lightning-icon--battery" aria-hidden="true">${batteryIcon}</span>
-          </div>
-          <div class="wdash-lightning-col wdash-lightning-col--labels">
+          <div class="wdash-lightning-data">
             <span class="wdash-lightning-label">Days Ago</span>
-            <span class="wdash-lightning-label">Distance</span>
-            <span class="wdash-lightning-label">Count</span>
-          </div>
-          <div class="wdash-lightning-col wdash-lightning-col--values">
             <span class="wdash-lightning-value">${escapeHtml(daysAgoDisplay)}</span>
+            <span class="wdash-lightning-label">Distance</span>
             <span class="wdash-lightning-value">${escapeHtml(distanceDisplay)}</span>
+            <span class="wdash-lightning-label">Count</span>
             <span class="wdash-lightning-value">${escapeHtml(countDisplay)}</span>
           </div>
+          <div class="wdash-lightning-battery" aria-hidden="true">${batteryIcon}</div>
         </div>
       </section>
     `;
@@ -2666,8 +2662,11 @@
 .wdash-card--temp-wind .wdash-metric-row--gauge { max-width: var(--temp-wind-gauge-size, 260px); }
 .wdash-card--temp-wind .wdash-temp-wind-main { padding-block: 2px; }
 .wdash-card--ambient { grid-area: ambient; gap: 12px; align-items: stretch; }
-.wdash-card--lightning { grid-area: lightning; gap: 10px; align-items: stretch; min-width: 0; display: none; }
+.wdash-card--lightning { grid-area: lightning; gap: 8px; align-items: stretch; min-width: 0; display: none; }
 .wdash[data-layout-has-lightning="true"] .wdash-card--lightning { display: flex; }
+.wdash-card-header--lightning { align-items: flex-start; }
+.wdash-lightning-header-icon { display: flex; align-items: flex-start; justify-content: flex-end; margin-left: auto; }
+.wdash-lightning-header-icon .wdash-lightning-bolt-svg { width: 30px; height: auto; transform: scaleY(1.15) rotate(10deg); transform-origin: center; filter: drop-shadow(0 4px 10px rgba(0,0,0,0.45)); }
 .wdash-card--rain { grid-area: rain; }
 .wdash-card--pressure { grid-area: pressure; }
 .wdash-card--solar { grid-area: solar; }
@@ -2725,30 +2724,26 @@
 .wdash-compass-avg { pointer-events: none; }
 .wdash-compass-current { pointer-events: none; }
 .wdash-ambient { display: flex; flex-direction: column; gap: 14px; flex: 1; /* ambient ring defaults (viewBox units) */ --ambient-ring-r: 45; --ambient-ring-stroke: 10; }
-.wdash-battery { --wdash-battery-width: 26px; --wdash-battery-height: 48px; --wdash-battery-fill-color: #4bd37b; display: inline-flex; align-items: center; justify-content: center; gap: 6px; color: inherit; }
-.wdash-battery--portrait { flex-direction: column; }
-.wdash-battery--landscape { flex-direction: row; }
-.wdash-battery-tip { display: block; background: rgba(244,246,255,0.75); border-radius: 3px; }
-.wdash-battery--portrait .wdash-battery-tip { width: calc(var(--wdash-battery-width) * 0.42); height: 6px; margin-bottom: 4px; }
-.wdash-battery--landscape .wdash-battery-tip { width: 6px; height: calc(var(--wdash-battery-width) * 0.42); margin-left: 4px; margin-bottom: 0; order: 2; }
-.wdash-battery-body { position: relative; width: var(--wdash-battery-width); height: var(--wdash-battery-height); border: 2px solid rgba(244,246,255,0.65); border-radius: 6px; padding: 4px; box-sizing: border-box; display: flex; flex-direction: column-reverse; justify-content: space-between; gap: 3px; background: rgba(8,12,24,0.85); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05); order: 1; }
+.wdash-battery { --wdash-battery-width: 24px; --wdash-battery-height: 44px; --wdash-battery-fill-color: #4bd37b; display: inline-flex; align-items: center; justify-content: center; gap: 6px; color: inherit; }
+.wdash-battery--portrait { flex-direction: column; gap: 3px; }
+.wdash-battery--landscape { flex-direction: row; gap: 0; }
+.wdash-battery-tip { display: block; background: var(--wdash-battery-fill-color, #4bd37b); border-radius: 3px; border: 2px solid var(--wdash-battery-fill-color, #4bd37b); }
+.wdash-battery--portrait .wdash-battery-tip { width: calc(var(--wdash-battery-width) * 0.45); height: 6px; margin-bottom: 1px; border-bottom: 0; }
+.wdash-battery--landscape .wdash-battery-tip { width: 6px; height: calc(var(--wdash-battery-width) * 0.45); margin-left: -2px; margin-bottom: 0; order: 2; border-left: 0; }
+.wdash-battery-body { position: relative; width: var(--wdash-battery-width); height: var(--wdash-battery-height); border: 2px solid var(--wdash-battery-fill-color, #4bd37b); border-radius: 6px; padding: 3px; box-sizing: border-box; display: flex; flex-direction: column-reverse; justify-content: space-between; gap: 2px; background: rgba(8,12,24,0.85); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04); order: 1; }
 .wdash-battery--landscape .wdash-battery-body { width: var(--wdash-battery-height); height: var(--wdash-battery-width); flex-direction: row-reverse; }
-.wdash-battery-segment { position: relative; flex: 1; border-radius: 3px; background: rgba(255,255,255,0.08); overflow: hidden; }
-.wdash-battery-segment::after { content: ''; position: absolute; left: 2px; right: 2px; bottom: 2px; height: var(--wdash-battery-segment-fill, 0%); border-radius: 2px; background: var(--wdash-battery-fill-color, #4bd37b); transition: height 220ms ease; }
-.wdash-battery--landscape .wdash-battery-segment::after { top: 2px; bottom: 2px; height: auto; width: var(--wdash-battery-segment-fill, 0%); right: auto; }
+.wdash-battery-segment { position: relative; flex: 1; border-radius: 2px; background: rgba(255,255,255,0.08); overflow: hidden; }
+.wdash-battery-segment::after { content: ''; position: absolute; left: 1px; right: 1px; bottom: 1px; height: var(--wdash-battery-segment-fill, 0%); border-radius: 1.5px; background: var(--wdash-battery-fill-color, #4bd37b); transition: height 220ms ease; }
+.wdash-battery--landscape .wdash-battery-segment::after { top: 1px; bottom: 1px; height: auto; width: var(--wdash-battery-segment-fill, 0%); right: auto; }
 .wdash-battery-percent { font-size: 0.7rem; font-weight: 600; letter-spacing: 0.06em; order: 3; }
 .wdash-battery--with-label { gap: 4px; }
 .wdash-battery--critical { --wdash-battery-fill-color: #ff6b63; }
 .wdash-battery--unknown { --wdash-battery-fill-color: #8ea0c8; }
-.wdash-lightning { display: grid; grid-template-columns: auto 1fr auto; grid-template-rows: repeat(3, 1fr); gap: 6px 12px; flex: 1; align-items: stretch; min-height: 0; padding-inline: 2px; }
-.wdash-lightning-col--icons { grid-row: 1 / span 3; display: flex; flex-direction: column; justify-content: space-between; align-items: center; padding-block: 6px; gap: 12px; }
-.wdash-lightning-col--labels, .wdash-lightning-col--values { display: grid; grid-auto-rows: 1fr; align-content: space-between; gap: 6px; }
-.wdash-lightning-col--labels { justify-items: start; }
-.wdash-lightning-col--values { justify-items: end; }
-.wdash-lightning-label { font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.08em; color: #8ea0c8; align-self: center; }
-.wdash-lightning-value { font-size: 1.05rem; font-weight: 600; color: #f4f6ff; white-space: nowrap; align-self: center; }
-.wdash-lightning-icon--bolt svg { width: 28px; height: auto; display: block; filter: drop-shadow(0 4px 8px rgba(0,0,0,0.45)); }
-.wdash-lightning-icon--battery { display: flex; align-items: flex-end; justify-content: center; }
+.wdash-lightning { display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1; min-height: 0; gap: 16px; padding: 4px 6px 10px; }
+.wdash-lightning-data { display: grid; grid-template-columns: max-content max-content; gap: 10px 20px; justify-content: center; align-items: center; }
+.wdash-lightning-label { font-size: 0.72rem; letter-spacing: 0.08em; color: #8ea0c8; text-transform: uppercase; text-align: right; justify-self: end; }
+.wdash-lightning-value { font-size: 1.05rem; font-weight: 600; color: #f4f6ff; white-space: nowrap; text-align: left; justify-self: start; text-transform: none; }
+.wdash-lightning-battery { display: flex; justify-content: center; width: 100%; }
 .wdash-ambient-circles { display: flex; gap: 12px; justify-content: center; }
 .wdash-ambient-circle { flex: 0 0 130px; width: 130px; aspect-ratio: 1; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: #fff; font-weight: 600; box-shadow: 0 10px 22px rgba(4,9,20,0.4); text-align: center; padding: 12px; position: relative; background: transparent; }
 .wdash-ambient-svg { position: absolute; inset: 4px; width: calc(100% - 8px); height: calc(100% - 8px); z-index: 1; pointer-events: none; }
