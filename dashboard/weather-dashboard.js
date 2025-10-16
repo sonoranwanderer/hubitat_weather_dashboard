@@ -106,6 +106,12 @@
     air: 'Air Quality'
   };
 
+  const LIGHTNING_BOLT_ICON = `
+    <svg viewBox="0 0 48 48" class="wdash-lightning-bolt-svg" focusable="false" aria-hidden="true">
+      <path d="M26.9 3.2L7.6 27h11.7l-3.6 18.3L40.4 21H28.6z" fill="#ffd766" stroke="rgba(0,0,0,0.28)" stroke-width="2" stroke-linejoin="round" />
+    </svg>
+  `;
+
   const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -466,6 +472,15 @@
     dash.style.setProperty('--wdash-grid-gap-desktop', gaps.desktop);
     dash.style.setProperty('--wdash-grid-gap-tablet', gaps.tablet);
     dash.style.setProperty('--wdash-grid-gap-mobile', gaps.mobile);
+
+    const hasLightningArea = templateHasArea(compiled.desktop, 'lightning')
+      || templateHasArea(compiled.tablet, 'lightning')
+      || templateHasArea(compiled.mobile, 'lightning');
+    if (hasLightningArea) {
+      dash.dataset.layoutHasLightning = 'true';
+    } else if (dash.dataset.layoutHasLightning) {
+      delete dash.dataset.layoutHasLightning;
+    }
   }
 
   function ensureDataTileObservers() {
@@ -543,6 +558,7 @@
       ${[
         buildTempWindCard(data),
         buildAmbientSensorCard(data),
+        buildLightningCard(data),
         buildPressureCard(data),
         buildRainCard(data),
         buildSolarSunCard(data),
@@ -872,6 +888,61 @@
                 <span class="wdash-ambient-timer-countdown">--</span>
               </button>
             </div>
+          </div>
+        </div>
+      </section>
+    `;
+  }
+
+  function buildLightningCard(data) {
+    const lightning = data.lightning || {};
+    const zone = (() => {
+      const raw = data?.metadata?.weatherStationTimezone;
+      if (!raw) return null;
+      const text = String(raw).trim();
+      return text.length ? text : null;
+    })();
+
+    const nowUtc = Date.now();
+    const eventParts = parseHubDateTimeParts(lightning.time);
+    const eventUtc = eventParts ? convertLocalPartsToUtc(eventParts, zone) : NaN;
+    const daysAgo = Number.isFinite(eventUtc) ? calculateDaysAgo(nowUtc, eventUtc) : null;
+
+    const distance = toNumber(lightning.distance);
+    const count = toNumber(lightning.count);
+    const battery = toNumber(lightning.battery);
+
+    const daysAgoDisplay = Number.isFinite(daysAgo) ? String(daysAgo) : '--';
+    const distanceDisplay = Number.isFinite(distance) ? `${formatNumber(distance, 1)} mi` : '--';
+    const countDisplay = Number.isFinite(count) ? formatNumber(count, 0) : '--';
+    const batteryIcon = renderBatteryIcon({
+      level: Number.isFinite(battery) ? clamp(battery, 0, 100) : null,
+      orientation: 'portrait',
+      showLabel: false,
+      title: Number.isFinite(battery)
+        ? `Lightning sensor battery ${Math.round(clamp(battery, 0, 100))}%`
+        : 'Lightning sensor battery level unavailable'
+    });
+
+    return `
+      <section class="wdash-card wdash-card--lightning">
+        <header class="wdash-card-header">
+          <h3>Lightning</h3>
+        </header>
+        <div class="wdash-lightning">
+          <div class="wdash-lightning-col wdash-lightning-col--icons">
+            <span class="wdash-lightning-icon wdash-lightning-icon--bolt" aria-hidden="true">${renderLightningBoltIcon()}</span>
+            <span class="wdash-lightning-icon wdash-lightning-icon--battery" aria-hidden="true">${batteryIcon}</span>
+          </div>
+          <div class="wdash-lightning-col wdash-lightning-col--labels">
+            <span class="wdash-lightning-label">Days Ago</span>
+            <span class="wdash-lightning-label">Distance</span>
+            <span class="wdash-lightning-label">Count</span>
+          </div>
+          <div class="wdash-lightning-col wdash-lightning-col--values">
+            <span class="wdash-lightning-value">${escapeHtml(daysAgoDisplay)}</span>
+            <span class="wdash-lightning-value">${escapeHtml(distanceDisplay)}</span>
+            <span class="wdash-lightning-value">${escapeHtml(countDisplay)}</span>
           </div>
         </div>
       </section>
@@ -2447,6 +2518,17 @@
     return result;
   }
 
+  function templateHasArea(compiledTemplate, areaName) {
+    if (!compiledTemplate || typeof compiledTemplate.areas !== 'string' || !areaName) {
+      return false;
+    }
+    const tokens = compiledTemplate.areas
+      .replace(/["']/g, ' ')
+      .split(/\s+/)
+      .filter(Boolean);
+    return tokens.includes(areaName);
+  }
+
   function compileGridTemplate(layout) {
     if (!Array.isArray(layout)) {
       return { areas: '"."', rows: 'repeat(1, minmax(0, 1fr))', rowCount: 1 };
@@ -2584,6 +2666,8 @@
 .wdash-card--temp-wind .wdash-metric-row--gauge { max-width: var(--temp-wind-gauge-size, 260px); }
 .wdash-card--temp-wind .wdash-temp-wind-main { padding-block: 2px; }
 .wdash-card--ambient { grid-area: ambient; gap: 12px; align-items: stretch; }
+.wdash-card--lightning { grid-area: lightning; gap: 10px; align-items: stretch; min-width: 0; display: none; }
+.wdash[data-layout-has-lightning="true"] .wdash-card--lightning { display: flex; }
 .wdash-card--rain { grid-area: rain; }
 .wdash-card--pressure { grid-area: pressure; }
 .wdash-card--solar { grid-area: solar; }
@@ -2641,6 +2725,30 @@
 .wdash-compass-avg { pointer-events: none; }
 .wdash-compass-current { pointer-events: none; }
 .wdash-ambient { display: flex; flex-direction: column; gap: 14px; flex: 1; /* ambient ring defaults (viewBox units) */ --ambient-ring-r: 45; --ambient-ring-stroke: 10; }
+.wdash-battery { --wdash-battery-width: 26px; --wdash-battery-height: 48px; --wdash-battery-fill-color: #4bd37b; display: inline-flex; align-items: center; justify-content: center; gap: 6px; color: inherit; }
+.wdash-battery--portrait { flex-direction: column; }
+.wdash-battery--landscape { flex-direction: row; }
+.wdash-battery-tip { display: block; background: rgba(244,246,255,0.75); border-radius: 3px; }
+.wdash-battery--portrait .wdash-battery-tip { width: calc(var(--wdash-battery-width) * 0.42); height: 6px; margin-bottom: 4px; }
+.wdash-battery--landscape .wdash-battery-tip { width: 6px; height: calc(var(--wdash-battery-width) * 0.42); margin-left: 4px; margin-bottom: 0; order: 2; }
+.wdash-battery-body { position: relative; width: var(--wdash-battery-width); height: var(--wdash-battery-height); border: 2px solid rgba(244,246,255,0.65); border-radius: 6px; padding: 4px; box-sizing: border-box; display: flex; flex-direction: column-reverse; justify-content: space-between; gap: 3px; background: rgba(8,12,24,0.85); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05); order: 1; }
+.wdash-battery--landscape .wdash-battery-body { width: var(--wdash-battery-height); height: var(--wdash-battery-width); flex-direction: row-reverse; }
+.wdash-battery-segment { position: relative; flex: 1; border-radius: 3px; background: rgba(255,255,255,0.08); overflow: hidden; }
+.wdash-battery-segment::after { content: ''; position: absolute; left: 2px; right: 2px; bottom: 2px; height: var(--wdash-battery-segment-fill, 0%); border-radius: 2px; background: var(--wdash-battery-fill-color, #4bd37b); transition: height 220ms ease; }
+.wdash-battery--landscape .wdash-battery-segment::after { top: 2px; bottom: 2px; height: auto; width: var(--wdash-battery-segment-fill, 0%); right: auto; }
+.wdash-battery-percent { font-size: 0.7rem; font-weight: 600; letter-spacing: 0.06em; order: 3; }
+.wdash-battery--with-label { gap: 4px; }
+.wdash-battery--critical { --wdash-battery-fill-color: #ff6b63; }
+.wdash-battery--unknown { --wdash-battery-fill-color: #8ea0c8; }
+.wdash-lightning { display: grid; grid-template-columns: auto 1fr auto; grid-template-rows: repeat(3, 1fr); gap: 6px 12px; flex: 1; align-items: stretch; min-height: 0; padding-inline: 2px; }
+.wdash-lightning-col--icons { grid-row: 1 / span 3; display: flex; flex-direction: column; justify-content: space-between; align-items: center; padding-block: 6px; gap: 12px; }
+.wdash-lightning-col--labels, .wdash-lightning-col--values { display: grid; grid-auto-rows: 1fr; align-content: space-between; gap: 6px; }
+.wdash-lightning-col--labels { justify-items: start; }
+.wdash-lightning-col--values { justify-items: end; }
+.wdash-lightning-label { font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.08em; color: #8ea0c8; align-self: center; }
+.wdash-lightning-value { font-size: 1.05rem; font-weight: 600; color: #f4f6ff; white-space: nowrap; align-self: center; }
+.wdash-lightning-icon--bolt svg { width: 28px; height: auto; display: block; filter: drop-shadow(0 4px 8px rgba(0,0,0,0.45)); }
+.wdash-lightning-icon--battery { display: flex; align-items: flex-end; justify-content: center; }
 .wdash-ambient-circles { display: flex; gap: 12px; justify-content: center; }
 .wdash-ambient-circle { flex: 0 0 130px; width: 130px; aspect-ratio: 1; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: #fff; font-weight: 600; box-shadow: 0 10px 22px rgba(4,9,20,0.4); text-align: center; padding: 12px; position: relative; background: transparent; }
 .wdash-ambient-svg { position: absolute; inset: 4px; width: calc(100% - 8px); height: calc(100% - 8px); z-index: 1; pointer-events: none; }
@@ -2921,6 +3029,59 @@
     return `${value.toFixed(0)}°`;
   }
 
+  function renderBatteryIcon(options = {}) {
+    const hasLevel = Object.prototype.hasOwnProperty.call(options || {}, 'level');
+    const rawLevel = hasLevel ? options.level : null;
+    let level = Number.isFinite(rawLevel) ? Number(rawLevel) : toNumber(rawLevel);
+    level = Number.isFinite(level) ? clamp(level, 0, 100) : null;
+
+    const orientation = options && String(options.orientation).toLowerCase() === 'landscape'
+      ? 'landscape'
+      : 'portrait';
+    const showLabel = !!(options && options.showLabel);
+    const critical = level != null && level <= 20;
+    const unknown = level == null;
+    const color = unknown ? '#8ea0c8' : (critical ? '#ff6b63' : '#4bd37b');
+    const labelText = showLabel ? (level != null ? `${Math.round(level)}%` : '--') : '';
+
+    const classes = [
+      'wdash-battery',
+      `wdash-battery--${orientation}`,
+      showLabel ? 'wdash-battery--with-label' : '',
+      critical ? 'wdash-battery--critical' : '',
+      unknown ? 'wdash-battery--unknown' : ''
+    ].filter(Boolean).join(' ');
+
+    const segments = [];
+    const segmentCount = 5;
+    for (let i = 0; i < segmentCount; i++) {
+      let fill = '0%';
+      if (level != null) {
+        const fraction = (level / 100) * segmentCount;
+        const segmentFill = Math.max(0, Math.min(1, fraction - i));
+        fill = `${Math.round(segmentFill * 100)}%`;
+      }
+      segments.push(`<span class="wdash-battery-segment" style="--wdash-battery-segment-fill:${fill};"></span>`);
+    }
+
+    const title = options && options.title ? String(options.title) : '';
+    const titleAttr = title ? ` title="${escapeHtml(title)}"` : '';
+
+    return `
+      <span class="${classes}" data-battery-level="${level != null ? level : ''}" style="--wdash-battery-fill-color:${color};"${titleAttr}>
+        <span class="wdash-battery-tip" aria-hidden="true"></span>
+        <span class="wdash-battery-body">
+          ${segments.join('')}
+        </span>
+        ${showLabel ? `<span class="wdash-battery-percent">${escapeHtml(labelText)}</span>` : ''}
+      </span>
+    `;
+  }
+
+  function renderLightningBoltIcon() {
+    return LIGHTNING_BOLT_ICON;
+  }
+
   function formatTime(value) {
     if (!value) return '--';
     if (/\d{4}-\d{2}-\d{2}T/.test(value)) {
@@ -2943,6 +3104,113 @@
     if (hours < 24) return `${hours} hr ago`;
     const days = Math.round(hours / 24);
     return `${days} day${days !== 1 ? 's' : ''} ago`;
+  }
+
+  function parseHubDateTimeParts(value) {
+    if (value == null) return null;
+    const parts = parseIsoDateParts(value);
+    if (parts) return parts;
+
+    const raw = typeof value === 'string' ? value.trim() : String(value);
+    if (!raw) return null;
+
+    const match = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})(?:,\s*(\d{1,2}):(\d{2})(?:\s*([AaPp][Mm]))?)?$/);
+    if (!match) return null;
+
+    let month = Number(match[1]);
+    let day = Number(match[2]);
+    let year = Number(match[3]);
+    const hasTime = match[4] != null;
+    let hour = hasTime ? Number(match[4]) : null;
+    const minuteRaw = hasTime ? Number(match[5]) : null;
+    const meridiem = match[6] ? match[6].toLowerCase() : null;
+
+    if (!Number.isFinite(month) || !Number.isFinite(day) || !Number.isFinite(year)) {
+      return null;
+    }
+
+    month = Math.max(1, Math.min(12, Math.floor(month)));
+    day = Math.max(1, Math.min(31, Math.floor(day)));
+
+    if (year < 100) {
+      year += year >= 70 ? 1900 : 2000;
+    }
+
+    let minute = null;
+    if (hasTime) {
+      if (!Number.isFinite(hour) || !Number.isFinite(minuteRaw)) {
+        return null;
+      }
+      minute = Math.max(0, Math.min(59, Math.floor(minuteRaw)));
+      let normalizedHour = Math.max(0, Math.min(12, Math.floor(hour)));
+      if (meridiem === 'pm' && normalizedHour < 12) {
+        normalizedHour += 12;
+      } else if (meridiem === 'am' && normalizedHour === 12) {
+        normalizedHour = 0;
+      } else if (!meridiem && normalizedHour === 12) {
+        normalizedHour = 12;
+      }
+      hour = normalizedHour % 24;
+    }
+
+    return {
+      year,
+      month,
+      day,
+      hour: hasTime ? hour : null,
+      minute,
+      second: hasTime ? 0 : null,
+      offsetMinutes: null,
+      hasTime,
+      original: raw
+    };
+  }
+
+  function convertLocalPartsToUtc(parts, zone) {
+    if (!parts || !Number.isFinite(parts.year) || !Number.isFinite(parts.month) || !Number.isFinite(parts.day)) {
+      return NaN;
+    }
+
+    const monthIndex = Math.max(0, Math.min(11, Math.floor(parts.month) - 1));
+    const day = Math.max(1, Math.min(31, Math.floor(parts.day)));
+    const hour = Number.isFinite(parts.hour) ? Math.max(0, Math.min(23, Math.floor(parts.hour))) : 0;
+    const minute = Number.isFinite(parts.minute) ? Math.max(0, Math.min(59, Math.floor(parts.minute))) : 0;
+    const second = Number.isFinite(parts.second) ? Math.max(0, Math.min(59, Math.floor(parts.second))) : 0;
+
+    const baseLocal = Date.UTC(parts.year, monthIndex, day, hour, minute, second);
+    if (!Number.isFinite(baseLocal)) return NaN;
+
+    if (Number.isFinite(parts.offsetMinutes)) {
+      return baseLocal - Number(parts.offsetMinutes) * 60000;
+    }
+
+    if (!zone) {
+      return baseLocal;
+    }
+
+    let resolved = baseLocal;
+    let guess = baseLocal;
+    for (let i = 0; i < 3; i++) {
+      const offset = computeTimeZoneOffsetMinutes(guess, zone);
+      if (!Number.isFinite(offset)) {
+        break;
+      }
+      resolved = baseLocal - offset * 60000;
+      if (Math.abs(resolved - guess) < 500) {
+        guess = resolved;
+        break;
+      }
+      guess = resolved;
+    }
+    return resolved;
+  }
+
+  function calculateDaysAgo(nowUtc, eventUtc) {
+    if (!Number.isFinite(nowUtc) || !Number.isFinite(eventUtc)) return null;
+    const diff = nowUtc - eventUtc;
+    if (!Number.isFinite(diff)) return null;
+    if (diff <= 0) return 0;
+    return Math.floor(diff / 86400000);
   }
 
   function parseIsoDateParts(value) {
