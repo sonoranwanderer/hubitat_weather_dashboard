@@ -17,6 +17,7 @@
   const MAX_CHUNK_TILES = 10;
   const DEFAULT_BASE_WIDTH = 1200;
   const DEFAULT_BASE_HEIGHT = 900;
+  const LAYOUT_STYLE_ID = 'weather-dashboard-layout-style';
 
   const DEFAULT_LAYOUT = {
     baseWidth: DEFAULT_BASE_WIDTH,
@@ -488,6 +489,14 @@
     dash.style.setProperty('--wdash-grid-gap-desktop', gaps.desktop);
     dash.style.setProperty('--wdash-grid-gap-tablet', gaps.tablet);
     dash.style.setProperty('--wdash-grid-gap-mobile', gaps.mobile);
+
+    applyLayoutStyle({
+      baseWidth,
+      baseHeight,
+      columns,
+      gaps,
+      templates: compiled
+    });
 
     const gridEl = dash.querySelector('.wdash-grid');
     if (!gridEl) {
@@ -1069,7 +1078,7 @@
       <section class="wdash-card wdash-card--rain">
         <div class="wdash-rain-main">
           <div class="wdash-rain-col wdash-rain-col--drop">
-            <svg viewBox="0 0 120 160" role="img" aria-label="Rain rate visualization">
+            <svg viewBox="0 0 120 160" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Rain rate visualization">
               <defs>
                 <clipPath id="wdash-rain-clip"><path d="M60 10 C40 45 20 75 20 105 C20 135 38 150 60 150 C82 150 100 135 100 105 C100 75 80 45 60 10 Z" /></clipPath>
                 <linearGradient id="wdash-rain-gradient" x1="0" x2="0" y1="1" y2="0"><stop offset="0%" stop-color="#3d8bff" /><stop offset="100%" stop-color="#7dd3ff" /></linearGradient>
@@ -2038,6 +2047,9 @@
       target = Math.max(0, target - dropPadTop - dropPadBottom);
     }
 
+    const strokeBuffer = 8;
+    target = Math.max(0, target - strokeBuffer);
+
     const columnHeight = dropCol.offsetHeight;
     if (columnHeight > 0 && target > columnHeight) {
       target = columnHeight;
@@ -2778,6 +2790,60 @@
     return result;
   }
 
+  function applyLayoutStyle(config) {
+    if (!config || typeof document === 'undefined') return;
+    const styleText = buildLayoutStyleText(config);
+    if (!styleText) return;
+    let styleEl = document.getElementById(LAYOUT_STYLE_ID);
+    if (!styleEl) {
+      styleEl = document.createElement('style');
+      styleEl.id = LAYOUT_STYLE_ID;
+      document.head.appendChild(styleEl);
+    }
+    if (styleEl.textContent !== styleText) {
+      styleEl.textContent = styleText;
+    }
+  }
+
+  function buildLayoutStyleText(config) {
+    if (!config) return '';
+    const baseWidth = Number(config.baseWidth) || DEFAULT_BASE_WIDTH;
+    const baseHeight = Number(config.baseHeight) || DEFAULT_BASE_HEIGHT;
+    const columns = config.columns || {};
+    const gaps = config.gaps || {};
+    const templates = config.templates || {};
+
+    const desktopTemplate = templates.desktop || DEFAULT_TEMPLATES.desktop;
+    const tabletTemplate = templates.tablet || DEFAULT_TEMPLATES.tablet;
+    const mobileTemplate = templates.mobile || DEFAULT_TEMPLATES.mobile;
+
+    const desktopColumns = columns.desktop || DEFAULT_COLUMNS.desktop;
+    const tabletColumns = columns.tablet || DEFAULT_COLUMNS.tablet;
+    const mobileColumns = columns.mobile || DEFAULT_COLUMNS.mobile;
+
+    const desktopGap = gaps.desktop || DEFAULT_GAPS.desktop;
+    const tabletGap = gaps.tablet || DEFAULT_GAPS.tablet;
+    const mobileGap = gaps.mobile || DEFAULT_GAPS.mobile;
+
+    const desktopRows = desktopTemplate.rows || DEFAULT_TEMPLATES.desktop.rows;
+    const tabletRows = tabletTemplate.rows || DEFAULT_TEMPLATES.tablet.rows;
+    const mobileRows = mobileTemplate.rows || DEFAULT_TEMPLATES.mobile.rows;
+
+    const desktopAreas = desktopTemplate.areas || DEFAULT_TEMPLATES.desktop.areas;
+    const tabletAreas = tabletTemplate.areas || DEFAULT_TEMPLATES.tablet.areas;
+    const mobileAreas = mobileTemplate.areas || DEFAULT_TEMPLATES.mobile.areas;
+
+    const rootSelector = `#${DISPLAY_TILE_ID} .wdash-root`;
+    const gridSelector = `#${DISPLAY_TILE_ID} .wdash-grid`;
+
+    return [
+      `${rootSelector} { --wdash-base-width:${baseWidth}px; --wdash-base-height:${baseHeight}px; }`,
+      `${gridSelector} { grid-template-columns:${desktopColumns}; grid-template-rows:${desktopRows}; grid-template-areas:${desktopAreas}; gap:${desktopGap}; }`,
+      `@media (max-width:1100px) { ${gridSelector} { grid-template-columns:${tabletColumns}; grid-template-rows:${tabletRows}; grid-template-areas:${tabletAreas}; gap:${tabletGap}; } }`,
+      `@media (max-width:720px) { ${gridSelector} { grid-template-columns:${mobileColumns}; grid-template-rows:${mobileRows}; grid-template-areas:${mobileAreas}; gap:${mobileGap}; } }`
+    ].join('\n');
+  }
+
   function templateHasArea(compiledTemplate, areaName) {
     if (!compiledTemplate || typeof compiledTemplate.areas !== 'string' || !areaName) {
       return false;
@@ -2869,7 +2935,7 @@
     }
     if (typeof value === 'string') {
       const trimmed = value.trim();
-      if (trimmed.length) return trimmed;
+      if (trimmed.length) return trimmed.replace(/\s+/g, ' ');
     }
     return fallback;
   }
