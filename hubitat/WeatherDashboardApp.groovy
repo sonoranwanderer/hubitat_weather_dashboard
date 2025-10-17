@@ -525,7 +525,6 @@ def refreshWeatherData() {
     if (uv != null) solar.uvIndex = round(uv, 1)
     def solarRad = readDecimalFor("attrSolarRadiation")
     if (solarRad != null) solar.solarRadiationWm2 = round(solarRad, 1)
-    if (solar) payload.solar = solar
 
     def outdoorAir = [:]
     def outdoorAqi = readDecimalFor("attrOutdoorAQI")
@@ -575,14 +574,13 @@ def refreshWeatherData() {
 
     if (indoorAir.any { it.value != null }) payload.indoorAirQuality = indoorAir.findAll { it.value != null }
     
-    def sun = [:]
     def sunriseDate = location?.sunrise
-    if (sunriseDate) sun.sunrise = formatDateTime(sunriseDate, tz)
+    if (sunriseDate) solar.sunrise = formatDateTime(sunriseDate, tz)
     def sunsetDate = location?.sunset
-    if (sunsetDate) sun.sunset = formatDateTime(sunsetDate, tz)
+    if (sunsetDate) solar.sunset = formatDateTime(sunsetDate, tz)
     def moon = computeMoonPhase(generated, tz, latitude, longitude)
-    if (moon) sun.moon = moon
-    if (sun) payload.sun = sun
+    if (moon) solar.moon = moon
+    if (solar) payload.solar = solar
 
     def lightning = [:]
     def lightningCount = readDecimalFor("attrLightningCount")
