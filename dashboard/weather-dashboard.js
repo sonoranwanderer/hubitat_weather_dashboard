@@ -1022,7 +1022,7 @@
       <section class="wdash-card wdash-card--rain">
         <div class="wdash-rain-main">
           <div class="wdash-rain-col wdash-rain-col--drop">
-            <svg viewBox="0 0 120 160" role="img" aria-label="Rain rate visualization">
+            <svg viewBox="0 10 120 140" role="img" aria-label="Rain rate visualization">
               <defs>
                 <clipPath id="wdash-rain-clip"><path d="M60 10 C40 45 20 75 20 105 C20 135 38 150 60 150 C82 150 100 135 100 105 C100 75 80 45 60 10 Z" /></clipPath>
                 <linearGradient id="wdash-rain-gradient" x1="0" x2="0" y1="1" y2="0"><stop offset="0%" stop-color="#3d8bff" /><stop offset="100%" stop-color="#7dd3ff" /></linearGradient>
@@ -2634,6 +2634,24 @@
     return tokens.includes(areaName);
   }
 
+  function normalizeAreaToken(value) {
+    if (value == null) return null;
+    if (value === '.') return '.';
+    if (typeof value !== 'string') return null;
+    let token = value
+      .trim()
+      .replace(/[\u2018\u2019\u201a\u201b\u2032\u2035]/g, "'")
+      .replace(/[\u201c\u201d\u201e\u201f\u2033\u2036]/g, '"');
+    if (!token) return null;
+    if (token === '.') return '.';
+    token = token.replace(/^['"`]+|['"`]+$/g, '');
+    token = token.replace(/['"`]/g, '');
+    token = token.replace(/\s+/g, '-');
+    token = token.trim();
+    if (!token) return null;
+    return token;
+  }
+
   function compileGridTemplate(layout) {
     if (!Array.isArray(layout)) {
       return { areas: '"."', rows: 'repeat(1, minmax(0, 1fr))', rowCount: 1 };
@@ -2644,7 +2662,9 @@
     for (const entry of layout) {
       const repeat = Math.max(1, Number(entry?.repeat) || 1);
       const columns = Array.isArray(entry?.columns)
-        ? entry.columns.filter(col => typeof col === 'string' && col.length)
+        ? entry.columns
+            .map(normalizeAreaToken)
+            .filter(col => typeof col === 'string' && col.length)
         : [];
       if (!columns.length) continue;
       const track = normalizeTrackSize(entry?.height ?? entry?.rowHeight ?? entry?.size);
@@ -2900,7 +2920,7 @@
 .wdash-ambient-rotation { font-size: 0.75rem; color: #8ea0c8; }
 .wdash-ambient-rotation:empty { display: none; }
 .wdash-ambient--empty .wdash-ambient-reading { opacity: 0.6; }
-.wdash-rain-main { display: grid; grid-template-columns: minmax(0, 0.85fr) 1fr 1fr; gap: 18px; align-items: stretch; flex: 1; }
+.wdash-rain-main { display: grid; grid-template-columns: minmax(0, 0.85fr) 1fr 1fr; gap: 18px; align-items: stretch; flex: 1; height: 100%; }
 .wdash-rain-col { min-height: 0; }
 .wdash-rain-col--drop { display: flex; align-items: stretch; justify-content: center; }
 .wdash-rain-col--drop svg { width: auto; height: 100%; max-width: 100%; max-height: 100%; display: block; filter: drop-shadow(0 6px 12px rgba(0,0,0,0.3)); }
