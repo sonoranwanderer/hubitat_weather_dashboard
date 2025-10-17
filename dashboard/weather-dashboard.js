@@ -327,7 +327,6 @@
       clearAirQualityRotation();
       stopHubClock();
       teardownTempWindGaugeSizing();
-      teardownRainDropSizing({ resetCache: true });
       return;
     }
 
@@ -353,17 +352,13 @@
     setupInteractiveComponents(grid);
     setupHubClock(payload);
     // observe ambient container for size changes to keep ring geometry synchronized
-    try {
-      const ambientContainer = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-ambient');
-      if (ambientContainer && typeof ResizeObserver !== 'undefined') {
-        const ro = new ResizeObserver(() => { applyAmbientRingSizing(); applyOutdoorRingSizing(); });
-        ro.observe(ambientContainer);
-      } else {
-        // fallback: window resize
-        window.addEventListener('resize', () => { applyAmbientRingSizing(); applyOutdoorRingSizing(); });
-      }
-    } catch (e) {
-      // ignore observer setup failures in constrained environments
+    const ambientContainer = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-ambient');
+    if (ambientContainer && typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(() => { applyAmbientRingSizing(); applyOutdoorRingSizing(); });
+      ro.observe(ambientContainer);
+    } else {
+      // fallback: window resize
+      window.addEventListener('resize', () => { applyAmbientRingSizing(); applyOutdoorRingSizing(); });
     }
     toggleSourceTileMask(true);
   }
@@ -1440,7 +1435,6 @@
     setupPressureToggle(container);
     setupAmbientControls(container);
     setupTempWindGaugeSizing(container);
-    setupRainDropSizing(container);
     // ensure ambient ring sizing is applied on setup
     applyAmbientRingSizing();
     // also size outdoor gauge/compass
@@ -2028,124 +2022,6 @@
     card.style.setProperty('--temp-wind-gauge-size', `${normalized}px`);
   }
 
-  function teardownRainDropSizing(options = {}) {
-    const resetCache = Boolean(options && options.resetCache);
-    if (rainDropObserver) {
-      rainDropObserver.disconnect();
-      rainDropObserver = null;
-    }
-    if (rainDropResizeHandler) {
-      window.removeEventListener('resize', rainDropResizeHandler);
-      rainDropResizeHandler = null;
-    }
-    if (rainDropRaf != null) {
-      if (rainDropRafType === 'raf' && typeof cancelAnimationFrame === 'function') {
-        cancelAnimationFrame(rainDropRaf);
-      } else if (rainDropRafType === 'timeout') {
-        clearTimeout(rainDropRaf);
-      }
-      rainDropRaf = null;
-      rainDropRafType = null;
-    }
-    if (rainDropLastCard) {
-      try {
-        rainDropLastCard.style.removeProperty('--wdash-rain-drop-height');
-      } catch (e) { /* ignore */ }
-    }
-    rainDropLastCard = null;
-    if (resetCache) {
-      rainDropLastHeight = null;
-    }
-  }
-
-  function scheduleRainDropSizing(card) {
-    const target = card || rainDropLastCard || document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-card--rain');
-    if (!target) return;
-    if (rainDropRaf != null) return;
-    const runner = () => {
-      rainDropRaf = null;
-      rainDropRafType = null;
-      applyRainDropSizing(target);
-    };
-    if (typeof requestAnimationFrame === 'function') {
-      rainDropRafType = 'raf';
-      rainDropRaf = requestAnimationFrame(runner);
-    } else {
-      rainDropRafType = 'timeout';
-      rainDropRaf = setTimeout(runner, 16);
-    }
-  }
-
-  function setupRainDropSizing(container) {
-    teardownRainDropSizing();
-    const card = container.querySelector('.wdash-card--rain');
-    if (!card) return;
-    rainDropLastCard = card;
-    if (Number.isFinite(rainDropLastHeight) && rainDropLastHeight > 0) {
-      card.style.setProperty('--wdash-rain-drop-height', `${rainDropLastHeight}px`);
-    } else {
-      card.style.removeProperty('--wdash-rain-drop-height');
-    }
-    applyRainDropSizing(card);
-    scheduleRainDropSizing(card);
-    if (typeof ResizeObserver === 'function') {
-      rainDropObserver = new ResizeObserver(() => scheduleRainDropSizing(card));
-      rainDropObserver.observe(card);
-    } else {
-      rainDropResizeHandler = () => scheduleRainDropSizing(card);
-      window.addEventListener('resize', rainDropResizeHandler);
-    }
-  }
-
-  function applyRainDropSizing(cardOverride) {
-    const card = cardOverride || rainDropLastCard || document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-card--rain');
-    if (!card) {
-      rainDropLastHeight = null;
-      return;
-    }
-    const dropCol = card.querySelector('.wdash-rain-col--drop');
-    if (!dropCol || !dropCol.querySelector('svg')) {
-      card.style.removeProperty('--wdash-rain-drop-height');
-      rainDropLastHeight = null;
-      return;
-    }
-
-    const cardStyle = getComputedStyle(card);
-    const paddingTop = parseFloat(cardStyle.paddingTop) || 0;
-    const paddingBottom = parseFloat(cardStyle.paddingBottom) || 0;
-    let available = card.offsetHeight - paddingTop - paddingBottom;
-    if (!Number.isFinite(available) || available < 0) {
-      available = 0;
-    }
-
-    let target = available * 0.8;
-    const dropStyle = getComputedStyle(dropCol);
-    const dropPadTop = parseFloat(dropStyle.paddingTop) || 0;
-    const dropPadBottom = parseFloat(dropStyle.paddingBottom) || 0;
-    if (dropPadTop || dropPadBottom) {
-      target = Math.max(0, target - dropPadTop - dropPadBottom);
-    }
-
-    const strokeBuffer = 8;
-    target = Math.max(0, target - strokeBuffer);
-
-    const columnHeight = dropCol.offsetHeight;
-    if (columnHeight > 0 && target > columnHeight) {
-      target = columnHeight;
-    }
-
-    const normalized = Math.max(0, Math.round(target * 100) / 100);
-    if (!Number.isFinite(normalized)) {
-      card.style.removeProperty('--wdash-rain-drop-height');
-      rainDropLastHeight = null;
-      return;
-    }
-
-    if (Math.abs(normalized - rainDropLastHeight) < 0.5) return;
-    rainDropLastHeight = normalized;
-    card.style.setProperty('--wdash-rain-drop-height', `${normalized}px`);
-  }
-
   function setupPressureToggle(container) {
     const card = container.querySelector('.wdash-card--pressure');
     if (!card) return;
@@ -2463,8 +2339,11 @@
         // 2) remembered in ambientLastHumidity map keyed by sensor id/name
         // 3) fallback to current circle stroke-dashoffset (if present)
         // 4) fallback to circumference (empty)
-        let prevHum = null;
-        try {
+        let prevHum = NaN;
+        if (sensorKey && ambientLastHumidity.has(sensorKey)) {
+          prevHum = ambientLastHumidity.get(sensorKey);
+        }
+        if (!Number.isFinite(prevHum)) {
           const headerName = (scope.querySelector('.wdash-ambient-name')?.textContent || '').trim();
           if (humFill.dataset && humFill.dataset.lastHum) {
             const parsed = Number(humFill.dataset.lastHum);
@@ -2478,9 +2357,6 @@
               prevHum = ambientLastHumidity.get(storedKey);
             }
           }
-          if (!Number.isFinite(prevHum) && sensorKey && ambientLastHumidity.has(sensorKey)) {
-            prevHum = ambientLastHumidity.get(sensorKey);
-          }
           if (!Number.isFinite(prevHum) && sensor && sensor.name != null) {
             const sensorNameKey = getAmbientNameKey(sensor.name);
             if (sensorNameKey && ambientLastHumidity.has(sensorNameKey)) {
@@ -2493,22 +2369,7 @@
               prevHum = ambientLastHumidity.get(headerKey);
             }
           }
-          if (!Number.isFinite(prevHum) && Number.isFinite(ambientLastDisplayedHumidity.value)) {
-            // fallback to the last displayed humidity value (across sensors)
-            prevHum = ambientLastDisplayedHumidity.value;
-          }
-          if (!Number.isFinite(prevHum)) {
-            const existing = humFill.getAttribute('stroke-dashoffset');
-            if (existing != null) {
-              const cur = Number(existing);
-              if (!isNaN(cur)) {
-                const prevDash = Math.max(0, Math.min(circumference, cur));
-                prevHum = Math.round(((circumference - prevDash) / circumference) * 100);
-              }
-            }
-          }
-        } catch (e) { /* ignore */ }
-
+        }
         const prevFraction = Number.isFinite(prevHum) ? clamp(prevHum / 100, 0, 1) : null;
         const prevOffset = prevFraction != null ? Math.round(circumference - (prevFraction * circumference)) : circumference;
 
