@@ -76,7 +76,8 @@
     columns: { ...DEFAULT_COLUMNS },
     gaps: { ...DEFAULT_GAPS },
     templates: DEFAULT_TEMPLATES,
-    signature: null
+    signature: null,
+    pendingApply: false
   };
 
   const TEMP_COLORS = [
@@ -182,6 +183,12 @@
   let tempWindGaugeRaf = null;
   let tempWindGaugeRafType = null;
   let tempWindGaugeLastSize = null;
+  let rainDropObserver = null;
+  let rainDropResizeHandler = null;
+  let rainDropRaf = null;
+  let rainDropRafType = null;
+  let rainDropLastHeight = null;
+  let rainDropLastCard = null;
   const placeholderLogged = new Set();
   let pressureMode = 'relative';
   let lastSuccessfulPayload = null;
@@ -298,6 +305,7 @@
       clearAirQualityRotation();
       stopHubClock();
       teardownTempWindGaugeSizing();
+      teardownRainDropSizing();
       return;
     }
 
@@ -413,9 +421,13 @@
   function applyLayoutOverrides(metadata) {
     const root = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-root');
     const dash = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash');
-    if (!root || !dash) return;
+    if (!root || !dash) {
+      layoutState.pendingApply = true;
+      return;
+    }
 
-    const override = metadata ? extractLayoutOverride(metadata.layout) : null;
+    const rawLayout = metadata ? (metadata.layout != null ? metadata.layout : metadata.layoutOverride) : null;
+    const override = rawLayout ? extractLayoutOverride(rawLayout) : null;
     const mergedLayout = deepMerge(DEFAULT_LAYOUT, override || {});
     const compiled = compileLayoutTemplates(mergedLayout);
 
@@ -445,14 +457,18 @@
       }
     });
 
-    if (layoutState.signature === signature) return;
+    const changed = layoutState.signature !== signature;
+    if (changed) {
+      layoutState.signature = signature;
+      layoutState.baseWidth = baseWidth;
+      layoutState.baseHeight = baseHeight;
+      layoutState.columns = columns;
+      layoutState.gaps = gaps;
+      layoutState.templates = compiled;
+      layoutState.pendingApply = true;
+    }
 
-    layoutState.signature = signature;
-    layoutState.baseWidth = baseWidth;
-    layoutState.baseHeight = baseHeight;
-    layoutState.columns = columns;
-    layoutState.gaps = gaps;
-    layoutState.templates = compiled;
+    if (!changed && !layoutState.pendingApply) return;
 
     currentBaseWidth = baseWidth;
     currentBaseHeight = baseHeight;
@@ -474,36 +490,34 @@
     dash.style.setProperty('--wdash-grid-gap-mobile', gaps.mobile);
 
     const gridEl = dash.querySelector('.wdash-grid');
-    if (gridEl) {
+    if (!gridEl) {
+      layoutState.pendingApply = true;
+    } else {
+      gridEl.style.removeProperty('grid-template-columns');
+      gridEl.style.removeProperty('grid-template-rows');
+      gridEl.style.removeProperty('grid-template-areas');
+      gridEl.style.removeProperty('gap');
       if (columns.desktop) {
-        gridEl.style.gridTemplateColumns = columns.desktop;
         gridEl.style.setProperty('--wdash-grid-columns-desktop', columns.desktop);
       } else {
-        gridEl.style.removeProperty('grid-template-columns');
         gridEl.style.removeProperty('--wdash-grid-columns-desktop');
       }
       if (compiled.desktop.rows) {
-        gridEl.style.gridTemplateRows = compiled.desktop.rows;
         gridEl.style.setProperty('--wdash-grid-rows-desktop', compiled.desktop.rows);
       } else {
-        gridEl.style.removeProperty('grid-template-rows');
         gridEl.style.removeProperty('--wdash-grid-rows-desktop');
       }
       if (compiled.desktop.areas) {
-        const inlineAreas = compiled.desktop.areas.replace(/\s*\n\s*/g, ' ');
-        gridEl.style.gridTemplateAreas = inlineAreas;
         gridEl.style.setProperty('--wdash-grid-areas-desktop', compiled.desktop.areas);
       } else {
-        gridEl.style.removeProperty('grid-template-areas');
         gridEl.style.removeProperty('--wdash-grid-areas-desktop');
       }
       if (gaps.desktop) {
-        gridEl.style.gap = gaps.desktop;
         gridEl.style.setProperty('--wdash-grid-gap-desktop', gaps.desktop);
       } else {
-        gridEl.style.removeProperty('gap');
         gridEl.style.removeProperty('--wdash-grid-gap-desktop');
       }
+      layoutState.pendingApply = false;
     }
 
     const hasLightningArea = templateHasArea(compiled.desktop, 'lightning')
@@ -1055,7 +1069,7 @@
       <section class="wdash-card wdash-card--rain">
         <div class="wdash-rain-main">
           <div class="wdash-rain-col wdash-rain-col--drop">
-            <svg viewBox="0 10 120 140" role="img" aria-label="Rain rate visualization">
+            <svg viewBox="0 0 120 160" role="img" aria-label="Rain rate visualization">
               <defs>
                 <clipPath id="wdash-rain-clip"><path d="M60 10 C40 45 20 75 20 105 C20 135 38 150 60 150 C82 150 100 135 100 105 C100 75 80 45 60 10 Z" /></clipPath>
                 <linearGradient id="wdash-rain-gradient" x1="0" x2="0" y1="1" y2="0"><stop offset="0%" stop-color="#3d8bff" /><stop offset="100%" stop-color="#7dd3ff" /></linearGradient>
@@ -1346,6 +1360,7 @@
     setupPressureToggle(container);
     setupAmbientControls(container);
     setupTempWindGaugeSizing(container);
+    setupRainDropSizing(container);
     // ensure ambient ring sizing is applied on setup
     applyAmbientRingSizing();
     // also size outdoor gauge/compass
@@ -1931,6 +1946,113 @@
     if (Number.isFinite(previous) && Math.abs(previous - normalized) < 0.5) return;
     card.dataset.tempWindGaugeSize = String(normalized);
     card.style.setProperty('--temp-wind-gauge-size', `${normalized}px`);
+  }
+
+  function teardownRainDropSizing() {
+    if (rainDropObserver) {
+      rainDropObserver.disconnect();
+      rainDropObserver = null;
+    }
+    if (rainDropResizeHandler) {
+      window.removeEventListener('resize', rainDropResizeHandler);
+      rainDropResizeHandler = null;
+    }
+    if (rainDropRaf != null) {
+      if (rainDropRafType === 'raf' && typeof cancelAnimationFrame === 'function') {
+        cancelAnimationFrame(rainDropRaf);
+      } else if (rainDropRafType === 'timeout') {
+        clearTimeout(rainDropRaf);
+      }
+      rainDropRaf = null;
+      rainDropRafType = null;
+    }
+    if (rainDropLastCard) {
+      try {
+        rainDropLastCard.style.removeProperty('--wdash-rain-drop-height');
+      } catch (e) { /* ignore */ }
+    }
+    rainDropLastCard = null;
+    rainDropLastHeight = null;
+  }
+
+  function scheduleRainDropSizing(card) {
+    const target = card || rainDropLastCard || document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-card--rain');
+    if (!target) return;
+    if (rainDropRaf != null) return;
+    const runner = () => {
+      rainDropRaf = null;
+      rainDropRafType = null;
+      applyRainDropSizing(target);
+    };
+    if (typeof requestAnimationFrame === 'function') {
+      rainDropRafType = 'raf';
+      rainDropRaf = requestAnimationFrame(runner);
+    } else {
+      rainDropRafType = 'timeout';
+      rainDropRaf = setTimeout(runner, 16);
+    }
+  }
+
+  function setupRainDropSizing(container) {
+    teardownRainDropSizing();
+    const card = container.querySelector('.wdash-card--rain');
+    if (!card) return;
+    rainDropLastCard = card;
+    applyRainDropSizing(card);
+    scheduleRainDropSizing(card);
+    if (typeof ResizeObserver === 'function') {
+      rainDropObserver = new ResizeObserver(() => scheduleRainDropSizing(card));
+      rainDropObserver.observe(card);
+    } else {
+      rainDropResizeHandler = () => scheduleRainDropSizing(card);
+      window.addEventListener('resize', rainDropResizeHandler);
+    }
+  }
+
+  function applyRainDropSizing(cardOverride) {
+    const card = cardOverride || rainDropLastCard || document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-card--rain');
+    if (!card) {
+      rainDropLastHeight = null;
+      return;
+    }
+    const dropCol = card.querySelector('.wdash-rain-col--drop');
+    if (!dropCol || !dropCol.querySelector('svg')) {
+      card.style.removeProperty('--wdash-rain-drop-height');
+      rainDropLastHeight = null;
+      return;
+    }
+
+    const cardStyle = getComputedStyle(card);
+    const paddingTop = parseFloat(cardStyle.paddingTop) || 0;
+    const paddingBottom = parseFloat(cardStyle.paddingBottom) || 0;
+    let available = card.offsetHeight - paddingTop - paddingBottom;
+    if (!Number.isFinite(available) || available < 0) {
+      available = 0;
+    }
+
+    let target = available * 0.8;
+    const dropStyle = getComputedStyle(dropCol);
+    const dropPadTop = parseFloat(dropStyle.paddingTop) || 0;
+    const dropPadBottom = parseFloat(dropStyle.paddingBottom) || 0;
+    if (dropPadTop || dropPadBottom) {
+      target = Math.max(0, target - dropPadTop - dropPadBottom);
+    }
+
+    const columnHeight = dropCol.offsetHeight;
+    if (columnHeight > 0 && target > columnHeight) {
+      target = columnHeight;
+    }
+
+    const normalized = Math.max(0, Math.round(target * 100) / 100);
+    if (!Number.isFinite(normalized)) {
+      card.style.removeProperty('--wdash-rain-drop-height');
+      rainDropLastHeight = null;
+      return;
+    }
+
+    if (Math.abs(normalized - rainDropLastHeight) < 0.5) return;
+    rainDropLastHeight = normalized;
+    card.style.setProperty('--wdash-rain-drop-height', `${normalized}px`);
   }
 
   function setupPressureToggle(container) {
@@ -2956,7 +3078,7 @@
 .wdash-rain-main { display: grid; grid-template-columns: minmax(0, 0.85fr) 1fr 1fr; gap: 18px; align-items: stretch; flex: 1; height: 100%; }
 .wdash-rain-col { min-height: 0; }
 .wdash-rain-col--drop { display: flex; align-items: center; justify-content: center; }
-.wdash-rain-col--drop svg { width: auto; height: 80%; max-width: 100%; max-height: 80%; display: block; filter: drop-shadow(0 6px 12px rgba(0,0,0,0.3)); }
+.wdash-rain-col--drop svg { width: auto; height: var(--wdash-rain-drop-height, 80%); max-width: 100%; max-height: var(--wdash-rain-drop-height, 80%); display: block; filter: drop-shadow(0 6px 12px rgba(0,0,0,0.3)); overflow: visible; }
 .wdash-rain-drop-outline { fill: none; stroke: #6ab9ff; stroke-width: 4; stroke-linejoin: round; }
 .wdash-rain-drop-bg { fill: rgba(80,160,255,0.15); }
 .wdash-rain-drop-fill { transition: all 0.4s ease-in-out; }
