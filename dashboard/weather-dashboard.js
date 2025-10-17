@@ -100,7 +100,7 @@
   const CARD_TITLES = {
     temperature: 'Outdoor Temperature',
     wind: 'Wind',
-    rain: 'Rainfall',
+    rain: 'Rain',
     pressure: 'Barometer',
     sunMoon: 'Sun & Moon',
     air: 'Air Quality'
@@ -2778,6 +2778,7 @@
 .wdash-air-source { font-size: 0.62rem; letter-spacing: 0.08em; text-transform: uppercase; color: #9badcf; }
 .wdash-air-battery { display: inline-flex; align-items: center; }
 .wdash-card-header--temp-wind { align-items: center; gap: 10px; }
+.wdash-card-header--temp-wind .wdash-card-header-main { align-items: flex-start; text-align: left; }
 .wdash-temp-wind-header-meta { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
 .wdash-temp-wind-battery { display: inline-flex; align-items: center; }
 .wdash-updated { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 2px; font-size: 0.68rem; opacity: 0.7; text-align: right; }
@@ -2796,6 +2797,7 @@
 .wdash-lightning-header-icon .wdash-lightning-bolt-svg { width: 30px; height: auto; transform: scaleY(1.15) rotate(10deg); transform-origin: center; filter: drop-shadow(0 4px 10px rgba(0,0,0,0.45)); }
 .wdash-card--rain { grid-area: rain; }
 .wdash-card-header--rain { align-items: center; }
+.wdash-card-header--rain .wdash-card-header-main { align-items: flex-start; text-align: left; }
 .wdash-rain-header-meta { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
 .wdash-rain-battery { display: inline-flex; align-items: center; }
 .wdash-card--pressure { grid-area: pressure; }
