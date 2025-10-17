@@ -510,34 +510,10 @@
     });
 
     const gridEl = dash.querySelector('.wdash-grid');
-    if (!gridEl) {
-      layoutState.pendingApply = true;
-    } else {
-      gridEl.style.removeProperty('grid-template-columns');
-      gridEl.style.removeProperty('grid-template-rows');
-      gridEl.style.removeProperty('grid-template-areas');
-      gridEl.style.removeProperty('gap');
-      if (columns.desktop) {
-        gridEl.style.setProperty('--wdash-grid-columns-desktop', columns.desktop);
-      } else {
-        gridEl.style.removeProperty('--wdash-grid-columns-desktop');
-      }
-      if (compiled.desktop.rows) {
-        gridEl.style.setProperty('--wdash-grid-rows-desktop', compiled.desktop.rows);
-      } else {
-        gridEl.style.removeProperty('--wdash-grid-rows-desktop');
-      }
-      if (compiled.desktop.areas) {
-        gridEl.style.setProperty('--wdash-grid-areas-desktop', compiled.desktop.areas);
-      } else {
-        gridEl.style.removeProperty('--wdash-grid-areas-desktop');
-      }
-      if (gaps.desktop) {
-        gridEl.style.setProperty('--wdash-grid-gap-desktop', gaps.desktop);
-      } else {
-        gridEl.style.removeProperty('--wdash-grid-gap-desktop');
-      }
+    if (gridEl) {
       layoutState.pendingApply = false;
+    } else {
+      layoutState.pendingApply = true;
     }
 
     const hasLightningArea = templateHasArea(compiled.desktop, 'lightning')
