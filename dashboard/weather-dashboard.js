@@ -610,7 +610,7 @@
     const updatedLabel = stationLabel ? `Updated ${stationLabel}` : '';
 
     const outdoorBatterySlot = buildBatterySlot(toNumber(outdoor.battery), {
-      orientation: 'portrait',
+      orientation: 'landscape',
       className: 'wdash-temp-wind-battery',
       label: 'Outdoor sensor',
       titlePrefix: 'Outdoor sensor battery'
@@ -631,13 +631,22 @@
       { label: 'Max Gust', value: dailyMaxGustText }
     ], 'wdash-temp-wind-details', { layout: 'fill', columns: 6 });
 
+    const headerMeta = `
+      <div class="wdash-temp-wind-header-meta">
+        <span class="wdash-updated">
+          <span class="wdash-updated-line wdash-updated-line--primary">${escapeHtml(updatedLabel)}</span>
+        </span>
+        ${outdoorBatterySlot}
+      </div>
+    `;
+
     return `
       <section class="wdash-card wdash-card--temp-wind"${gaugeSizeAttr}>
-        <header class="wdash-card-header">
-          <h3>Outdoor Conditions</h3>
-          <span class="wdash-updated">
-            <span class="wdash-updated-line wdash-updated-line--primary">${escapeHtml(updatedLabel)}</span>
-          </span>
+        <header class="wdash-card-header wdash-card-header--temp-wind">
+          <div class="wdash-card-header-main">
+            <h3>Outdoor Conditions</h3>
+          </div>
+          ${headerMeta}
         </header>
         <div class="wdash-temp-wind-main">
           <div class="wdash-temp">
@@ -691,7 +700,6 @@
           </div>
         </div>
         <div class="wdash-temp-wind-footer">
-          ${outdoorBatterySlot}
           ${detailsRow}
         </div>
       </section>
@@ -1010,9 +1018,20 @@
       titlePrefix: 'Rain sensor battery'
     });
 
+    const rainHeader = `
+      <header class="wdash-card-header wdash-card-header--rain">
+        <div class="wdash-card-header-main">
+          <h3>${escapeHtml(CARD_TITLES.rain)}</h3>
+        </div>
+        <div class="wdash-rain-header-meta">
+          ${rainBatterySlot}
+        </div>
+      </header>
+    `;
+
     return `
       <section class="wdash-card wdash-card--rain">
-        ${cardHeader(CARD_TITLES.rain, data)}
+        ${rainHeader}
         <div class="wdash-rain-main">
           <div class="wdash-rain-col wdash-rain-col--drop">
             <svg viewBox="0 0 120 160" role="img" aria-label="Rain rate visualization">
@@ -1035,7 +1054,6 @@
             <div class="wdash-rain-daily-metric">
               <div class="wdash-rain-daily-value">${formatRain(rain.dailyIn)}</div>
               <div class="wdash-rain-daily-label">Daily</div>
-              ${rainBatterySlot}
             </div>
           </div>
           <div class="wdash-rain-col wdash-rain-col--stats">
@@ -2759,6 +2777,9 @@
 .wdash-air-header-meta { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
 .wdash-air-source { font-size: 0.62rem; letter-spacing: 0.08em; text-transform: uppercase; color: #9badcf; }
 .wdash-air-battery { display: inline-flex; align-items: center; }
+.wdash-card-header--temp-wind { align-items: center; gap: 10px; }
+.wdash-temp-wind-header-meta { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
+.wdash-temp-wind-battery { display: inline-flex; align-items: center; }
 .wdash-updated { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 2px; font-size: 0.68rem; opacity: 0.7; text-align: right; }
 .wdash-updated-line { white-space: nowrap; line-height: 1.2; }
 .wdash-updated-line--secondary { font-size: 0.62rem; opacity: 0.65; }
@@ -2774,6 +2795,9 @@
 .wdash-lightning-header-icon { display: flex; align-items: flex-start; justify-content: flex-end; margin-left: auto; }
 .wdash-lightning-header-icon .wdash-lightning-bolt-svg { width: 30px; height: auto; transform: scaleY(1.15) rotate(10deg); transform-origin: center; filter: drop-shadow(0 4px 10px rgba(0,0,0,0.45)); }
 .wdash-card--rain { grid-area: rain; }
+.wdash-card-header--rain { align-items: center; }
+.wdash-rain-header-meta { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
+.wdash-rain-battery { display: inline-flex; align-items: center; }
 .wdash-card--pressure { grid-area: pressure; }
 .wdash-card--solar { grid-area: solar; }
 .wdash-card--air { grid-area: air; }
@@ -2832,7 +2856,7 @@
 .wdash-ambient { display: flex; flex-direction: column; gap: 14px; flex: 1; /* ambient ring defaults (viewBox units) */ --ambient-ring-r: 45; --ambient-ring-stroke: 10; }
 .wdash-battery-slot { display: inline-flex; align-items: center; justify-content: center; }
 .wdash-battery-slot.is-hidden { display: none !important; }
-.wdash-battery { --wdash-battery-width: 18px; --wdash-battery-height: 33px; --wdash-battery-fill-color: #4bd37b; --wdash-battery-border: 2px; --wdash-battery-tip-length: 6px; display: inline-flex; align-items: center; justify-content: center; gap: 0; color: inherit; }
+.wdash-battery { --wdash-battery-width: 18px; --wdash-battery-height: 33px; --wdash-battery-fill-color: #4bd37b; --wdash-battery-border: 2px; --wdash-battery-tip-length: 5px; display: inline-flex; align-items: center; justify-content: center; gap: 0; color: inherit; }
 .wdash-battery--portrait { flex-direction: column; }
 .wdash-battery--landscape { flex-direction: row; }
 .wdash-battery-tip { display: block; box-sizing: border-box; background: var(--wdash-battery-fill-color, #4bd37b); border: var(--wdash-battery-border) solid var(--wdash-battery-fill-color, #4bd37b); order: 0; transition: color 0.2s ease, border-color 0.2s ease, background-color 0.2s ease; }
@@ -2895,7 +2919,6 @@
 .wdash-rain-daily-metric { flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; }
 .wdash-rain-daily-value { font-size: 2.8rem; font-weight: 800; line-height: 1; }
 .wdash-rain-daily-label { font-size: 0.9rem; font-weight: 700; color: #c9d8ff; margin-top: 4px; }
-.wdash-rain-battery { margin-top: 6px; }
 .wdash-rain-col--stats { align-self: start; }
 .wdash-rain-stats.wdash-metric-row--table { display: block; width: 100%; }
 .wdash-rain-stats.wdash-metric-row--table .wdash-metric { background: none; box-shadow: none; display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.07); }
@@ -2911,7 +2934,6 @@
 .wdash-pressure-reading { font-size: 1.82rem; font-weight: 700; color: #e3edff; min-height: 2.2rem; display: flex; align-items: center; justify-content: center; }
 .wdash-temp-wind-footer { position: relative; }
 .wdash-temp-wind-footer .wdash-temp-wind-details { position: relative; z-index: 1; }
-.wdash-temp-wind-battery { position: absolute; left: 0; bottom: calc(100% + 6px); }
 .wdash-pressure-value { display: none; }
 .wdash-card--pressure[data-pressure-mode="relative"] .wdash-pressure-value[data-pressure-value="relative"],
 .wdash-card--pressure[data-pressure-mode="absolute"] .wdash-pressure-value[data-pressure-value="absolute"] { display: inline-flex; }
