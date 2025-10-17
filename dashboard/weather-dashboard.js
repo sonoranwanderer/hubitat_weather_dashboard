@@ -1004,7 +1004,7 @@
     ];
 
     const rainBatterySlot = buildBatterySlot(toNumber(rain.battery), {
-      orientation: 'portrait',
+      orientation: 'landscape',
       className: 'wdash-rain-battery',
       label: 'Rain sensor',
       titlePrefix: 'Rain sensor battery'
@@ -1216,22 +1216,26 @@
     const airData = currentSource === 'Indoor' ? data.indoorAirQuality : data.outdoorAirQuality;
 
     const metrics = padAirQualityMetrics(buildAirQualityMetrics(airData, currentSource));
-    const subtitle = sources.length > 1 ? currentSource : '';
     const batteryLevel = toNumber(airData?.battery);
     const batteryLabel = `${currentSource} air quality sensor`;
     const batterySlot = buildBatterySlot(batteryLevel, {
-      orientation: 'portrait',
+      orientation: 'landscape',
       className: 'wdash-air-battery',
       label: batteryLabel,
       titlePrefix: `${batteryLabel} battery`
     });
 
-    const headerHtml = cardHeader(CARD_TITLES.air, data, null, {
-      headerClass: 'wdash-card-header--air',
-      leading: batterySlot,
-      subtitle,
-      useSubLabelInUpdated: false
-    });
+    const headerHtml = `
+      <header class="wdash-card-header wdash-card-header--air">
+        <div class="wdash-card-header-main">
+          <h3>${escapeHtml(CARD_TITLES.air)}</h3>
+        </div>
+        <div class="wdash-air-header-meta">
+          <span class="wdash-air-source">${escapeHtml(currentSource)}</span>
+          ${batterySlot}
+        </div>
+      </header>
+    `;
 
     return `
       <section class="wdash-card wdash-card--air" data-aq-source="${currentSource.toLowerCase()}">
@@ -2752,7 +2756,9 @@
 .wdash-card-header--ambient .wdash-ambient-rotation { margin-left: auto; text-align: right; }
 .wdash-card-header--air { align-items: center; gap: 10px; }
 .wdash-card-header--air .wdash-card-header-main { align-items: flex-start; }
-.wdash-card-header--air .wdash-card-header-leading { align-self: stretch; }
+.wdash-air-header-meta { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
+.wdash-air-source { font-size: 0.62rem; letter-spacing: 0.08em; text-transform: uppercase; color: #9badcf; }
+.wdash-air-battery { display: inline-flex; align-items: center; }
 .wdash-updated { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 2px; font-size: 0.68rem; opacity: 0.7; text-align: right; }
 .wdash-updated-line { white-space: nowrap; line-height: 1.2; }
 .wdash-updated-line--secondary { font-size: 0.62rem; opacity: 0.65; }
@@ -2826,18 +2832,19 @@
 .wdash-ambient { display: flex; flex-direction: column; gap: 14px; flex: 1; /* ambient ring defaults (viewBox units) */ --ambient-ring-r: 45; --ambient-ring-stroke: 10; }
 .wdash-battery-slot { display: inline-flex; align-items: center; justify-content: center; }
 .wdash-battery-slot.is-hidden { display: none !important; }
-.wdash-battery { --wdash-battery-width: 18px; --wdash-battery-height: 33px; --wdash-battery-fill-color: #4bd37b; display: inline-flex; align-items: center; justify-content: center; gap: 6px; color: inherit; }
-.wdash-battery--portrait { flex-direction: column; gap: 3px; }
-.wdash-battery--landscape { flex-direction: row; gap: 0; }
-.wdash-battery-tip { display: block; background: var(--wdash-battery-fill-color, #4bd37b); border-radius: 3px; border: 2px solid var(--wdash-battery-fill-color, #4bd37b); }
-.wdash-battery--portrait .wdash-battery-tip { width: calc(var(--wdash-battery-width) * 0.45); height: 6px; margin-bottom: 1px; border-bottom: 0; }
-.wdash-battery--landscape .wdash-battery-tip { width: 6px; height: calc(var(--wdash-battery-width) * 0.45); margin-left: -2px; margin-bottom: 0; order: 2; border-left: 0; }
-.wdash-battery-body { position: relative; width: var(--wdash-battery-width); height: var(--wdash-battery-height); border: 2px solid var(--wdash-battery-fill-color, #4bd37b); border-radius: 6px; padding: 3px; box-sizing: border-box; display: flex; flex-direction: column-reverse; justify-content: space-between; gap: 2px; background: rgba(8,12,24,0.85); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04); order: 1; }
-.wdash-battery--landscape .wdash-battery-body { width: var(--wdash-battery-height); height: var(--wdash-battery-width); flex-direction: row-reverse; }
+.wdash-battery { --wdash-battery-width: 18px; --wdash-battery-height: 33px; --wdash-battery-fill-color: #4bd37b; display: inline-flex; align-items: center; justify-content: center; gap: 0; color: inherit; }
+.wdash-battery--portrait { flex-direction: column; }
+.wdash-battery--landscape { flex-direction: row; }
+.wdash-battery-tip { display: block; background: var(--wdash-battery-fill-color, #4bd37b); border-radius: 3px; border: 2px solid var(--wdash-battery-fill-color, #4bd37b); order: 0; transition: color 0.2s ease, border-color 0.2s ease, background-color 0.2s ease; }
+.wdash-battery--portrait .wdash-battery-tip { width: calc(var(--wdash-battery-width) * 0.5); height: 6px; border-bottom: 0; margin-bottom: -2px; border-radius: 2px 2px 0 0; }
+.wdash-battery--landscape .wdash-battery-tip { width: 6px; height: calc(var(--wdash-battery-height) * 0.5); border-left: 0; margin-left: -2px; border-radius: 0 2px 2px 0; order: 2; }
+.wdash-battery-body { position: relative; width: var(--wdash-battery-width); height: var(--wdash-battery-height); border: 2px solid var(--wdash-battery-fill-color, #4bd37b); border-radius: 6px; padding: 3px; box-sizing: border-box; display: flex; flex-direction: column; justify-content: space-between; gap: 2px; background: rgba(8,12,24,0.85); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04); order: 1; transition: border-color 0.2s ease, box-shadow 0.2s ease; }
+.wdash-battery--landscape .wdash-battery-body { width: var(--wdash-battery-height); height: var(--wdash-battery-width); flex-direction: row; }
 .wdash-battery-segment { position: relative; flex: 1; border-radius: 2px; background: rgba(255,255,255,0.08); overflow: hidden; }
-.wdash-battery-segment::after { content: ''; position: absolute; left: 1px; right: 1px; bottom: 1px; height: var(--wdash-battery-segment-fill, 0%); border-radius: 1.5px; background: var(--wdash-battery-fill-color, #4bd37b); transition: height 220ms ease; }
-.wdash-battery--landscape .wdash-battery-segment::after { top: 1px; bottom: 1px; height: auto; width: var(--wdash-battery-segment-fill, 0%); right: auto; }
-.wdash-battery-percent { font-size: 0.7rem; font-weight: 600; letter-spacing: 0.06em; order: 3; }
+.wdash-battery--portrait .wdash-battery-segment::after { content: ''; position: absolute; left: 1px; right: 1px; bottom: 1px; height: var(--wdash-battery-segment-fill, 0%); border-radius: 1.5px; background: var(--wdash-battery-fill-color, #4bd37b); transition: height 220ms ease; }
+.wdash-battery--landscape .wdash-battery-segment::after { content: ''; position: absolute; top: 1px; bottom: 1px; right: 1px; left: auto; width: var(--wdash-battery-segment-fill, 0%); border-radius: 1.5px; background: var(--wdash-battery-fill-color, #4bd37b); transition: width 220ms ease; }
+.wdash-battery-percent { font-size: 0.7rem; font-weight: 600; letter-spacing: 0.06em; order: 3; margin-top: 4px; }
+.wdash-battery--landscape .wdash-battery-percent { margin-top: 0; margin-left: 6px; }
 .wdash-battery--with-label { gap: 4px; }
 .wdash-battery--critical { --wdash-battery-fill-color: #ff6b63; }
 .wdash-battery--unknown { --wdash-battery-fill-color: #8ea0c8; }
@@ -2863,8 +2870,7 @@
 .wdash-ambient-label { font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.8; }
 .wdash-ambient-circle--temp { background: transparent; }
 .wdash-ambient-circle--humidity { background: transparent; }
-.wdash-ambient-circle--temp .wdash-ambient-battery { position: absolute; top: 92px; left: -36px; }
-.wdash-ambient-battery .wdash-battery { --wdash-battery-width: 16px; --wdash-battery-height: 28px; }
+.wdash-ambient-circle--temp .wdash-ambient-battery { position: absolute; top: 50%; left: -36px; transform: translateY(-50%); }
 .wdash-ambient-timer { --wdash-timer-color: #29d88b; position: absolute; top: 92px; right: -36px; width: 40px; height: 40px; border: none; padding: 0; border-radius: 50%; background: transparent; color: var(--wdash-timer-color); display: grid; place-items: center; cursor: pointer; filter: drop-shadow(0 8px 16px rgba(0,0,0,0.45)); transition: transform 0.2s ease, filter 0.2s ease, color 0.2s ease; }
 .wdash-ambient-timer:hover:not(:disabled) { transform: translateY(-1px); filter: drop-shadow(0 16px 26px rgba(0,0,0,0.55)); }
 .wdash-ambient-timer:active:not(:disabled) { transform: translateY(1px); filter: drop-shadow(0 10px 18px rgba(0,0,0,0.45)); }
@@ -2890,7 +2896,6 @@
 .wdash-rain-daily-value { font-size: 2.8rem; font-weight: 800; line-height: 1; }
 .wdash-rain-daily-label { font-size: 0.9rem; font-weight: 700; color: #c9d8ff; margin-top: 4px; }
 .wdash-rain-battery { margin-top: 6px; }
-.wdash-rain-battery .wdash-battery { --wdash-battery-width: 15px; --wdash-battery-height: 26px; }
 .wdash-rain-col--stats { align-self: start; }
 .wdash-rain-stats.wdash-metric-row--table { display: block; width: 100%; }
 .wdash-rain-stats.wdash-metric-row--table .wdash-metric { background: none; box-shadow: none; display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.07); }
@@ -2907,8 +2912,6 @@
 .wdash-temp-wind-footer { position: relative; }
 .wdash-temp-wind-footer .wdash-temp-wind-details { position: relative; z-index: 1; }
 .wdash-temp-wind-battery { position: absolute; left: 0; bottom: calc(100% + 6px); }
-.wdash-temp-wind-battery .wdash-battery { --wdash-battery-width: 16px; --wdash-battery-height: 30px; }
-.wdash-air-battery .wdash-battery { --wdash-battery-width: 15px; --wdash-battery-height: 26px; }
 .wdash-pressure-value { display: none; }
 .wdash-card--pressure[data-pressure-mode="relative"] .wdash-pressure-value[data-pressure-value="relative"],
 .wdash-card--pressure[data-pressure-mode="absolute"] .wdash-pressure-value[data-pressure-value="absolute"] { display: inline-flex; }
@@ -3269,11 +3272,14 @@
 
     const segments = [];
     const segmentCount = 5;
-    for (let i = 0; i < segmentCount; i++) {
+    const indices = orientation === 'portrait'
+      ? Array.from({ length: segmentCount }, (_, idx) => segmentCount - 1 - idx)
+      : Array.from({ length: segmentCount }, (_, idx) => idx);
+    for (const index of indices) {
       let fill = '0%';
       if (level != null) {
         const fraction = (level / 100) * segmentCount;
-        const segmentFill = Math.max(0, Math.min(1, fraction - i));
+        const segmentFill = Math.max(0, Math.min(1, fraction - index));
         fill = `${Math.round(segmentFill * 100)}%`;
       }
       segments.push(`<span class="wdash-battery-segment" style="--wdash-battery-segment-fill:${fill};"></span>`);
