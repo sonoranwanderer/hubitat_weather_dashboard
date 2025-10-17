@@ -619,8 +619,7 @@ def refreshWeatherData() {
     }
 
     def metadata = [
-        generatedAt: generated.format("yyyy-MM-dd'T'HH:mm:ssXXX", tz),
-        sourceDevices: devices.collect { dev -> [id: dev.id, name: dev.displayName] }
+        generatedAt: generated.format("yyyy-MM-dd'T'HH:mm:ssXXX", tz)
     ]
     if (tz) {
         metadata.weatherStationTimezone = tz?.ID
@@ -631,11 +630,6 @@ def refreshWeatherData() {
     def layoutOverride = parseLayoutOverrideSetting()
     if (layoutOverride) {
         metadata.layout = layoutOverride
-    }
-    def primary = primaryWeatherDevice()
-    if (primary) {
-        metadata.sourceDevice = [id: primary.id, name: primary.displayName]
-        metadata.primaryDeviceId = primary.id
     }
     payload.metadata = metadata
 
