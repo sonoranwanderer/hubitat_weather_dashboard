@@ -1018,20 +1018,8 @@
       titlePrefix: 'Rain sensor battery'
     });
 
-    const rainHeader = `
-      <header class="wdash-card-header wdash-card-header--rain">
-        <div class="wdash-card-header-main">
-          <h3>${escapeHtml(CARD_TITLES.rain)}</h3>
-        </div>
-        <div class="wdash-rain-header-meta">
-          ${rainBatterySlot}
-        </div>
-      </header>
-    `;
-
     return `
       <section class="wdash-card wdash-card--rain">
-        ${rainHeader}
         <div class="wdash-rain-main">
           <div class="wdash-rain-col wdash-rain-col--drop">
             <svg viewBox="0 0 120 160" role="img" aria-label="Rain rate visualization">
@@ -1054,6 +1042,7 @@
             <div class="wdash-rain-daily-metric">
               <div class="wdash-rain-daily-value">${formatRain(rain.dailyIn)}</div>
               <div class="wdash-rain-daily-label">Daily</div>
+              ${rainBatterySlot}
             </div>
           </div>
           <div class="wdash-rain-col wdash-rain-col--stats">
@@ -2800,10 +2789,7 @@
 .wdash-lightning-header-icon { display: flex; align-items: flex-start; justify-content: flex-end; margin-left: auto; }
 .wdash-lightning-header-icon .wdash-lightning-bolt-svg { width: 30px; height: auto; transform: scaleY(1.15) rotate(10deg); transform-origin: center; filter: drop-shadow(0 4px 10px rgba(0,0,0,0.45)); }
 .wdash-card--rain { grid-area: rain; }
-.wdash-card-header--rain { align-items: center; }
-.wdash-card-header--rain .wdash-card-header-main { align-items: flex-start; text-align: left; }
-.wdash-rain-header-meta { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
-.wdash-rain-battery { display: inline-flex; align-items: center; }
+.wdash-rain-battery { display: inline-flex; align-items: center; justify-content: center; }
 .wdash-card--pressure { grid-area: pressure; }
 .wdash-card--solar { grid-area: solar; }
 .wdash-card--air { grid-area: air; }
@@ -2914,17 +2900,19 @@
 .wdash-ambient-rotation { font-size: 0.75rem; color: #8ea0c8; }
 .wdash-ambient-rotation:empty { display: none; }
 .wdash-ambient--empty .wdash-ambient-reading { opacity: 0.6; }
-.wdash-rain-main { display: grid; grid-template-columns: 120px 1fr 1fr; gap: 18px; align-items: center; flex: 1; }
-.wdash-rain-col--drop { display: flex; align-items: center; justify-content: center; }
-.wdash-rain-col--drop svg { width: 100%; height: auto; display: block; filter: drop-shadow(0 6px 12px rgba(0,0,0,0.3)); }
+.wdash-rain-main { display: grid; grid-template-columns: minmax(0, 0.85fr) 1fr 1fr; gap: 18px; align-items: stretch; flex: 1; }
+.wdash-rain-col { min-height: 0; }
+.wdash-rain-col--drop { display: flex; align-items: stretch; justify-content: center; }
+.wdash-rain-col--drop svg { width: auto; height: 100%; max-width: 100%; max-height: 100%; display: block; filter: drop-shadow(0 6px 12px rgba(0,0,0,0.3)); }
 .wdash-rain-drop-outline { fill: none; stroke: #6ab9ff; stroke-width: 4; stroke-linejoin: round; }
 .wdash-rain-drop-bg { fill: rgba(80,160,255,0.15); }
 .wdash-rain-drop-fill { transition: all 0.4s ease-in-out; }
 .wdash-rain-col--center { display: flex; flex-direction: column; justify-content: space-between; height: 100%; text-align: center; }
 .wdash-rain-rate-wrapper { width: 75%; margin: 0 auto; }
-.wdash-rain-daily-metric { flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.wdash-rain-daily-metric { flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; }
 .wdash-rain-daily-value { font-size: 2.8rem; font-weight: 800; line-height: 1; }
-.wdash-rain-daily-label { font-size: 0.9rem; font-weight: 700; color: #c9d8ff; margin-top: 4px; }
+.wdash-rain-daily-label { font-size: 0.9rem; font-weight: 700; color: #c9d8ff; }
+.wdash-rain-daily-metric .wdash-battery-slot { margin-top: 2px; }
 .wdash-rain-col--stats { align-self: start; }
 .wdash-rain-stats.wdash-metric-row--table { display: block; width: 100%; }
 .wdash-rain-stats.wdash-metric-row--table .wdash-metric { background: none; box-shadow: none; display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.07); }
