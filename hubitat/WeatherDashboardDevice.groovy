@@ -21,8 +21,12 @@ import groovy.transform.Field
     meta   : [plain: 'segmentMeta',        base: 'segmentMetaB64'],
     layout : [plain: 'segmentLayout',      base: 'segmentLayoutB64']
 ]
-@Field static final List<Map> AMBIENT_SEGMENT_ATTRS = (1..MAX_AMBIENT_SEGMENTS).collect { index ->
-    [plain: "segmentAmbient${index}", base: "segmentAmbient${index}B64"]
+@Field static final List<Map> AMBIENT_SEGMENT_ATTRS = buildAmbientSegmentAttrs()
+
+private static List<Map> buildAmbientSegmentAttrs() {
+    (1..MAX_AMBIENT_SEGMENTS).collect { index ->
+        [plain: "segmentAmbient${index}", base: "segmentAmbient${index}B64"]
+    }
 }
 
 definition(
