@@ -137,7 +137,7 @@ private Map parsePayload(String json) {
         if (parsed instanceof Map) {
             return parsed as Map
         }
-        log.warn "Weather Dashboard Device: Expected JSON object but received ${parsed?.getClass()?.simpleName ?: 'unknown'}"
+        log.warn "Weather Dashboard Device: Expected JSON object but received ${describeValueType(parsed)}"
     } catch (Exception ex) {
         log.error "Weather Dashboard Device: JSON parse error — ${ex?.message ?: ex}", ex
     }
@@ -312,6 +312,16 @@ private void copyIfPresent(Map target, Map source, String key) {
     if (value != null) {
         target[key] = value
     }
+}
+
+private String describeValueType(def value) {
+    if (value == null) return 'null'
+    if (value instanceof Map) return 'Map'
+    if (value instanceof List) return 'List'
+    if (value instanceof Number) return 'Number'
+    if (value instanceof Boolean) return 'Boolean'
+    if (value instanceof CharSequence) return 'String'
+    return 'unknown type'
 }
 
 private String timestamp() {
