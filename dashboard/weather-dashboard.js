@@ -1879,7 +1879,7 @@
       available = 0;
     }
 
-    let gaugeSize = Math.min(260, available);
+    let gaugeSize = available;
     if (available <= 0) {
       gaugeSize = 0;
     } else if (available < 80) {
@@ -1897,6 +1897,10 @@
     }
     if (columnWidth > 0 && gaugeSize > columnWidth) {
       gaugeSize = columnWidth;
+    }
+
+    if (!Number.isFinite(gaugeSize)) {
+      gaugeSize = 0;
     }
 
     const normalized = Math.max(0, Math.round(gaugeSize * 100) / 100);
