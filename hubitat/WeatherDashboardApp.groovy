@@ -6,6 +6,7 @@
  */
 
 import groovy.json.JsonOutput
+import groovy.json.JsonSlurper
 import groovy.transform.Field
 import java.math.RoundingMode
 import java.text.SimpleDateFormat
@@ -63,6 +64,7 @@ def mainPage() {
             attributeInputs("Yearly rain", "attrRainYearly", "rainYearly", deviceOptions)
             attributeInputs("UV index", "attrUVIndex", "uv", deviceOptions)
             attributeInputs("Solar radiation", "attrSolarRadiation", "solarRadiation", deviceOptions)
+            attributeInputs("Weather station update time", "attrStationUpdatedAt", "lastUpdateTime", deviceOptions)
         }
 
         section("Outdoor Air Quality (optional)") {
@@ -124,6 +126,14 @@ def mainPage() {
             input name: "pressureTrendHours", type: "number", title: "Pressure tendency window (hours)", defaultValue: 3, range: "1..12"
         }
 
+        section("Layout overrides (optional)") {
+            paragraph "Provide JSON to fine-tune the dashboard canvas size and grid rows/columns. Leave blank to use the built-in defaults."
+            paragraph "Set `baseWidth` and `baseHeight` (in pixels) to control the canvas size. Rows accept objects like `{ \"height\": 360, \"columns\": [\"temp-wind\", \"ambient\"] }`."
+            paragraph "Repeat a card name in consecutive rows to make it span multiple heights, and use `\".\"` as a placeholder when you want the other column to stay empty so the next card can start higher."
+            paragraph "Example:<br><code>{\n  \"baseWidth\": 1200,\n  \"baseHeight\": 900,\n  \"desktop\": {\n    \"rows\": [\n      { \"height\": 220, \"columns\": [\"temp-wind\", \"ambient\"] },\n      { \"height\": 200, \"columns\": [\"temp-wind\", \".\"] },\n      { \"height\": 180, \"columns\": [\"air\", \"rain\"] }\n    ]\n  }\n}</code>"
+            input name: "layoutOverrideJson", type: "textarea", title: "Layout configuration JSON", required: false
+        }
+
         section("Dashboard device") {
             input name: "dashboardDeviceLabel", type: "text", title: "Dashboard device label", defaultValue: "Weather Dashboard"
         }
@@ -135,7 +145,8 @@ def mainPage() {
         }
 
         section("Actions") {
-            href "refreshNow", title: "Refresh data now", description: "Tap to recompute and push the dashboard payload"
+            input name: "saveAndPreview", type: "button", title: "Save & Refresh"
+            input name: "refreshNow", type: "button", title: "Refresh"
         }
     }
 }
@@ -152,12 +163,19 @@ private Map weatherDeviceOptions() {
     }
 }
 
-def refreshNow() {
-    refreshWeatherData()
-    return dynamicPage(name: "refreshNow") {
-        section("Refresh queued") {
-            paragraph "The dashboard payload will update momentarily."
-        }
+def appButtonHandler(String buttonName) {
+    switch (buttonName) {
+        case 'saveAndPreview':
+            log.info "Weather Dashboard App save & refresh requested"
+            updated()
+            refreshWeatherData()
+            break
+        case 'refreshNow':
+            log.info "Weather Dashboard App manual refresh requested"
+            refreshWeatherData()
+            break
+        default:
+            log.warn "Unhandled button press: ${buttonName}"
     }
 }
 
@@ -237,6 +255,7 @@ private List<Map> getAttributeSubscriptions() {
         "attrRainYearly",
         "attrUVIndex",
         "attrSolarRadiation",
+        "attrStationUpdatedAt",
         "attrOutdoorAQI",
         "attrOutdoorPM25",
         "attrIndoorAQI",
@@ -506,7 +525,6 @@ def refreshWeatherData() {
     if (uv != null) solar.uvIndex = round(uv, 1)
     def solarRad = readDecimalFor("attrSolarRadiation")
     if (solarRad != null) solar.solarRadiationWm2 = round(solarRad, 1)
-    if (solar) payload.solar = solar
 
     def outdoorAir = [:]
     def outdoorAqi = readDecimalFor("attrOutdoorAQI")
@@ -556,14 +574,13 @@ def refreshWeatherData() {
 
     if (indoorAir.any { it.value != null }) payload.indoorAirQuality = indoorAir.findAll { it.value != null }
     
-    def sun = [:]
     def sunriseDate = location?.sunrise
-    if (sunriseDate) sun.sunrise = formatDateTime(sunriseDate, tz)
+    if (sunriseDate) solar.sunrise = formatDateTime(sunriseDate, tz)
     def sunsetDate = location?.sunset
-    if (sunsetDate) sun.sunset = formatDateTime(sunsetDate, tz)
+    if (sunsetDate) solar.sunset = formatDateTime(sunsetDate, tz)
     def moon = computeMoonPhase(generated, tz, latitude, longitude)
-    if (moon) sun.moon = moon
-    if (sun) payload.sun = sun
+    if (moon) solar.moon = moon
+    if (solar) payload.solar = solar
 
     def lightning = [:]
     def lightningCount = readDecimalFor("attrLightningCount")
@@ -593,10 +610,28 @@ def refreshWeatherData() {
         if (ambient.humidityUnit) payload.ambientHumidityUnit = ambient.humidityUnit
     }
 
+    def stationUpdatedAt = readStringFor("attrStationUpdatedAt")
+    if (stationUpdatedAt instanceof CharSequence) {
+        stationUpdatedAt = stationUpdatedAt.toString().trim()
+        if (!stationUpdatedAt) {
+            stationUpdatedAt = null
+        }
+    }
+
     def metadata = [
         generatedAt: generated.format("yyyy-MM-dd'T'HH:mm:ssXXX", tz),
         sourceDevices: devices.collect { dev -> [id: dev.id, name: dev.displayName] }
     ]
+    if (tz) {
+        metadata.weatherStationTimezone = tz?.ID
+    }
+    if (stationUpdatedAt) {
+        metadata.weatherStationTime = stationUpdatedAt
+    }
+    def layoutOverride = parseLayoutOverrideSetting()
+    if (layoutOverride) {
+        metadata.layout = layoutOverride
+    }
     def primary = primaryWeatherDevice()
     if (primary) {
         metadata.sourceDevice = [id: primary.id, name: primary.displayName]
@@ -614,6 +649,36 @@ def refreshWeatherData() {
     if (child) {
         child.updateDashboardData(json, pretty)
     }
+}
+
+private Map parseLayoutOverrideSetting() {
+    def raw = settings.layoutOverrideJson
+    if (!(raw instanceof CharSequence)) {
+        state.remove('lastLayoutOverrideError')
+        return null
+    }
+    def text = raw.toString().trim()
+    if (!text) {
+        state.remove('lastLayoutOverrideError')
+        return null
+    }
+    try {
+        def parsed = new JsonSlurper().parseText(text)
+        if (parsed instanceof Map) {
+            state.remove('lastLayoutOverrideError')
+            return parsed as Map
+        }
+        if (state.lastLayoutOverrideError != text) {
+            log.warn "Weather Dashboard App: Layout override JSON must be an object."
+            state.lastLayoutOverrideError = text
+        }
+    } catch (Exception ex) {
+        if (state.lastLayoutOverrideError != text) {
+            log.warn "Weather Dashboard App: Unable to parse layout override JSON (${ex?.message ?: ex})."
+            state.lastLayoutOverrideError = text
+        }
+    }
+    return null
 }
 
 private Map buildAmbientSensorsPayload() {
