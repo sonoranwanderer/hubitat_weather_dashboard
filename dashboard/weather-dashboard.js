@@ -306,7 +306,7 @@
       clearAirQualityRotation();
       stopHubClock();
       teardownTempWindGaugeSizing();
-      teardownRainDropSizing();
+      teardownRainDropSizing({ resetCache: true });
       return;
     }
 
@@ -316,6 +316,8 @@
     // spurious DOM rebuilds (which can make the ambient rings redraw)
     if (grid.innerHTML !== newMarkup) {
       grid.innerHTML = newMarkup;
+      layoutState.pendingApply = true;
+      applyLayoutOverrides(payload?.metadata);
       // initialize ambient humidity circle from any remembered last value so it
       // doesn't animate from 0% when the card is first built or when switching sensors
       try {
@@ -1957,7 +1959,8 @@
     card.style.setProperty('--temp-wind-gauge-size', `${normalized}px`);
   }
 
-  function teardownRainDropSizing() {
+  function teardownRainDropSizing(options = {}) {
+    const resetCache = Boolean(options && options.resetCache);
     if (rainDropObserver) {
       rainDropObserver.disconnect();
       rainDropObserver = null;
@@ -1981,7 +1984,9 @@
       } catch (e) { /* ignore */ }
     }
     rainDropLastCard = null;
-    rainDropLastHeight = null;
+    if (resetCache) {
+      rainDropLastHeight = null;
+    }
   }
 
   function scheduleRainDropSizing(card) {
@@ -2007,6 +2012,11 @@
     const card = container.querySelector('.wdash-card--rain');
     if (!card) return;
     rainDropLastCard = card;
+    if (Number.isFinite(rainDropLastHeight) && rainDropLastHeight > 0) {
+      card.style.setProperty('--wdash-rain-drop-height', `${rainDropLastHeight}px`);
+    } else {
+      card.style.removeProperty('--wdash-rain-drop-height');
+    }
     applyRainDropSizing(card);
     scheduleRainDropSizing(card);
     if (typeof ResizeObserver === 'function') {
