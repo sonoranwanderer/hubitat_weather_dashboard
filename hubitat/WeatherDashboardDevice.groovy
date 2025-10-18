@@ -22,11 +22,7 @@ import groovy.transform.Field
     meta  : 'segmentMeta',
     layout: 'segmentLayout'
 ]
-@Field static final List<String> AMBIENT_SEGMENT_ATTRS = buildAmbientSegmentAttrs()
-
-private static List<String> buildAmbientSegmentAttrs() {
-    (1..MAX_AMBIENT_SEGMENTS).collect { index -> "segmentAmbient${index}" }
-}
+@Field static final String AMBIENT_ATTR_PREFIX = 'segmentAmbient'
 
 definition(
     name: "Weather Dashboard Device",
@@ -38,9 +34,6 @@ definition(
     capability "Refresh"
 
     STATIC_SEGMENTS.values().each { attr ->
-        attribute attr, "string"
-    }
-    AMBIENT_SEGMENT_ATTRS.each { attr ->
         attribute attr, "string"
     }
 
@@ -69,6 +62,7 @@ def updated() {
 
 def initialize() {
     if (enableDebug) runIn(1800, "logsOff")
+    ensureAmbientAttributeState()
 }
 
 def logsOff() {
@@ -82,9 +76,10 @@ def refresh() {
 
 def clearDashboardData() {
     if (enableDebug) log.debug "Clearing dashboard attributes"
-    (STATIC_SEGMENTS.values() + AMBIENT_SEGMENT_ATTRS).each { attr ->
+    STATIC_SEGMENTS.values().each { attr ->
         sendSegmentJson(attr, EMPTY_JSON)
     }
+    clearAmbientAttributes()
     publishAttribute("dashboardPretty", EMPTY_JSON)
     publishAttribute("dashboardUpdated", timestamp())
 }
@@ -195,18 +190,20 @@ private List<Map> buildAmbientSegments(Map payload) {
     def tempUnit = payload.ambientTemperatureUnit
     def humidityUnit = payload.ambientHumidityUnit
 
-    List<Map> segments = []
+    List<Map> grouped = []
     if (sensors) {
-        sensors.collate(AMBIENT_SENSORS_PER_SEGMENT).eachWithIndex { List<Map> group, int idx ->
+        def groups = sensors.collate(AMBIENT_SENSORS_PER_SEGMENT)
+        if (groups.size() > MAX_AMBIENT_SEGMENTS) {
+            log.warn "Weather Dashboard Device: Ambient sensor data exceeds supported segments; trimming to ${MAX_AMBIENT_SEGMENTS} segments"
+        }
+        groups.take(MAX_AMBIENT_SEGMENTS).eachWithIndex { List<Map> group, int idx ->
             def segment = baseAmbientSegment(total, rotation, tempUnit, humidityUnit, idx)
             segment.ambientSensors = group
-            segments << segment
+            grouped << segment
         }
-    } else {
-        segments << baseAmbientSegment(total, rotation, tempUnit, humidityUnit, 0)
     }
 
-    return segments
+    return grouped
 }
 
 private Map baseAmbientSegment(int total, def rotation, def tempUnit, def humidityUnit, int segmentIndex) {
@@ -295,11 +292,27 @@ private void sendSegmentJson(String attr, String json) {
 }
 
 private void sendAmbientSegments(List<Map> segments) {
-    int count = segments instanceof List ? segments.size() : 0
-    AMBIENT_SEGMENT_ATTRS.eachWithIndex { attr, idx ->
-        Map segmentData = (idx < count) ? segments[idx] : null
-        sendSegmentMap(attr, segmentData ?: [:])
+    ensureAmbientAttributeState()
+
+    List<Map> segmentList = (segments instanceof List) ? segments : []
+    List<String> needed = []
+
+    segmentList.eachWithIndex { Map segment, int idx ->
+        String attr = ambientAttrName(idx + 1)
+        needed << attr
+        sendSegmentMap(attr, segment ?: [:])
     }
+
+    Set<String> toRemove = [] as Set
+    toRemove.addAll(getActiveAmbientAttributes())
+    toRemove.addAll(ambientAttributeRange())
+    needed.each { toRemove.remove(it) }
+
+    toRemove.each { attr ->
+        removeAmbientAttribute(attr)
+    }
+
+    state.activeAmbientAttrs = needed
 }
 
 private void publishAttribute(String name, Object value) {
@@ -319,6 +332,55 @@ private void publishAttribute(String name, Object value) {
 
 private boolean silentAttributeUpdatesEnabled() {
     settings?.get(PREF_SILENT_UPDATES) == true
+}
+
+private void clearAmbientAttributes() {
+    ensureAmbientAttributeState()
+    Set<String> targets = [] as Set
+    targets.addAll(getActiveAmbientAttributes())
+    targets.addAll(ambientAttributeRange())
+    targets.each { attr ->
+        removeAmbientAttribute(attr)
+    }
+    state.activeAmbientAttrs = []
+}
+
+private void ensureAmbientAttributeState() {
+    if (!(state?.activeAmbientAttrs instanceof List)) {
+        state.activeAmbientAttrs = []
+    }
+}
+
+private List<String> getActiveAmbientAttributes() {
+    def stored = state?.activeAmbientAttrs
+    return (stored instanceof List) ? stored.collect { it?.toString() }.findAll { it } : []
+}
+
+private String ambientAttrName(int index) {
+    "${AMBIENT_ATTR_PREFIX}${index}"
+}
+
+private List<String> ambientAttributeRange() {
+    if (MAX_AMBIENT_SEGMENTS < 1) {
+        return []
+    }
+    (1..MAX_AMBIENT_SEGMENTS).collect { ambientAttrName(it) }
+}
+
+private void removeAmbientAttribute(String attr) {
+    if (!attr) return
+    if (device?.respondsTo('deleteCurrentState')) {
+        device.deleteCurrentState(attr)
+        return
+    }
+    if (device?.respondsTo('updateAttribute')) {
+        device.updateAttribute(attr, null)
+        return
+    }
+    if (!state?.ambientDeleteWarningIssued) {
+        log.warn "Weather Dashboard Device: Platform does not support attribute removal for ${attr}"
+        state.ambientDeleteWarningIssued = true
+    }
 }
 
 private void copyIfPresent(Map target, Map source, String key) {
