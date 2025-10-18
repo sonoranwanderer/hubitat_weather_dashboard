@@ -233,6 +233,9 @@
 
     if (!window.__wdashHistoryPatched) {
       const installPatchedHistory = original => {
+        if (typeof original !== 'function') return;
+        if (window.__wdashHistoryPatched) return;
+
         const patched = function patchedAddToDashboardHistory(...args) {
           try {
             return original.apply(this, args);
@@ -241,12 +244,36 @@
             return undefined;
           }
         };
-        Object.defineProperty(window, 'addToDashboardHistory', {
-          configurable: true,
-          writable: true,
-          value: patched
-        });
-        window.__wdashHistoryPatched = true;
+
+        const descriptor = Object.getOwnPropertyDescriptor(window, 'addToDashboardHistory');
+        let installed = false;
+
+        if (!descriptor || descriptor.configurable) {
+          try {
+            Object.defineProperty(window, 'addToDashboardHistory', {
+              configurable: true,
+              writable: true,
+              value: patched
+            });
+            installed = true;
+          } catch (err) {
+            // Fall through to assignment attempt below.
+          }
+        }
+
+        if (!installed) {
+          try {
+            window.addToDashboardHistory = patched;
+            installed = window.addToDashboardHistory === patched;
+          } catch (err) {
+            console.warn('[WeatherDashboard] Unable to patch dashboard history', err);
+          }
+        }
+
+        if (installed) {
+          patched.__wdashOriginal = original;
+          window.__wdashHistoryPatched = true;
+        }
       };
 
       if (typeof window.addToDashboardHistory === 'function') {
@@ -261,11 +288,19 @@
             if (typeof value === 'function') {
               installPatchedHistory(value);
             } else {
-              Object.defineProperty(window, 'addToDashboardHistory', {
-                configurable: true,
-                writable: true,
-                value
-              });
+              try {
+                Object.defineProperty(window, 'addToDashboardHistory', {
+                  configurable: true,
+                  writable: true,
+                  value
+                });
+              } catch (err) {
+                try {
+                  window.addToDashboardHistory = value;
+                } catch (assignErr) {
+                  console.warn('[WeatherDashboard] Unable to store dashboard history handler', assignErr);
+                }
+              }
             }
           }
         });
