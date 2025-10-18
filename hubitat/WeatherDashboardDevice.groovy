@@ -14,7 +14,6 @@ import groovy.transform.Field
 @Field static final Integer AMBIENT_SENSORS_PER_SEGMENT = 4
 @Field static final Integer MAX_AMBIENT_SEGMENTS = 6
 @Field static final String EMPTY_JSON = '{}'
-@Field static final String PREF_SILENT_UPDATES = 'silentAttributeUpdates'
 @Field static final Map<String, String> STATIC_SEGMENTS = [
     core  : 'segmentCore',
     precip: 'segmentPrecip',
@@ -22,7 +21,11 @@ import groovy.transform.Field
     meta  : 'segmentMeta',
     layout: 'segmentLayout'
 ]
-@Field static final String AMBIENT_ATTR_PREFIX = 'segmentAmbient'
+@Field static final List<String> AMBIENT_SEGMENT_ATTRS = buildAmbientSegmentAttrs()
+
+private static List<String> buildAmbientSegmentAttrs() {
+    (1..MAX_AMBIENT_SEGMENTS).collect { index -> "segmentAmbient${index}" }
+}
 
 definition(
     name: "Weather Dashboard Device",
@@ -36,6 +39,9 @@ definition(
     STATIC_SEGMENTS.values().each { attr ->
         attribute attr, "string"
     }
+    AMBIENT_SEGMENT_ATTRS.each { attr ->
+        attribute attr, "string"
+    }
 
     attribute "dashboardPretty", "string"
     attribute "dashboardUpdated", "string"
@@ -47,7 +53,6 @@ definition(
 
 preferences {
     input name: "enableDebug", type: "bool", title: "Enable debug logging", defaultValue: false
-    input name: PREF_SILENT_UPDATES, type: "bool", title: "Update attributes without emitting events", defaultValue: false
 }
 
 def installed() {
@@ -62,7 +67,6 @@ def updated() {
 
 def initialize() {
     if (enableDebug) runIn(1800, "logsOff")
-    ensureAmbientAttributeState()
 }
 
 def logsOff() {
@@ -76,12 +80,11 @@ def refresh() {
 
 def clearDashboardData() {
     if (enableDebug) log.debug "Clearing dashboard attributes"
-    STATIC_SEGMENTS.values().each { attr ->
+    (STATIC_SEGMENTS.values() + AMBIENT_SEGMENT_ATTRS).each { attr ->
         sendSegmentJson(attr, EMPTY_JSON)
     }
-    clearAmbientAttributes()
-    publishAttribute("dashboardPretty", EMPTY_JSON)
-    publishAttribute("dashboardUpdated", timestamp())
+    sendEvent(name: "dashboardPretty", value: EMPTY_JSON, isStateChange: true)
+    sendEvent(name: "dashboardUpdated", value: timestamp(), isStateChange: true)
 }
 
 def updateDashboardData(String json, String pretty = null) {
@@ -107,21 +110,21 @@ def updateDashboardData(String json, String pretty = null) {
     sendAmbientSegments(segments.ambient)
 
     if (pretty && pretty.size() <= MAX_EVENT_VALUE_LENGTH) {
-        publishAttribute("dashboardPretty", pretty)
+        sendEvent(name: "dashboardPretty", value: pretty, isStateChange: true)
     } else if (pretty) {
         def placeholder = JsonOutput.toJson([message: "Pretty payload omitted (length ${pretty.size()} exceeds limit)"])
-        publishAttribute("dashboardPretty", placeholder)
+        sendEvent(name: "dashboardPretty", value: placeholder, isStateChange: true)
     } else {
         def prettyText = JsonOutput.prettyPrint(json)
         if (prettyText.size() <= MAX_EVENT_VALUE_LENGTH) {
-            publishAttribute("dashboardPretty", prettyText)
+            sendEvent(name: "dashboardPretty", value: prettyText, isStateChange: true)
         } else {
             def placeholder = JsonOutput.toJson([message: "Pretty payload omitted (length ${prettyText.size()} exceeds limit)"])
-            publishAttribute("dashboardPretty", placeholder)
+            sendEvent(name: "dashboardPretty", value: placeholder, isStateChange: true)
         }
     }
 
-    publishAttribute("dashboardUpdated", timestamp())
+    sendEvent(name: "dashboardUpdated", value: timestamp(), isStateChange: true)
 }
 
 private Map parsePayload(String json) {
@@ -190,20 +193,18 @@ private List<Map> buildAmbientSegments(Map payload) {
     def tempUnit = payload.ambientTemperatureUnit
     def humidityUnit = payload.ambientHumidityUnit
 
-    List<Map> grouped = []
+    List<Map> segments = []
     if (sensors) {
-        def groups = sensors.collate(AMBIENT_SENSORS_PER_SEGMENT)
-        if (groups.size() > MAX_AMBIENT_SEGMENTS) {
-            log.warn "Weather Dashboard Device: Ambient sensor data exceeds supported segments; trimming to ${MAX_AMBIENT_SEGMENTS} segments"
-        }
-        groups.take(MAX_AMBIENT_SEGMENTS).eachWithIndex { List<Map> group, int idx ->
+        sensors.collate(AMBIENT_SENSORS_PER_SEGMENT).eachWithIndex { List<Map> group, int idx ->
             def segment = baseAmbientSegment(total, rotation, tempUnit, humidityUnit, idx)
             segment.ambientSensors = group
-            grouped << segment
+            segments << segment
         }
+    } else {
+        segments << baseAmbientSegment(total, rotation, tempUnit, humidityUnit, 0)
     }
 
-    return grouped
+    return segments
 }
 
 private Map baseAmbientSegment(int total, def rotation, def tempUnit, def humidityUnit, int segmentIndex) {
@@ -288,98 +289,14 @@ private void sendSegmentJson(String attr, String json) {
         log.error "Weather Dashboard Device: Segment ${attr} exceeds Hubitat event limit (${payload.length()} chars)"
         payload = payload.take(MAX_EVENT_VALUE_LENGTH)
     }
-    publishAttribute(attr, payload)
+    sendEvent(name: attr, value: payload, isStateChange: true)
 }
 
 private void sendAmbientSegments(List<Map> segments) {
-    ensureAmbientAttributeState()
-
-    List<Map> segmentList = (segments instanceof List) ? segments : []
-    List<String> needed = []
-
-    segmentList.eachWithIndex { Map segment, int idx ->
-        String attr = ambientAttrName(idx + 1)
-        needed << attr
-        sendSegmentMap(attr, segment ?: [:])
-    }
-
-    Set<String> toRemove = [] as Set
-    toRemove.addAll(getActiveAmbientAttributes())
-    toRemove.addAll(ambientAttributeRange())
-    needed.each { toRemove.remove(it) }
-
-    toRemove.each { attr ->
-        removeAmbientAttribute(attr)
-    }
-
-    state.activeAmbientAttrs = needed
-}
-
-private void publishAttribute(String name, Object value) {
-    String payload = (value != null) ? value.toString() : ''
-    if (silentAttributeUpdatesEnabled()) {
-        if (device?.respondsTo('updateAttribute')) {
-            device.updateAttribute(name, payload)
-            return
-        }
-        if (!state?.silentUpdateWarningIssued) {
-            log.warn "Weather Dashboard Device: Silent attribute updates requested, but updateAttribute is unavailable; falling back to sendEvent"
-            state.silentUpdateWarningIssued = true
-        }
-    }
-    sendEvent(name: name, value: payload, isStateChange: true)
-}
-
-private boolean silentAttributeUpdatesEnabled() {
-    settings?.get(PREF_SILENT_UPDATES) == true
-}
-
-private void clearAmbientAttributes() {
-    ensureAmbientAttributeState()
-    Set<String> targets = [] as Set
-    targets.addAll(getActiveAmbientAttributes())
-    targets.addAll(ambientAttributeRange())
-    targets.each { attr ->
-        removeAmbientAttribute(attr)
-    }
-    state.activeAmbientAttrs = []
-}
-
-private void ensureAmbientAttributeState() {
-    if (!(state?.activeAmbientAttrs instanceof List)) {
-        state.activeAmbientAttrs = []
-    }
-}
-
-private List<String> getActiveAmbientAttributes() {
-    def stored = state?.activeAmbientAttrs
-    return (stored instanceof List) ? stored.collect { it?.toString() }.findAll { it } : []
-}
-
-private String ambientAttrName(int index) {
-    "${AMBIENT_ATTR_PREFIX}${index}"
-}
-
-private List<String> ambientAttributeRange() {
-    if (MAX_AMBIENT_SEGMENTS < 1) {
-        return []
-    }
-    (1..MAX_AMBIENT_SEGMENTS).collect { ambientAttrName(it) }
-}
-
-private void removeAmbientAttribute(String attr) {
-    if (!attr) return
-    if (device?.respondsTo('deleteCurrentState')) {
-        device.deleteCurrentState(attr)
-        return
-    }
-    if (device?.respondsTo('updateAttribute')) {
-        device.updateAttribute(attr, null)
-        return
-    }
-    if (!state?.ambientDeleteWarningIssued) {
-        log.warn "Weather Dashboard Device: Platform does not support attribute removal for ${attr}"
-        state.ambientDeleteWarningIssued = true
+    int count = segments instanceof List ? segments.size() : 0
+    AMBIENT_SEGMENT_ATTRS.eachWithIndex { attr, idx ->
+        Map segmentData = (idx < count) ? segments[idx] : null
+        sendSegmentMap(attr, segmentData ?: [:])
     }
 }
 
