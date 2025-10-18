@@ -13,6 +13,7 @@
   const DEFAULT_AMBIENT_ROTATION_INTERVAL_MS = 5000;
   const MIN_AMBIENT_ROTATION_SECONDS = 3;
   const MAX_AMBIENT_ROTATION_SECONDS = 120;
+  const DEFAULT_AIR_QUALITY_ROTATION_INTERVAL_MS = 5000;
   const INIT_RETRY_LIMIT = 40;
   const INIT_RETRY_DELAY = 250;
   const DATA_REFRESH_INTERVAL = 5000;
@@ -178,7 +179,7 @@
     timer: null,
     sources: [], // ['outdoor', 'indoor']
     index: 0,
-    interval: 10000, // Rotate every 10 seconds
+    interval: DEFAULT_AIR_QUALITY_ROTATION_INTERVAL_MS,
     paused: false,
     nextSwitchAt: null,
     countdownTimer: null,
@@ -1297,19 +1298,27 @@
         )}
         <div class="wdash-pressure">
           <div class="wdash-pressure-main">
-            <div class="wdash-pressure-toggle" role="group" aria-label="Barometer mode">
-              <button type="button" class="wdash-pressure-button${mode === 'relative' ? ' is-active' : ''}" data-pressure-mode="relative" aria-pressed="${mode === 'relative'}">Relative</button>
-              <button type="button" class="wdash-pressure-button${mode === 'absolute' ? ' is-active' : ''}" data-pressure-mode="absolute" aria-pressed="${mode === 'absolute'}">Absolute</button>
-            </div>
-            <div class="wdash-pressure-reading-wrap">
-              <div class="wdash-pressure-reading">
-                <span class="wdash-pressure-value" data-pressure-value="relative">${relative}</span>
-                <span class="wdash-pressure-value" data-pressure-value="absolute">${absolute}</span>
+            <div class="wdash-pressure-band">
+              <div class="wdash-pressure-band-cell">
+                <div class="wdash-pressure-toggle" role="group" aria-label="Barometer mode">
+                  <button type="button" class="wdash-pressure-button${mode === 'relative' ? ' is-active' : ''}" data-pressure-mode="relative" aria-pressed="${mode === 'relative'}">Relative</button>
+                  <button type="button" class="wdash-pressure-button${mode === 'absolute' ? ' is-active' : ''}" data-pressure-mode="absolute" aria-pressed="${mode === 'absolute'}">Absolute</button>
+                </div>
               </div>
-              <span class="wdash-pressure-outlook-label">${escapeHtml(outlookLabel)}</span>
+              <div class="wdash-pressure-band-cell">
+                <div class="wdash-pressure-reading-wrap">
+                  <div class="wdash-pressure-reading">
+                    <span class="wdash-pressure-value" data-pressure-value="relative">${relative}</span>
+                    <span class="wdash-pressure-value" data-pressure-value="absolute">${absolute}</span>
+                  </div>
+                </div>
+              </div>
+              <div class="wdash-pressure-band-cell">
+                <span class="wdash-pressure-outlook-label">${escapeHtml(outlookLabel)}</span>
+              </div>
             </div>
+            ${buildMetricRow(stats, 'wdash-pressure-stats')}
           </div>
-          ${buildMetricRow(stats, 'wdash-pressure-stats')}
         </div>
       </section>
     `;
@@ -1476,9 +1485,9 @@
       <header class="wdash-card-header wdash-card-header--air">
         <div class="wdash-card-header-main">
           <h3>${escapeHtml(CARD_TITLES.air)}</h3>
+          <span class="wdash-air-source">${escapeHtml(currentSource)}</span>
         </div>
         <div class="wdash-air-header-meta">
-          <span class="wdash-air-source">${escapeHtml(currentSource)}</span>
           ${batterySlot}
         </div>
       </header>
@@ -2390,7 +2399,7 @@
     updateAmbientTimerDisplay();
   }
 
-  function scheduleAmbientRotation() {
+  function scheduleAmbientRotation(delayMs) {
     resetAmbientTimerState();
 
     if (ambientRotation.paused || ambientRotation.sensors.length <= 1) {
@@ -2400,11 +2409,19 @@
       return;
     }
 
-    ambientRotation.nextSwitchAt = Date.now() + ambientRotation.interval;
+    const now = Date.now();
+    let delay = Number(delayMs);
+    if (!Number.isFinite(delay) || delay <= 0) {
+      delay = ambientRotation.interval;
+    } else {
+      delay = Math.min(delay, ambientRotation.interval);
+    }
+
+    ambientRotation.nextSwitchAt = now + delay;
     ambientRotation.timer = setTimeout(() => {
       ambientRotation.timer = null;
       advanceAmbientSensor();
-    }, ambientRotation.interval);
+    }, delay);
 
     ensureAmbientCountdownTimer();
     updateAmbientTimerDisplay();
@@ -2498,6 +2515,15 @@
     const container = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-ambient');
     if (!container) return;
 
+    const now = Date.now();
+    const prevInterval = ambientRotation.interval;
+    const prevNextSwitchAt = Number.isFinite(ambientRotation.nextSwitchAt) ? ambientRotation.nextSwitchAt : null;
+    const prevSensorCount = Array.isArray(ambientRotation.sensors) ? ambientRotation.sensors.length : 0;
+    let remaining = null;
+    if (!ambientRotation.paused && prevSensorCount > 1 && prevNextSwitchAt != null) {
+      remaining = prevNextSwitchAt - now;
+    }
+
     const sensors = Array.isArray(data?.ambientSensors) ? data.ambientSensors.filter(Boolean) : [];
     ambientRotation.sensors = sensors;
     ambientRotation.tempUnit = data?.ambientTemperatureUnit || '°F';
@@ -2508,14 +2534,31 @@
       ambientRotation.index = ambientRotation.sensors.length ? ambientRotation.sensors.length - 1 : 0;
     }
 
-    stopAmbientRotationTimer();
+    resetAmbientTimerState();
+    ambientRotation.nextSwitchAt = null;
+
+    const hasMultipleSensors = ambientRotation.sensors.length > 1;
+    const canAutoRotate = hasMultipleSensors && !ambientRotation.paused;
+    const intervalChanged = ambientRotation.interval !== prevInterval;
+    if (Number.isFinite(remaining)) {
+      remaining = intervalChanged ? Math.min(Math.max(remaining, 0), ambientRotation.interval) : Math.max(remaining, 0);
+    }
+
+    if (canAutoRotate && Number.isFinite(remaining) && remaining <= 0) {
+      advanceAmbientSensor();
+      updateAmbientTimerDisplay();
+      return;
+    }
 
     updateAmbientDisplay();
 
-    if (ambientRotation.sensors.length <= 1) {
+    if (!hasMultipleSensors) {
       ambientRotation.index = 0;
-    } else if (!ambientRotation.paused) {
-      scheduleAmbientRotation();
+      clearAmbientCountdownTimer();
+    } else if (canAutoRotate) {
+      scheduleAmbientRotation(remaining);
+    } else {
+      clearAmbientCountdownTimer();
     }
 
     updateAmbientTimerDisplay();
@@ -2523,7 +2566,6 @@
 
   function clearAmbientRotation() {
     stopAmbientRotationTimer();
-    clearAirQualityRotation();
     ambientRotation.sensors = [];
     ambientRotation.index = 0;
     ambientRotation.paused = false;
@@ -2726,6 +2768,7 @@
 
   function setupAirQualityRotation(data) {
     airQualityRotation.lastData = data;
+    airQualityRotation.interval = DEFAULT_AIR_QUALITY_ROTATION_INTERVAL_MS;
     const sources = [];
     if (data?.outdoorAirQuality) sources.push('Outdoor');
     if (data?.indoorAirQuality) sources.push('Indoor');
@@ -3259,7 +3302,7 @@
 .wdash-card-header--ambient .wdash-ambient-name { margin: 0; }
 .wdash-card-header--ambient .wdash-ambient-rotation { margin-left: auto; text-align: right; }
 .wdash-card-header--air { align-items: center; gap: 10px; }
-.wdash-card-header--air .wdash-card-header-main { align-items: flex-start; }
+.wdash-card-header--air .wdash-card-header-main { flex-direction: row; align-items: baseline; gap: 8px; }
 .wdash-air-header-meta { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
 .wdash-air-source { font-size: 0.62rem; letter-spacing: 0.08em; text-transform: uppercase; color: #9badcf; }
 .wdash-air-battery { display: inline-flex; align-items: center; }
@@ -3412,14 +3455,16 @@
 .wdash-rain-stats.wdash-metric-row--table .wdash-metric:last-child { border-bottom: none; }
 .wdash-rain-stats.wdash-metric-row--table .wdash-metric-label { text-align: left; font-size: 0.9rem; font-weight: 600; color: #c9d8ff; }
 .wdash-rain-stats.wdash-metric-row--table .wdash-metric-value { text-align: right; font-size: 0.9rem; font-weight: 600; color: #f4f6ff; font-variant-numeric: tabular-nums; }
-.wdash-pressure-main { display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 16px; flex-wrap: wrap; }
-.wdash-pressure-reading-wrap { display: inline-flex; align-items: center; gap: 14px; }
+.wdash-pressure-main { display: flex; flex-direction: column; gap: 16px; align-items: stretch; }
+.wdash-pressure-band { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: center; justify-items: center; gap: 12px; }
+.wdash-pressure-band-cell { display: flex; align-items: center; justify-content: center; text-align: center; }
+.wdash-pressure-reading-wrap { display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .wdash-pressure-toggle { display: inline-flex; gap: 4px; padding: 4px; border-radius: 999px; background: rgba(255,255,255,0.05); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04); }
 .wdash-pressure-button { border: none; background: transparent; color: #9badcf; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.12em; padding: 5px 12px; border-radius: 999px; cursor: pointer; transition: all 0.2s ease; }
 .wdash-pressure-button:hover { color: #f4f6ff; }
 .wdash-pressure-button.is-active { background: linear-gradient(140deg, #5ab3ff, #3f8bff); color: #0d1426; box-shadow: 0 8px 16px rgba(74,150,255,0.35); }
 .wdash-pressure-reading { font-size: 1.82rem; font-weight: 700; color: #e3edff; min-height: 2.2rem; display: flex; align-items: center; justify-content: center; }
-.wdash-pressure-outlook-label { font-weight: 700; color: #ffb95a; text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.75rem; white-space: nowrap; }
+.wdash-pressure-outlook-label { font-weight: 700; color: #ffb95a; text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.75rem; white-space: nowrap; display: inline-flex; align-items: center; justify-content: center; }
 .wdash-temp-wind-footer { position: relative; }
 .wdash-temp-wind-footer .wdash-temp-wind-details { position: relative; z-index: 1; }
 .wdash-pressure-value { display: none; }
