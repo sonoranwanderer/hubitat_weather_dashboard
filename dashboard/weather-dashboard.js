@@ -3125,7 +3125,8 @@
 .wdash-temp-extrema--low .wdash-temp-extrema-value { color: #7cc5ff; }
 .wdash-metric-row { display: flex; flex-wrap: wrap; gap: 10px; width: 100%; }
 .wdash-metric-row--compact { display: grid; grid-template-columns: repeat(var(--wdash-columns, 4), minmax(0, 1fr)); gap: 4px 8px; align-content: start; }
-.wdash-metric { flex: 1 1 auto; min-width: 0; background: rgba(255,255,255,0.05); border-radius: 12px; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px; text-align: center; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04); }
+.wdash-metric { flex: 1 1 auto; min-width: 0; background: transparent; border-radius: 12px; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px; text-align: center; box-shadow: none; }
+.wdash-metric--tinted { box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08); }
 .wdash-metric-row--layout-fill { flex-wrap: nowrap; }
 .wdash-metric-row--layout-fill .wdash-metric { flex-grow: 0; flex-shrink: 1; flex-basis: auto; }
 .wdash-metric-label { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.08em; color: #8ea0c8; }
