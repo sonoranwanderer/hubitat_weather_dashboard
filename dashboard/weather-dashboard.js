@@ -28,7 +28,7 @@
       gap: '14px',
       rows: [
         { columns: ['temp-wind', 'ambient'], height: 450 },
-        { columns: ['air', 'rain'], height: 160 },
+        { columns: ['air', 'rain'], height: 140 },
         { columns: ['solar', 'rain'], height: 180 },
         { columns: ['solar', 'pressure'], height: 110 }
       ]
@@ -38,7 +38,7 @@
       gap: '12px',
       rows: [
         { columns: ['temp-wind', 'temp-wind'], height: 380 },
-        { columns: ['air', 'ambient'], height: 240 },
+        { columns: ['air', 'ambient'], height: 210 },
         { columns: ['solar', 'rain'], height: 320 },
         { columns: ['pressure', 'pressure'], height: 220 }
       ]
@@ -48,7 +48,7 @@
       gap: '10px',
       rows: [
         { columns: ['temp-wind'], height: 360 },
-        { columns: ['air'], height: 210 },
+        { columns: ['air'], height: 190 },
         { columns: ['solar'], height: 320 },
         { columns: ['ambient'], height: 220 },
         { columns: ['rain'], height: 260 },
@@ -1379,7 +1379,12 @@
     const currentSource = airQualityRotation.sources[airQualityRotation.index] || sources[0] || 'Outdoor';
     const airData = currentSource === 'Indoor' ? data.indoorAirQuality : data.outdoorAirQuality;
 
-    const metrics = padAirQualityMetrics(buildAirQualityMetrics(airData, currentSource));
+    const baseMetrics = buildAirQualityMetrics(airData, currentSource);
+    const gridLayout = determineAirMetricGrid(baseMetrics);
+    const metrics = padAirQualityMetrics(baseMetrics, {
+      columns: gridLayout.columns,
+      maxRows: gridLayout.rows
+    });
     const batteryLevel = toNumber(airData?.battery);
     const batteryLabel = `${currentSource} air quality sensor`;
     const batterySlot = buildBatterySlot(batteryLevel, {
@@ -1404,7 +1409,10 @@
     return `
       <section class="wdash-card wdash-card--air" data-aq-source="${currentSource.toLowerCase()}">
         ${headerHtml}
-        ${buildMetricRow(metrics, 'wdash-air-metrics')}
+        ${buildMetricRow(metrics, 'wdash-air-metrics', {
+          variant: 'compact',
+          columns: gridLayout.columns
+        })}
       </section>
     `;
   }
@@ -1472,6 +1480,37 @@
     }
 
     return list;
+  }
+
+  function determineAirMetricGrid(metrics) {
+    const metricCount = Array.isArray(metrics) ? metrics.length : 0;
+    const safeCount = Math.max(1, Number(metricCount) || 0);
+    const maxColumns = 4;
+    let bestColumns = maxColumns;
+    let bestRows = Math.min(2, Math.max(1, Math.ceil(safeCount / maxColumns)));
+    let bestPlaceholders = Infinity;
+
+    for (let columns = maxColumns; columns >= 1; columns -= 1) {
+      const rows = Math.max(1, Math.ceil(safeCount / columns));
+      if (rows > 2) continue;
+      const placeholders = rows * columns - safeCount;
+      if (
+        placeholders < bestPlaceholders
+        || (placeholders === bestPlaceholders && rows < bestRows)
+        || (placeholders === bestPlaceholders && rows === bestRows && columns > bestColumns)
+      ) {
+        bestColumns = columns;
+        bestRows = rows;
+        bestPlaceholders = placeholders;
+      }
+    }
+
+    if (!Number.isFinite(bestPlaceholders)) {
+      bestColumns = maxColumns;
+      bestRows = Math.min(2, Math.max(1, Math.ceil(safeCount / maxColumns)));
+    }
+
+    return { columns: bestColumns, rows: bestRows };
   }
 
   /* ---------- helpers ---------- */
@@ -3030,7 +3069,7 @@
 .wdash-rain-battery { display: inline-flex; align-items: center; justify-content: center; }
 .wdash-card--pressure { grid-area: pressure; }
 .wdash-card--solar { grid-area: solar; }
-.wdash-card--air { grid-area: air; }
+.wdash-card--air { grid-area: air; gap: 8px; }
 .wdash-temp, .wdash-wind, .wdash-solar, .wdash-pressure { display: flex; flex-direction: column; gap: 10px; flex: 1; }
 .wdash-pressure { gap: 10px; }
 .wdash-temp-wind-main { display: flex; gap: 14px; flex: 1; }
@@ -3050,6 +3089,7 @@
 .wdash-temp-extrema--high .wdash-temp-extrema-value { color: #ffb95a; }
 .wdash-temp-extrema--low .wdash-temp-extrema-value { color: #7cc5ff; }
 .wdash-metric-row { display: flex; flex-wrap: wrap; gap: 10px; width: 100%; }
+.wdash-metric-row--compact { display: grid; grid-template-columns: repeat(var(--wdash-columns, 4), minmax(0, 1fr)); gap: 4px 8px; align-content: start; }
 .wdash-metric { flex: 1 1 auto; min-width: 0; background: rgba(255,255,255,0.05); border-radius: 12px; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px; text-align: center; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04); }
 .wdash-metric-row--layout-fill { flex-wrap: nowrap; }
 .wdash-metric-row--layout-fill .wdash-metric { flex-grow: 0; flex-shrink: 1; flex-basis: auto; }
@@ -3207,9 +3247,12 @@
 .wdash-sun-time { position: absolute; font-size: 0.8rem; font-weight: 600; color: #c9d8ff; transform: translate(-50%, 8px); white-space: nowrap; }
 .wdash-sun-time--rise { /* Positioned by inline style */ }
 .wdash-sun-time--set { /* Positioned by inline style */ }
-.wdash-air-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-rows: auto; gap: 6px 10px; align-content: start; }
-.wdash-air-metrics .wdash-metric { flex: unset; min-height: 0; width: 100%; height: 100%; }
-.wdash-air-metrics .wdash-metric-value { font-size: 1.02rem; }
+.wdash-metric-row--compact .wdash-metric { flex: unset; min-height: 0; width: 100%; height: 100%; padding: 4px 6px; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: baseline; gap: 2px 6px; text-align: left; }
+.wdash-metric-row--compact .wdash-metric-label { font-size: 0.56rem; letter-spacing: 0.12em; }
+.wdash-metric-row--compact .wdash-metric-value { font-size: 0.96rem; justify-self: end; }
+.wdash-metric-row--compact .wdash-metric-sub { grid-column: 1 / -1; justify-self: start; }
+.wdash-air-metrics { grid-auto-rows: auto; }
+.wdash-air-metrics .wdash-metric-value { font-size: 1rem; }
 .wdash-air-metrics .wdash-metric--placeholder { visibility: hidden; pointer-events: none; }
 @media (max-width: 1100px) {
   .wdash-grid { gap: var(--wdash-grid-gap-tablet, ${DEFAULT_GAPS.tablet}); grid-template-columns: var(--wdash-grid-columns-tablet, ${DEFAULT_COLUMNS.tablet}); grid-template-rows: var(--wdash-grid-rows-tablet, ${DEFAULT_TEMPLATES.tablet.rows}); grid-template-areas: var(--wdash-grid-areas-tablet, ${DEFAULT_TEMPLATES.tablet.areas}); }
