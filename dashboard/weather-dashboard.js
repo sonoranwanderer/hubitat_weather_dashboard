@@ -1303,8 +1303,8 @@
             <div class="wdash-pressure-band">
               <div class="wdash-pressure-band-cell">
                 <div class="wdash-pressure-toggle" role="group" aria-label="Barometer mode">
-                  <button type="button" class="wdash-pressure-button${mode === 'relative' ? ' is-active' : ''}" data-pressure-mode="relative" aria-pressed="${mode === 'relative'}">Rel</button>
-                  <button type="button" class="wdash-pressure-button${mode === 'absolute' ? ' is-active' : ''}" data-pressure-mode="absolute" aria-pressed="${mode === 'absolute'}">Abs</button>
+                  <button type="button" class="wdash-pressure-button${mode === 'relative' ? ' is-active' : ''}" data-pressure-mode="relative" aria-pressed="${mode === 'relative'}" aria-label="Relative">Rel</button>
+                  <button type="button" class="wdash-pressure-button${mode === 'absolute' ? ' is-active' : ''}" data-pressure-mode="absolute" aria-pressed="${mode === 'absolute'}" aria-label="Absolute">Abs</button>
                 </div>
               </div>
               <div class="wdash-pressure-band-cell">
