@@ -3252,7 +3252,8 @@
 .wdash-metric-row--compact .wdash-metric-value { font-size: 0.96rem; justify-self: end; }
 .wdash-metric-row--compact .wdash-metric-sub { grid-column: 1 / -1; justify-self: start; }
 .wdash-air-metrics { grid-auto-rows: auto; }
-.wdash-air-metrics .wdash-metric-value { font-size: 1rem; }
+.wdash-air-metrics .wdash-metric-label { white-space: normal; line-height: 1.3; }
+.wdash-air-metrics .wdash-metric-value { font-size: 1rem; white-space: normal; text-align: right; overflow-wrap: anywhere; }
 .wdash-air-metrics .wdash-metric--placeholder { visibility: hidden; pointer-events: none; }
 @media (max-width: 1100px) {
   .wdash-grid { gap: var(--wdash-grid-gap-tablet, ${DEFAULT_GAPS.tablet}); grid-template-columns: var(--wdash-grid-columns-tablet, ${DEFAULT_COLUMNS.tablet}); grid-template-rows: var(--wdash-grid-rows-tablet, ${DEFAULT_TEMPLATES.tablet.rows}); grid-template-areas: var(--wdash-grid-areas-tablet, ${DEFAULT_TEMPLATES.tablet.areas}); }
