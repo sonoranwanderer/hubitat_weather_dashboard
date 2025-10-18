@@ -11,8 +11,11 @@
   const CSS_ID = 'weather-dashboard-css';
   const TEMP_RANGE = { min: -40, max: 120 };
   const DEFAULT_AMBIENT_ROTATION_INTERVAL_MS = 5000;
-  const MIN_AMBIENT_ROTATION_SECONDS = 3;
-  const MAX_AMBIENT_ROTATION_SECONDS = 120;
+  const MIN_AMBIENT_ROTATION_SECONDS = 5;
+  const MAX_AMBIENT_ROTATION_SECONDS = 5;
+  // Ambient rotation is currently fixed at five seconds per requirements, so the
+  // clamp above keeps any provided interval aligned with the default.
+  const DEFAULT_AIR_QUALITY_ROTATION_INTERVAL_MS = 5000;
   const INIT_RETRY_LIMIT = 40;
   const INIT_RETRY_DELAY = 250;
   const DATA_REFRESH_INTERVAL = 5000;
@@ -28,7 +31,7 @@
       gap: '14px',
       rows: [
         { columns: ['temp-wind', 'ambient'], height: 450 },
-        { columns: ['air', 'rain'], height: 160 },
+        { columns: ['air', 'rain'], height: 140 },
         { columns: ['solar', 'rain'], height: 180 },
         { columns: ['solar', 'pressure'], height: 110 }
       ]
@@ -38,7 +41,7 @@
       gap: '12px',
       rows: [
         { columns: ['temp-wind', 'temp-wind'], height: 380 },
-        { columns: ['air', 'ambient'], height: 240 },
+        { columns: ['air', 'ambient'], height: 210 },
         { columns: ['solar', 'rain'], height: 320 },
         { columns: ['pressure', 'pressure'], height: 220 }
       ]
@@ -48,7 +51,7 @@
       gap: '10px',
       rows: [
         { columns: ['temp-wind'], height: 360 },
-        { columns: ['air'], height: 210 },
+        { columns: ['air'], height: 190 },
         { columns: ['solar'], height: 320 },
         { columns: ['ambient'], height: 220 },
         { columns: ['rain'], height: 260 },
@@ -109,6 +112,17 @@
     air: 'Air Quality'
   };
 
+  const AIR_QUALITY_METRIC_ORDER = [
+    'aqi',
+    'aqi24h',
+    'pm25',
+    'pm25_24h',
+    'pm10',
+    'pm10_24h',
+    'co2',
+    'co2_24h'
+  ];
+
   const KNOWN_PAYLOAD_KEYS = new Set([
     'outdoor',
     'indoor',
@@ -167,7 +181,7 @@
     timer: null,
     sources: [], // ['outdoor', 'indoor']
     index: 0,
-    interval: 10000, // Rotate every 10 seconds
+    interval: DEFAULT_AIR_QUALITY_ROTATION_INTERVAL_MS,
     paused: false,
     nextSwitchAt: null,
     countdownTimer: null,
@@ -233,6 +247,9 @@
 
     if (!window.__wdashHistoryPatched) {
       const installPatchedHistory = original => {
+        if (typeof original !== 'function') return;
+        if (window.__wdashHistoryPatched) return;
+
         const patched = function patchedAddToDashboardHistory(...args) {
           try {
             return original.apply(this, args);
@@ -241,12 +258,36 @@
             return undefined;
           }
         };
-        Object.defineProperty(window, 'addToDashboardHistory', {
-          configurable: true,
-          writable: true,
-          value: patched
-        });
-        window.__wdashHistoryPatched = true;
+
+        const descriptor = Object.getOwnPropertyDescriptor(window, 'addToDashboardHistory');
+        let installed = false;
+
+        if (!descriptor || descriptor.configurable) {
+          try {
+            Object.defineProperty(window, 'addToDashboardHistory', {
+              configurable: true,
+              writable: true,
+              value: patched
+            });
+            installed = true;
+          } catch (err) {
+            // Fall through to assignment attempt below.
+          }
+        }
+
+        if (!installed) {
+          try {
+            window.addToDashboardHistory = patched;
+            installed = window.addToDashboardHistory === patched;
+          } catch (err) {
+            console.warn('[WeatherDashboard] Unable to patch dashboard history', err);
+          }
+        }
+
+        if (installed) {
+          patched.__wdashOriginal = original;
+          window.__wdashHistoryPatched = true;
+        }
       };
 
       if (typeof window.addToDashboardHistory === 'function') {
@@ -261,11 +302,19 @@
             if (typeof value === 'function') {
               installPatchedHistory(value);
             } else {
-              Object.defineProperty(window, 'addToDashboardHistory', {
-                configurable: true,
-                writable: true,
-                value
-              });
+              try {
+                Object.defineProperty(window, 'addToDashboardHistory', {
+                  configurable: true,
+                  writable: true,
+                  value
+                });
+              } catch (err) {
+                try {
+                  window.addToDashboardHistory = value;
+                } catch (assignErr) {
+                  console.warn('[WeatherDashboard] Unable to store dashboard history handler', assignErr);
+                }
+              }
             }
           }
         });
@@ -530,6 +579,9 @@
     dash.style.setProperty('--wdash-grid-gap-desktop', gaps.desktop);
     dash.style.setProperty('--wdash-grid-gap-tablet', gaps.tablet);
     dash.style.setProperty('--wdash-grid-gap-mobile', gaps.mobile);
+    dash.style.setProperty('--wdash-frame-gap-desktop', gaps.desktop);
+    dash.style.setProperty('--wdash-frame-gap-tablet', gaps.tablet);
+    dash.style.setProperty('--wdash-frame-gap-mobile', gaps.mobile);
 
     applyLayoutStyle({
       baseWidth,
@@ -1217,6 +1269,18 @@
     const rate = toNumber(pressure.trendInHgPerHour);
     const change = toNumber(pressure.changeInTrendWindow);
     const outlook = data.outlook24h || {};
+    const outlookLabel = (() => {
+      const text = outlook.category || outlook.label;
+      if (text == null) return 'Outlook';
+      const str = typeof text === 'string' ? text : String(text);
+      return str.trim() || 'Outlook';
+    })();
+    const outlookSummary = (() => {
+      const text = outlook.summary || outlook.text;
+      if (text == null) return '';
+      const str = typeof text === 'string' ? text : String(text);
+      return str.trim();
+    })();
     const mode = pressureMode === 'absolute' ? 'absolute' : 'relative';
     const relative = escapeHtml(formatPressure(pressure.relativeInHg));
     const absolute = escapeHtml(formatPressure(pressure.absoluteInHg));
@@ -1228,22 +1292,34 @@
 
     return `
       <section class="wdash-card wdash-card--pressure" data-pressure-mode="${mode}">
-        ${cardHeader(CARD_TITLES.pressure, data)}
+        ${cardHeader(
+          CARD_TITLES.pressure,
+          data,
+          outlookSummary || null,
+          { fallbackToRelative: !outlookSummary }
+        )}
         <div class="wdash-pressure">
           <div class="wdash-pressure-main">
-            <div class="wdash-pressure-toggle" role="group" aria-label="Barometer mode">
-              <button type="button" class="wdash-pressure-button${mode === 'relative' ? ' is-active' : ''}" data-pressure-mode="relative" aria-pressed="${mode === 'relative'}">Relative</button>
-              <button type="button" class="wdash-pressure-button${mode === 'absolute' ? ' is-active' : ''}" data-pressure-mode="absolute" aria-pressed="${mode === 'absolute'}">Absolute</button>
+            <div class="wdash-pressure-band">
+              <div class="wdash-pressure-band-cell">
+                <div class="wdash-pressure-toggle" role="group" aria-label="Barometer mode">
+                  <button type="button" class="wdash-pressure-button${mode === 'relative' ? ' is-active' : ''}" data-pressure-mode="relative" aria-pressed="${mode === 'relative'}">Relative</button>
+                  <button type="button" class="wdash-pressure-button${mode === 'absolute' ? ' is-active' : ''}" data-pressure-mode="absolute" aria-pressed="${mode === 'absolute'}">Absolute</button>
+                </div>
+              </div>
+              <div class="wdash-pressure-band-cell">
+                <div class="wdash-pressure-reading-wrap">
+                  <div class="wdash-pressure-reading">
+                    <span class="wdash-pressure-value" data-pressure-value="relative">${relative}</span>
+                    <span class="wdash-pressure-value" data-pressure-value="absolute">${absolute}</span>
+                  </div>
+                </div>
+              </div>
+              <div class="wdash-pressure-band-cell">
+                <span class="wdash-pressure-outlook-label">${escapeHtml(outlookLabel)}</span>
+              </div>
             </div>
-            <div class="wdash-pressure-reading">
-              <span class="wdash-pressure-value" data-pressure-value="relative">${relative}</span>
-              <span class="wdash-pressure-value" data-pressure-value="absolute">${absolute}</span>
-            </div>
-          </div>
-          ${buildMetricRow(stats, 'wdash-pressure-stats')}
-          <div class="wdash-pressure-outlook">
-            <span class="wdash-outlook-label">${outlook.category || 'Outlook'}</span>
-            <span class="wdash-outlook-text">${outlook.summary || 'No forecast available.'}</span>
+            ${buildMetricRow(stats, 'wdash-pressure-stats')}
           </div>
         </div>
       </section>
@@ -1379,7 +1455,25 @@
     const currentSource = airQualityRotation.sources[airQualityRotation.index] || sources[0] || 'Outdoor';
     const airData = currentSource === 'Indoor' ? data.indoorAirQuality : data.outdoorAirQuality;
 
-    const metrics = padAirQualityMetrics(buildAirQualityMetrics(airData, currentSource));
+    const metricsBySource = {};
+    if (data.outdoorAirQuality) {
+      metricsBySource.Outdoor = buildAirQualityMetrics(data.outdoorAirQuality, 'Outdoor');
+    }
+    if (data.indoorAirQuality) {
+      metricsBySource.Indoor = buildAirQualityMetrics(data.indoorAirQuality, 'Indoor');
+    }
+
+    const baseMetrics = metricsBySource[currentSource]
+      || buildAirQualityMetrics(airData, currentSource);
+    const spansAllColumns = airQualitySpansAllColumns();
+    const normalizedMetrics = spansAllColumns
+      ? harmonizeAirQualityMetrics(baseMetrics, metricsBySource)
+      : baseMetrics;
+    const gridLayout = determineAirMetricGrid(normalizedMetrics);
+    const metrics = padAirQualityMetrics(normalizedMetrics, {
+      columns: gridLayout.columns,
+      maxRows: gridLayout.rows
+    });
     const batteryLevel = toNumber(airData?.battery);
     const batteryLabel = `${currentSource} air quality sensor`;
     const batterySlot = buildBatterySlot(batteryLevel, {
@@ -1393,9 +1487,9 @@
       <header class="wdash-card-header wdash-card-header--air">
         <div class="wdash-card-header-main">
           <h3>${escapeHtml(CARD_TITLES.air)}</h3>
+          <span class="wdash-air-source">${escapeHtml(currentSource)}</span>
         </div>
         <div class="wdash-air-header-meta">
-          <span class="wdash-air-source">${escapeHtml(currentSource)}</span>
           ${batterySlot}
         </div>
       </header>
@@ -1404,31 +1498,41 @@
     return `
       <section class="wdash-card wdash-card--air" data-aq-source="${currentSource.toLowerCase()}">
         ${headerHtml}
-        ${buildMetricRow(metrics, 'wdash-air-metrics')}
+        ${buildMetricRow(metrics, 'wdash-air-metrics', {
+          variant: 'compact',
+          columns: gridLayout.columns
+        })}
       </section>
     `;
   }
 
   function buildAirQualityMetrics(air, type) {
-    if (!air) return [{ label: 'AQI', value: '--' }];
-
     const metrics = [];
+    const pushMetric = (key, label, value, extra = {}) => {
+      metrics.push({ key, label, value, ...extra });
+    };
+
+    if (!air) {
+      pushMetric('aqi', 'AQI', '--');
+      return metrics;
+    }
+
     const aqi = toNumber(air.aqi);
     const pm25 = toNumber(air.pm25);
     const aqi24h = toNumber(air.aqi_avg_24h);
     const pm25_24h = toNumber(air.pm25_avg_24h);
 
     if (Number.isFinite(aqi)) {
-      metrics.push({ label: 'AQI', value: formatNumber(aqi, 0), color: air.aqiColor });
+      pushMetric('aqi', 'AQI', formatNumber(aqi, 0), { color: air.aqiColor });
     }
     if (Number.isFinite(aqi24h)) {
-      metrics.push({ label: 'AQI 24h AVE', value: formatNumber(aqi24h, 0), color: air.aqiColor_avg_24h });
+      pushMetric('aqi24h', 'AQI 24h AVE', formatNumber(aqi24h, 0), { color: air.aqiColor_avg_24h });
     }
     if (Number.isFinite(pm25)) {
-      metrics.push({ label: 'PM2.5', value: `${formatNumber(pm25, 1)} µg/m³` });
+      pushMetric('pm25', 'PM2.5', `${formatNumber(pm25, 1)} µg/m³`);
     }
     if (Number.isFinite(pm25_24h)) {
-      metrics.push({ label: 'PM2.5 24h AVE', value: `${formatNumber(pm25_24h, 1)} µg/m³` });
+      pushMetric('pm25_24h', 'PM2.5 24h AVE', `${formatNumber(pm25_24h, 1)} µg/m³`);
     }
 
     if (type === 'Indoor') {
@@ -1438,30 +1542,202 @@
       const co2_24h = toNumber(air.carbonDioxide_avg_24h);
 
       if (Number.isFinite(pm10)) {
-        metrics.push({ label: 'PM10', value: `${formatNumber(pm10, 1)} µg/m³` });
+        pushMetric('pm10', 'PM10', `${formatNumber(pm10, 1)} µg/m³`);
       }
       if (Number.isFinite(pm10_24h)) {
-        metrics.push({ label: 'PM10 24h AVE', value: `${formatNumber(pm10_24h, 1)} µg/m³` });
+        pushMetric('pm10_24h', 'PM10 24h AVE', `${formatNumber(pm10_24h, 1)} µg/m³`);
       }
       if (Number.isFinite(co2)) {
-        metrics.push({ label: 'CO₂', value: `${formatNumber(co2, 0)} ppm` });
+        pushMetric('co2', 'CO₂', `${formatNumber(co2, 0)} ppm`);
       }
       if (Number.isFinite(co2_24h)) {
-        metrics.push({ label: 'CO₂ 24h AVE', value: `${formatNumber(co2_24h, 0)} ppm` });
+        pushMetric('co2_24h', 'CO₂ 24h AVE', `${formatNumber(co2_24h, 0)} ppm`);
       }
     }
 
-    return metrics.length > 0 ? metrics : [{ label: 'AQI', value: '--' }];
+    if (!metrics.length) {
+      pushMetric('aqi', 'AQI', '--');
+    }
+
+    return metrics;
   }
 
-  function padAirQualityMetrics(metrics, columns = 4, rows = 2) {
+  function padAirQualityMetrics(metrics, options = {}) {
     const list = Array.isArray(metrics) ? metrics.slice() : [];
-    const totalSlots = columns * rows;
-    if (list.length >= totalSlots) return list;
+    const columns = Number.isFinite(options.columns) ? Math.max(1, Number(options.columns)) : 4;
+    const maxRows = Number.isFinite(options.maxRows) ? Math.max(1, Number(options.maxRows)) : 2;
+
+    const desiredRows = Math.max(1, Math.ceil(list.length / columns));
+    const rows = Math.min(desiredRows, maxRows);
+    const totalSlots = rows * columns;
+
+    if (list.length >= totalSlots) {
+      return list;
+    }
+
     while (list.length < totalSlots) {
       list.push({ label: '', value: '', placeholder: true });
     }
+
     return list;
+  }
+
+  function harmonizeAirQualityMetrics(currentMetrics, metricsBySource) {
+    const metricSets = [];
+    const map = metricsBySource && typeof metricsBySource === 'object' ? metricsBySource : {};
+    for (const value of Object.values(map)) {
+      if (Array.isArray(value) && value.length) {
+        metricSets.push(value);
+      }
+    }
+
+    if (Array.isArray(currentMetrics) && currentMetrics.length) {
+      const isIncluded = metricSets.some(set => set === currentMetrics);
+      if (!isIncluded) {
+        metricSets.push(currentMetrics);
+      }
+    }
+
+    if (metricSets.length < 2) {
+      return Array.isArray(currentMetrics) ? currentMetrics.slice() : [];
+    }
+
+    const keyOrder = computeAirMetricKeyOrder(metricSets);
+    if (!keyOrder.length) {
+      return Array.isArray(currentMetrics) ? currentMetrics.slice() : [];
+    }
+
+    return alignAirMetricsToOrder(currentMetrics, keyOrder);
+  }
+
+  function computeAirMetricKeyOrder(metricSets) {
+    const sets = Array.isArray(metricSets) ? metricSets : [];
+    const order = [];
+    const seen = new Set();
+    const addKey = key => {
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      order.push(key);
+    };
+
+    const hasKey = (set, key) => set.some(metric => getAirMetricKey(metric) === key);
+
+    for (const key of AIR_QUALITY_METRIC_ORDER) {
+      if (sets.some(set => hasKey(set, key))) {
+        addKey(key);
+      }
+    }
+
+    for (const set of sets) {
+      for (const metric of set) {
+        addKey(getAirMetricKey(metric));
+      }
+    }
+
+    return order;
+  }
+
+  function alignAirMetricsToOrder(metrics, keyOrder) {
+    const list = Array.isArray(metrics) ? metrics : [];
+    const keys = Array.isArray(keyOrder) ? keyOrder : [];
+    if (!keys.length) return list.slice();
+
+    const metricByKey = new Map();
+    for (const metric of list) {
+      const key = getAirMetricKey(metric);
+      if (!key || metricByKey.has(key)) continue;
+      metricByKey.set(key, metric);
+    }
+
+    return keys.map(key => {
+      const metric = metricByKey.get(key);
+      if (metric) return metric;
+      return { key, label: '', value: '', placeholder: true };
+    });
+  }
+
+  function getAirMetricKey(metric) {
+    if (!metric || typeof metric !== 'object') return null;
+    if (typeof metric.key === 'string' && metric.key.trim()) {
+      return metric.key.trim();
+    }
+    if (typeof metric.label === 'string' && metric.label.trim()) {
+      const normalized = metric.label
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/gi, '-')
+        .replace(/^-+|-+$/g, '');
+      return normalized || null;
+    }
+    return null;
+  }
+
+  function determineAirMetricGrid(metrics) {
+    const metricCount = Array.isArray(metrics) ? metrics.length : 0;
+    const safeCount = Math.max(1, Number(metricCount) || 0);
+    const spansAllColumns = airQualitySpansAllColumns();
+    const maxRowsAllowed = spansAllColumns ? 1 : 2;
+    const maxColumns = spansAllColumns ? Math.max(1, safeCount) : Math.min(4, Math.max(1, safeCount));
+    let bestColumns = maxColumns;
+    let bestRows = Math.min(maxRowsAllowed, Math.max(1, Math.ceil(safeCount / maxColumns)));
+    let bestPlaceholders = Infinity;
+
+    for (let columns = maxColumns; columns >= 1; columns -= 1) {
+      const rows = Math.max(1, Math.ceil(safeCount / columns));
+      if (rows > maxRowsAllowed) continue;
+      const placeholders = rows * columns - safeCount;
+      if (
+        placeholders < bestPlaceholders
+        || (placeholders === bestPlaceholders && rows < bestRows)
+        || (placeholders === bestPlaceholders && rows === bestRows && columns > bestColumns)
+      ) {
+        bestColumns = columns;
+        bestRows = rows;
+        bestPlaceholders = placeholders;
+      }
+    }
+
+    if (!Number.isFinite(bestPlaceholders)) {
+      bestColumns = maxColumns;
+      bestRows = Math.min(maxRowsAllowed, Math.max(1, Math.ceil(safeCount / maxColumns)));
+    }
+
+    return { columns: bestColumns, rows: bestRows };
+  }
+
+  function airQualitySpansAllColumns() {
+    const templates = layoutState?.templates || DEFAULT_TEMPLATES;
+    const breakpoints = ['desktop', 'tablet', 'mobile'];
+    for (const key of breakpoints) {
+      const template = templates?.[key] || DEFAULT_TEMPLATES[key];
+      if (templateHasFullRowOfArea(template, 'air')) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function templateHasFullRowOfArea(compiledTemplate, areaName) {
+    if (!compiledTemplate || typeof compiledTemplate.areas !== 'string' || !areaName) {
+      return false;
+    }
+    const normalizedArea = normalizeAreaToken(areaName);
+    if (!normalizedArea) return false;
+    const lines = compiledTemplate.areas
+      .split(/\n+/)
+      .map(line => line.replace(/["']/g, ' ').trim())
+      .filter(Boolean);
+    for (const line of lines) {
+      const tokens = line
+        .split(/\s+/)
+        .map(token => normalizeAreaToken(token))
+        .filter(Boolean);
+      if (!tokens.length) continue;
+      if (tokens.every(token => token === normalizedArea)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /* ---------- helpers ---------- */
@@ -2125,7 +2401,7 @@
     updateAmbientTimerDisplay();
   }
 
-  function scheduleAmbientRotation() {
+  function scheduleAmbientRotation(delayMs) {
     resetAmbientTimerState();
 
     if (ambientRotation.paused || ambientRotation.sensors.length <= 1) {
@@ -2135,11 +2411,19 @@
       return;
     }
 
-    ambientRotation.nextSwitchAt = Date.now() + ambientRotation.interval;
+    const now = Date.now();
+    let delay = Number(delayMs);
+    if (!Number.isFinite(delay) || delay <= 0) {
+      delay = ambientRotation.interval;
+    } else {
+      delay = Math.min(delay, ambientRotation.interval);
+    }
+
+    ambientRotation.nextSwitchAt = now + delay;
     ambientRotation.timer = setTimeout(() => {
       ambientRotation.timer = null;
       advanceAmbientSensor();
-    }, ambientRotation.interval);
+    }, delay);
 
     ensureAmbientCountdownTimer();
     updateAmbientTimerDisplay();
@@ -2233,6 +2517,15 @@
     const container = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-ambient');
     if (!container) return;
 
+    const now = Date.now();
+    const prevInterval = ambientRotation.interval;
+    const prevNextSwitchAt = Number.isFinite(ambientRotation.nextSwitchAt) ? ambientRotation.nextSwitchAt : null;
+    const prevSensorCount = Array.isArray(ambientRotation.sensors) ? ambientRotation.sensors.length : 0;
+    let remaining = null;
+    if (!ambientRotation.paused && prevSensorCount > 1 && prevNextSwitchAt != null) {
+      remaining = prevNextSwitchAt - now;
+    }
+
     const sensors = Array.isArray(data?.ambientSensors) ? data.ambientSensors.filter(Boolean) : [];
     ambientRotation.sensors = sensors;
     ambientRotation.tempUnit = data?.ambientTemperatureUnit || '°F';
@@ -2243,14 +2536,31 @@
       ambientRotation.index = ambientRotation.sensors.length ? ambientRotation.sensors.length - 1 : 0;
     }
 
-    stopAmbientRotationTimer();
+    resetAmbientTimerState();
+    ambientRotation.nextSwitchAt = null;
+
+    const hasMultipleSensors = ambientRotation.sensors.length > 1;
+    const canAutoRotate = hasMultipleSensors && !ambientRotation.paused;
+    const intervalChanged = ambientRotation.interval !== prevInterval;
+    if (Number.isFinite(remaining)) {
+      remaining = intervalChanged ? Math.min(Math.max(remaining, 0), ambientRotation.interval) : Math.max(remaining, 0);
+    }
+
+    if (canAutoRotate && Number.isFinite(remaining) && remaining <= 0) {
+      advanceAmbientSensor();
+      updateAmbientTimerDisplay();
+      return;
+    }
 
     updateAmbientDisplay();
 
-    if (ambientRotation.sensors.length <= 1) {
+    if (!hasMultipleSensors) {
       ambientRotation.index = 0;
-    } else if (!ambientRotation.paused) {
-      scheduleAmbientRotation();
+      clearAmbientCountdownTimer();
+    } else if (canAutoRotate) {
+      scheduleAmbientRotation(remaining);
+    } else {
+      clearAmbientCountdownTimer();
     }
 
     updateAmbientTimerDisplay();
@@ -2258,7 +2568,6 @@
 
   function clearAmbientRotation() {
     stopAmbientRotationTimer();
-    clearAirQualityRotation();
     ambientRotation.sensors = [];
     ambientRotation.index = 0;
     ambientRotation.paused = false;
@@ -2461,6 +2770,7 @@
 
   function setupAirQualityRotation(data) {
     airQualityRotation.lastData = data;
+    airQualityRotation.interval = DEFAULT_AIR_QUALITY_ROTATION_INTERVAL_MS;
     const sources = [];
     if (data?.outdoorAirQuality) sources.push('Outdoor');
     if (data?.indoorAirQuality) sources.push('Indoor');
@@ -2979,7 +3289,7 @@
 .wdash-source-tile { opacity: 0 !important; pointer-events: none !important; }
 .wdash-root { position: relative; width: 100%; height: 100%; --wdash-base-width: 1200px; --wdash-base-height: 900px; --wdash-scale: 1; --wdash-render-width: var(--wdash-base-width); --wdash-render-height: var(--wdash-base-height); background: rgba(4, 9, 20, 0.85); border-radius: 12px; overflow: hidden; box-sizing: border-box; display: flex; align-items: center; justify-content: center; }
 .wdash-frame { position: relative; width: var(--wdash-render-width); height: var(--wdash-render-height); overflow: hidden; box-sizing: border-box; }
-.wdash { width: var(--wdash-base-width); height: var(--wdash-base-height); font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif; color: #f4f6ff; background: linear-gradient(145deg, rgba(27,35,58,0.95), rgba(13,18,32,0.95)); backdrop-filter: blur(4px); border-radius: 12px; padding: 18px; box-sizing: border-box; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05); transform-origin: top left; transform: scale(var(--wdash-scale)); }
+.wdash { width: var(--wdash-base-width); height: var(--wdash-base-height); font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif; color: #f4f6ff; background: linear-gradient(145deg, rgba(27,35,58,0.95), rgba(13,18,32,0.95)); backdrop-filter: blur(4px); border-radius: 12px; --wdash-frame-gap-desktop: 14px; --wdash-frame-gap-tablet: 12px; --wdash-frame-gap-mobile: 10px; --wdash-frame-gap: var(--wdash-frame-gap-desktop); padding: var(--wdash-frame-gap, 18px); box-sizing: border-box; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05); transform-origin: top left; transform: scale(var(--wdash-scale)); }
 .wdash-grid { display: grid; gap: var(--wdash-grid-gap-desktop, ${DEFAULT_GAPS.desktop}); height: 100%; width: 100%; grid-template-columns: var(--wdash-grid-columns-desktop, ${DEFAULT_COLUMNS.desktop}); grid-template-rows: var(--wdash-grid-rows-desktop, ${DEFAULT_TEMPLATES.desktop.rows}); grid-template-areas: var(--wdash-grid-areas-desktop, ${DEFAULT_TEMPLATES.desktop.areas}); }
 .wdash-grid[data-empty="true"] { display: flex; align-items: center; justify-content: center; }
 .wdash-grid > * { min-height: 0; }
@@ -2994,7 +3304,8 @@
 .wdash-card-header--ambient .wdash-ambient-name { margin: 0; }
 .wdash-card-header--ambient .wdash-ambient-rotation { margin-left: auto; text-align: right; }
 .wdash-card-header--air { align-items: center; gap: 10px; }
-.wdash-card-header--air .wdash-card-header-main { align-items: flex-start; }
+.wdash-card-header--air .wdash-card-header-main { flex-direction: row; align-items: baseline; gap: 8px; }
+.wdash-card--solar .wdash-card-header { position: relative; z-index: 2; background: transparent; }
 .wdash-air-header-meta { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
 .wdash-air-source { font-size: 0.62rem; letter-spacing: 0.08em; text-transform: uppercase; color: #9badcf; }
 .wdash-air-battery { display: inline-flex; align-items: center; }
@@ -3020,7 +3331,7 @@
 .wdash-rain-battery { display: inline-flex; align-items: center; justify-content: center; }
 .wdash-card--pressure { grid-area: pressure; }
 .wdash-card--solar { grid-area: solar; }
-.wdash-card--air { grid-area: air; }
+.wdash-card--air { grid-area: air; gap: 8px; }
 .wdash-temp, .wdash-wind, .wdash-solar, .wdash-pressure { display: flex; flex-direction: column; gap: 10px; flex: 1; }
 .wdash-pressure { gap: 10px; }
 .wdash-temp-wind-main { display: flex; gap: 14px; flex: 1; }
@@ -3040,7 +3351,9 @@
 .wdash-temp-extrema--high .wdash-temp-extrema-value { color: #ffb95a; }
 .wdash-temp-extrema--low .wdash-temp-extrema-value { color: #7cc5ff; }
 .wdash-metric-row { display: flex; flex-wrap: wrap; gap: 10px; width: 100%; }
-.wdash-metric { flex: 1 1 auto; min-width: 0; background: rgba(255,255,255,0.05); border-radius: 12px; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px; text-align: center; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04); }
+.wdash-metric-row--compact { display: grid; grid-template-columns: repeat(var(--wdash-columns, 4), minmax(0, 1fr)); gap: 4px 8px; align-content: start; }
+.wdash-metric { flex: 1 1 auto; min-width: 0; background: transparent; border-radius: 12px; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px; text-align: center; box-shadow: none; }
+.wdash-metric--tinted { box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08); }
 .wdash-metric-row--layout-fill { flex-wrap: nowrap; }
 .wdash-metric-row--layout-fill .wdash-metric { flex-grow: 0; flex-shrink: 1; flex-basis: auto; }
 .wdash-metric-label { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.08em; color: #8ea0c8; }
@@ -3145,23 +3458,25 @@
 .wdash-rain-stats.wdash-metric-row--table .wdash-metric:last-child { border-bottom: none; }
 .wdash-rain-stats.wdash-metric-row--table .wdash-metric-label { text-align: left; font-size: 0.9rem; font-weight: 600; color: #c9d8ff; }
 .wdash-rain-stats.wdash-metric-row--table .wdash-metric-value { text-align: right; font-size: 0.9rem; font-weight: 600; color: #f4f6ff; font-variant-numeric: tabular-nums; }
-.wdash-pressure-main { display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 16px; }
+.wdash-pressure-main { display: flex; flex-direction: column; gap: 16px; align-items: stretch; }
+.wdash-pressure-band { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: center; justify-items: center; gap: 12px; }
+.wdash-pressure-band-cell { display: flex; align-items: center; justify-content: center; text-align: center; }
+.wdash-pressure-reading-wrap { display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .wdash-pressure-toggle { display: inline-flex; gap: 4px; padding: 4px; border-radius: 999px; background: rgba(255,255,255,0.05); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04); }
 .wdash-pressure-button { border: none; background: transparent; color: #9badcf; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.12em; padding: 5px 12px; border-radius: 999px; cursor: pointer; transition: all 0.2s ease; }
 .wdash-pressure-button:hover { color: #f4f6ff; }
 .wdash-pressure-button.is-active { background: linear-gradient(140deg, #5ab3ff, #3f8bff); color: #0d1426; box-shadow: 0 8px 16px rgba(74,150,255,0.35); }
 .wdash-pressure-reading { font-size: 1.82rem; font-weight: 700; color: #e3edff; min-height: 2.2rem; display: flex; align-items: center; justify-content: center; }
+.wdash-pressure-outlook-label { font-weight: 700; color: #ffb95a; text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.75rem; white-space: nowrap; display: inline-flex; align-items: center; justify-content: center; }
 .wdash-temp-wind-footer { position: relative; }
 .wdash-temp-wind-footer .wdash-temp-wind-details { position: relative; z-index: 1; }
 .wdash-pressure-value { display: none; }
 .wdash-card--pressure[data-pressure-mode="relative"] .wdash-pressure-value[data-pressure-value="relative"],
 .wdash-card--pressure[data-pressure-mode="absolute"] .wdash-pressure-value[data-pressure-value="absolute"] { display: inline-flex; }
 .wdash-pressure-stats .wdash-metric-value { font-size: 0.88rem; }
-.wdash-pressure-outlook { background: rgba(255,255,255,0.06); border-radius: 10px; padding: 8px 10px; font-size: 0.76rem; display: grid; gap: 4px; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04); }
-.wdash-outlook-label { font-weight: 700; color: #ffb95a; text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.75rem; }
-.wdash-outlook-text { line-height: 1.35; }
 .wdash-solar { display: flex; flex-direction: column; gap: 6px; flex: 1; }
 .wdash-sun-graphic { position: relative; width: 100%; aspect-ratio: 2.6 / 1; border-radius: 16px; background: transparent; overflow: hidden; }
+.wdash-card--solar .wdash-sun-graphic { margin-top: -20px; }
 .wdash-sun-arc { position: absolute; inset: 16% 12% 42%; border: 2px solid rgba(255,255,255,0.25); border-bottom: none; border-radius: 100% 100% 0 0 / 100% 100% 0 0; }
 .wdash-sun-horizon { position: absolute; left: 12%; right: 12%; bottom: 42%; height: 2px; background: rgba(255,255,255,0.25); }
 .wdash-sun-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
@@ -3197,18 +3512,21 @@
 .wdash-sun-time { position: absolute; font-size: 0.8rem; font-weight: 600; color: #c9d8ff; transform: translate(-50%, 8px); white-space: nowrap; }
 .wdash-sun-time--rise { /* Positioned by inline style */ }
 .wdash-sun-time--set { /* Positioned by inline style */ }
-.wdash-air-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-rows: auto; gap: 6px 10px; align-content: start; }
-.wdash-air-metrics .wdash-metric { flex: unset; min-height: 0; width: 100%; height: 100%; }
-.wdash-air-metrics .wdash-metric-value { font-size: 1.02rem; }
+.wdash-metric-row--compact .wdash-metric { flex: unset; min-height: 0; width: 100%; height: 100%; padding: 4px 6px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 2px 6px; text-align: left; }
+.wdash-metric-row--compact .wdash-metric-label { font-size: 0.56rem; letter-spacing: 0.12em; align-self: center; }
+.wdash-metric-row--compact .wdash-metric-value { font-size: 0.96rem; justify-self: end; align-self: center; }
+.wdash-metric-row--compact .wdash-metric-sub { grid-column: 1 / -1; justify-self: start; }
+.wdash-air-metrics { grid-auto-rows: auto; }
+.wdash-air-metrics .wdash-metric-label { white-space: normal; line-height: 1.3; overflow-wrap: anywhere; }
+.wdash-air-metrics .wdash-metric-value { font-size: 1rem; white-space: nowrap; text-align: right; }
 .wdash-air-metrics .wdash-metric--placeholder { visibility: hidden; pointer-events: none; }
 @media (max-width: 1100px) {
   .wdash-grid { gap: var(--wdash-grid-gap-tablet, ${DEFAULT_GAPS.tablet}); grid-template-columns: var(--wdash-grid-columns-tablet, ${DEFAULT_COLUMNS.tablet}); grid-template-rows: var(--wdash-grid-rows-tablet, ${DEFAULT_TEMPLATES.tablet.rows}); grid-template-areas: var(--wdash-grid-areas-tablet, ${DEFAULT_TEMPLATES.tablet.areas}); }
-}
-@media (max-width: 900px) {
-  .wdash { padding: 14px; }
+  .wdash { --wdash-frame-gap: var(--wdash-frame-gap-tablet, var(--wdash-frame-gap-desktop, 18px)); }
 }
 @media (max-width: 720px) {
   .wdash-grid { gap: var(--wdash-grid-gap-mobile, ${DEFAULT_GAPS.mobile}); grid-template-columns: var(--wdash-grid-columns-mobile, ${DEFAULT_COLUMNS.mobile}); grid-template-rows: var(--wdash-grid-rows-mobile, ${DEFAULT_TEMPLATES.mobile.rows}); grid-template-areas: var(--wdash-grid-areas-mobile, ${DEFAULT_TEMPLATES.mobile.areas}); }
+  .wdash { --wdash-frame-gap: var(--wdash-frame-gap-mobile, var(--wdash-frame-gap-tablet, var(--wdash-frame-gap-desktop, 18px))); }
   .wdash-card { padding: 10px; }
   .wdash-metric-row { flex-direction: column; }
   .wdash-metric { min-width: unset; }
