@@ -10,7 +10,9 @@
   const DISPLAY_TILE_ID = 'tile-0';
   const CSS_ID = 'weather-dashboard-css';
   const TEMP_RANGE = { min: -40, max: 120 };
-  const AMBIENT_ROTATION_INTERVAL_MS = 5000;
+  const DEFAULT_AMBIENT_ROTATION_INTERVAL_MS = 5000;
+  const MIN_AMBIENT_ROTATION_SECONDS = 3;
+  const MAX_AMBIENT_ROTATION_SECONDS = 120;
   const INIT_RETRY_LIMIT = 40;
   const INIT_RETRY_DELAY = 250;
   const DATA_REFRESH_INTERVAL = 5000;
@@ -153,7 +155,7 @@
     timer: null,
     sensors: [],
     index: 0,
-    interval: AMBIENT_ROTATION_INTERVAL_MS,
+    interval: DEFAULT_AMBIENT_ROTATION_INTERVAL_MS,
     tempUnit: '°F',
     humidityUnit: '%',
     countdownTimer: null,
@@ -229,24 +231,58 @@
   function patchDashboardGlitches() {
     if (typeof window === 'undefined') return;
 
-    if (!window.__wdashHistoryPatched && typeof window.addToDashboardHistory === 'function') {
-      const original = window.addToDashboardHistory;
-      window.addToDashboardHistory = function patchedAddToDashboardHistory(...args) {
-        try {
-          return original.apply(this, args);
-        } catch (err) {
-          console.warn('[WeatherDashboard] Suppressed dashboard history error', err);
-          return undefined;
-        }
+    if (!window.__wdashHistoryPatched) {
+      const installPatchedHistory = original => {
+        const patched = function patchedAddToDashboardHistory(...args) {
+          try {
+            return original.apply(this, args);
+          } catch (err) {
+            console.warn('[WeatherDashboard] Suppressed dashboard history error', err);
+            return undefined;
+          }
+        };
+        Object.defineProperty(window, 'addToDashboardHistory', {
+          configurable: true,
+          writable: true,
+          value: patched
+        });
+        window.__wdashHistoryPatched = true;
       };
-      window.__wdashHistoryPatched = true;
+
+      if (typeof window.addToDashboardHistory === 'function') {
+        installPatchedHistory(window.addToDashboardHistory);
+      } else if (!window.__wdashHistoryPatchedPending) {
+        Object.defineProperty(window, 'addToDashboardHistory', {
+          configurable: true,
+          get() {
+            return undefined;
+          },
+          set(value) {
+            if (typeof value === 'function') {
+              installPatchedHistory(value);
+            } else {
+              Object.defineProperty(window, 'addToDashboardHistory', {
+                configurable: true,
+                writable: true,
+                value
+              });
+            }
+          }
+        });
+        window.__wdashHistoryPatchedPending = true;
+      }
     }
 
     if (!window.__wdashSocketGuard) {
       window.addEventListener('error', event => {
         if (!event) return;
         const message = String(event.message || '');
-        if (message.includes("Cannot set properties of undefined (setting 'value')") && event.filename && event.filename.indexOf('app.js') !== -1) {
+        const isDashboardValueError = (
+          message.includes("Cannot set properties of undefined (setting 'value')") ||
+          message.includes('value is not defined') ||
+          message.includes("can't access property \"value\"")
+        );
+        if (isDashboardValueError && event.filename && event.filename.indexOf('app.js') !== -1) {
           event.preventDefault();
           if (typeof event.stopImmediatePropagation === 'function') {
             event.stopImmediatePropagation();
@@ -324,7 +360,6 @@
       grid.innerHTML = `<div class="wdash-empty">Waiting for weather data…</div>`;
       clearAmbientRotation();
       toggleSourceTileMask(false);
-      clearAirQualityRotation();
       stopHubClock();
       teardownTempWindGaugeSizing();
       return;
@@ -2180,6 +2215,20 @@
     }
   }
 
+  function resolveAmbientRotationIntervalMs(data) {
+    const rawSeconds = data?.ambientRotationSeconds;
+    if (rawSeconds == null) return DEFAULT_AMBIENT_ROTATION_INTERVAL_MS;
+
+    const seconds = Number(rawSeconds);
+    if (!Number.isFinite(seconds)) return DEFAULT_AMBIENT_ROTATION_INTERVAL_MS;
+
+    const clamped = Math.min(
+      MAX_AMBIENT_ROTATION_SECONDS,
+      Math.max(MIN_AMBIENT_ROTATION_SECONDS, seconds)
+    );
+    return Math.round(clamped * 1000);
+  }
+
   function setupAmbientRotation(data) {
     const container = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-ambient');
     if (!container) return;
@@ -2188,20 +2237,19 @@
     ambientRotation.sensors = sensors;
     ambientRotation.tempUnit = data?.ambientTemperatureUnit || '°F';
     ambientRotation.humidityUnit = data?.ambientHumidityUnit || '%';
-    ambientRotation.interval = AMBIENT_ROTATION_INTERVAL_MS;
+    ambientRotation.interval = resolveAmbientRotationIntervalMs(data);
 
     if (ambientRotation.index >= ambientRotation.sensors.length) {
       ambientRotation.index = ambientRotation.sensors.length ? ambientRotation.sensors.length - 1 : 0;
     }
 
+    stopAmbientRotationTimer();
+
     updateAmbientDisplay();
 
     if (ambientRotation.sensors.length <= 1) {
       ambientRotation.index = 0;
-      stopAmbientRotationTimer();
-    } else if (ambientRotation.paused) {
-      stopAmbientRotationTimer();
-    } else if (!ambientRotation.timer) {
+    } else if (!ambientRotation.paused) {
       scheduleAmbientRotation();
     }
 
@@ -3060,7 +3108,6 @@
 .wdash-wind-compass svg path, .wdash-wind-compass svg line { transition: none !important; }
 .wdash-ambient-circle > .wdash-ambient-reading,
 .wdash-ambient-circle > .wdash-ambient-reading + .wdash-ambient-label,
-.wdash-ambient-circle > .wdash-ambient-reading,
 .wdash-ambient-circle > .wdash-ambient-label { position: relative; z-index: 2; }
 .wdash-ambient-reading { font-size: 1.8rem; font-weight: 700; }
 .wdash-ambient-label { font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.8; }
@@ -3074,8 +3121,6 @@
 .wdash-ambient-timer:disabled { cursor: not-allowed; opacity: 0.55; filter: drop-shadow(0 8px 16px rgba(0,0,0,0.35)); }
 .wdash-ambient-timer-icon { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .wdash-ambient-timer-countdown { position: relative; z-index: 1; font-size: 0.76rem; font-weight: 700; letter-spacing: 0.02em; color: #f5f9ff; text-shadow: 0 2px 6px rgba(0,0,0,0.5); }
-.wdash-ambient-reading { font-size: 1.8rem; font-weight: 700; }
-.wdash-ambient-label { font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.8; }
 .wdash-ambient-name { font-weight: 700; }
 .wdash-ambient-rotation { font-size: 0.75rem; color: #8ea0c8; }
 .wdash-ambient-rotation:empty { display: none; }

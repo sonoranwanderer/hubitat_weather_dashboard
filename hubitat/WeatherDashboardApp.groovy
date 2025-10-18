@@ -618,26 +618,8 @@ def refreshWeatherData() {
         }
     }
 
-    def metadata = [
-        generatedAt: generated.format("yyyy-MM-dd'T'HH:mm:ssXXX", tz),
-        sourceDevices: devices.collect { dev -> [id: dev.id, name: dev.displayName] }
-    ]
-    if (tz) {
-        metadata.weatherStationTimezone = tz?.ID
-    }
-    if (stationUpdatedAt) {
-        metadata.weatherStationTime = stationUpdatedAt
-    }
     def layoutOverride = parseLayoutOverrideSetting()
-    if (layoutOverride) {
-        metadata.layout = layoutOverride
-    }
-    def primary = primaryWeatherDevice()
-    if (primary) {
-        metadata.sourceDevice = [id: primary.id, name: primary.displayName]
-        metadata.primaryDeviceId = primary.id
-    }
-    payload.metadata = metadata
+    payload.metadata = buildMetadata(generated, tz, stationUpdatedAt, layoutOverride)
 
     def json = JsonOutput.toJson(payload)
     def pretty = JsonOutput.prettyPrint(json)
@@ -679,6 +661,22 @@ private Map parseLayoutOverrideSetting() {
         }
     }
     return null
+}
+
+private Map buildMetadata(Date generated, TimeZone tz, String stationUpdatedAt, Map layoutOverride) {
+    def metadata = [
+        generatedAt: generated.format("yyyy-MM-dd'T'HH:mm:ssXXX", tz)
+    ]
+    if (tz) {
+        metadata.weatherStationTimezone = tz?.ID
+    }
+    if (stationUpdatedAt) {
+        metadata.weatherStationTime = stationUpdatedAt
+    }
+    if (layoutOverride) {
+        metadata.layout = layoutOverride
+    }
+    metadata
 }
 
 private Map buildAmbientSensorsPayload() {
