@@ -28,6 +28,7 @@ definition(
 
 preferences {
     page(name: "mainPage", title: "Weather Dashboard", install: true, uninstall: true)
+    page(name: "diagnosticsPage")
 }
 
 def mainPage() {
@@ -138,15 +139,12 @@ def mainPage() {
             input name: "dashboardDeviceLabel", type: "text", title: "Dashboard device label", defaultValue: "Weather Dashboard"
         }
 
-        if (state?.lastPrettyPayload) {
-            section("Latest payload preview") {
-                paragraph "<pre style='white-space:pre-wrap;font-family:monospace;'>${htmlEncode(state.lastPrettyPayload)}</pre>"
-            }
-        }
-
         section("Actions") {
             input name: "saveAndPreview", type: "button", title: "Save & Refresh"
             input name: "refreshNow", type: "button", title: "Refresh"
+        }
+        section("Diagnostics") {
+            href "diagnosticsPage", title: "View Latest Payload", description: "Show the last generated JSON payload for troubleshooting."
         }
     }
 }
@@ -629,7 +627,7 @@ def refreshWeatherData() {
 
     def child = getChildDevice(childDeviceDni())
     if (child) {
-        child.updateDashboardData(json, pretty)
+        child.updateDashboardData(json)
     }
 }
 
@@ -1113,4 +1111,14 @@ private BigDecimal cardinalToDegrees(String cardinal) {
 private String htmlEncode(String value) {
     if (!value) return ''
     value.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+}
+
+def diagnosticsPage() {
+    refreshWeatherData()
+    dynamicPage(name: "diagnosticsPage", title: "Diagnostics", install: false, uninstall: false) {
+        section("Latest Payload") {
+            def payload = state.lastPrettyPayload ?: 'No payload generated yet. Please save settings and refresh.'
+            paragraph "<pre style='white-space:pre-wrap;font-family:monospace;'>${htmlEncode(payload)}</pre>"
+        }
+    }
 }

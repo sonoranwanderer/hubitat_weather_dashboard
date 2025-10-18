@@ -43,11 +43,9 @@ definition(
         attribute attr, "string"
     }
 
-    attribute "dashboardPretty", "string"
     attribute "dashboardUpdated", "string"
 
-    command "updateDashboardData", [[name: "Dashboard JSON", type: "STRING", description: "JSON payload for dashboard rendering"],
-                                     [name: "Pretty JSON", type: "STRING", description: "Optional formatted payload"]]
+    command "updateDashboardData", [[name: "Dashboard JSON", type: "STRING", description: "JSON payload for dashboard rendering"]]
     command "clearDashboardData"
 }
 
@@ -83,11 +81,11 @@ def clearDashboardData() {
     (STATIC_SEGMENTS.values() + AMBIENT_SEGMENT_ATTRS).each { attr ->
         sendSegmentJson(attr, EMPTY_JSON)
     }
-    sendEvent(name: "dashboardPretty", value: EMPTY_JSON, isStateChange: true)
+    state.clear() // Clear last-sent segment cache
     sendEvent(name: "dashboardUpdated", value: timestamp(), isStateChange: true)
 }
 
-def updateDashboardData(String json, String pretty = null) {
+def updateDashboardData(String json) {
     if (!json) {
         if (enableDebug) log.debug "Received empty dashboard payload"
         clearDashboardData()
@@ -108,21 +106,6 @@ def updateDashboardData(String json, String pretty = null) {
     sendMetaSegment(segments.meta)
     sendLayoutSegment(segments.layout)
     sendAmbientSegments(segments.ambient)
-
-    if (pretty && pretty.size() <= MAX_EVENT_VALUE_LENGTH) {
-        sendEvent(name: "dashboardPretty", value: pretty, isStateChange: true)
-    } else if (pretty) {
-        def placeholder = JsonOutput.toJson([message: "Pretty payload omitted (length ${pretty.size()} exceeds limit)"])
-        sendEvent(name: "dashboardPretty", value: placeholder, isStateChange: true)
-    } else {
-        def prettyText = JsonOutput.prettyPrint(json)
-        if (prettyText.size() <= MAX_EVENT_VALUE_LENGTH) {
-            sendEvent(name: "dashboardPretty", value: prettyText, isStateChange: true)
-        } else {
-            def placeholder = JsonOutput.toJson([message: "Pretty payload omitted (length ${prettyText.size()} exceeds limit)"])
-            sendEvent(name: "dashboardPretty", value: placeholder, isStateChange: true)
-        }
-    }
 
     sendEvent(name: "dashboardUpdated", value: timestamp(), isStateChange: true)
 }
@@ -281,15 +264,21 @@ private void sendSegmentMap(String attr, Map data) {
 }
 
 private void sendSegmentJson(String attr, String json) {
-    def payload = json ?: EMPTY_JSON
-    if (payload.length() > SEGMENT_SIZE_LIMIT) {
-        log.warn "Weather Dashboard Device: Segment ${attr} exceeds recommended size (${payload.length()} bytes)"
+    def newPayload = json ?: EMPTY_JSON
+    def stateKey = "last_${attr}"
+    def lastPayload = state[stateKey]
+
+    if (newPayload != lastPayload) {
+        if (newPayload.length() > SEGMENT_SIZE_LIMIT) {
+            if (enableDebug) log.debug "Weather Dashboard Device: Segment ${attr} exceeds recommended size (${newPayload.length()} bytes)"
+        }
+        if (newPayload.length() > MAX_EVENT_VALUE_LENGTH) {
+            log.error "Weather Dashboard Device: Segment ${attr} exceeds Hubitat event limit (${newPayload.length()} chars)"
+            newPayload = newPayload.take(MAX_EVENT_VALUE_LENGTH)
+        }
+        sendEvent(name: attr, value: newPayload, isStateChange: true)
+        state[stateKey] = newPayload
     }
-    if (payload.length() > MAX_EVENT_VALUE_LENGTH) {
-        log.error "Weather Dashboard Device: Segment ${attr} exceeds Hubitat event limit (${payload.length()} chars)"
-        payload = payload.take(MAX_EVENT_VALUE_LENGTH)
-    }
-    sendEvent(name: attr, value: payload, isStateChange: true)
 }
 
 private void sendAmbientSegments(List<Map> segments) {
