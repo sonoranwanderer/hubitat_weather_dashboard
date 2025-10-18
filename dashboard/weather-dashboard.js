@@ -1454,13 +1454,23 @@
     return metrics.length > 0 ? metrics : [{ label: 'AQI', value: '--' }];
   }
 
-  function padAirQualityMetrics(metrics, columns = 4, rows = 2) {
+  function padAirQualityMetrics(metrics, options = {}) {
     const list = Array.isArray(metrics) ? metrics.slice() : [];
-    const totalSlots = columns * rows;
-    if (list.length >= totalSlots) return list;
+    const columns = Number.isFinite(options.columns) ? Math.max(1, Number(options.columns)) : 4;
+    const maxRows = Number.isFinite(options.maxRows) ? Math.max(1, Number(options.maxRows)) : 2;
+
+    const desiredRows = Math.max(1, Math.ceil(list.length / columns));
+    const rows = Math.min(desiredRows, maxRows);
+    const totalSlots = rows * columns;
+
+    if (list.length >= totalSlots) {
+      return list;
+    }
+
     while (list.length < totalSlots) {
       list.push({ label: '', value: '', placeholder: true });
     }
+
     return list;
   }
 
