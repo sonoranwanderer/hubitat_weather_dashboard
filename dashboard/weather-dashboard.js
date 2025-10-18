@@ -1303,8 +1303,8 @@
             <div class="wdash-pressure-band">
               <div class="wdash-pressure-band-cell">
                 <div class="wdash-pressure-toggle" role="group" aria-label="Barometer mode">
-                  <button type="button" class="wdash-pressure-button${mode === 'relative' ? ' is-active' : ''}" data-pressure-mode="relative" aria-pressed="${mode === 'relative'}">Relative</button>
-                  <button type="button" class="wdash-pressure-button${mode === 'absolute' ? ' is-active' : ''}" data-pressure-mode="absolute" aria-pressed="${mode === 'absolute'}">Absolute</button>
+                  <button type="button" class="wdash-pressure-button${mode === 'relative' ? ' is-active' : ''}" data-pressure-mode="relative" aria-pressed="${mode === 'relative'}" aria-label="Relative">Rel</button>
+                  <button type="button" class="wdash-pressure-button${mode === 'absolute' ? ' is-active' : ''}" data-pressure-mode="absolute" aria-pressed="${mode === 'absolute'}" aria-label="Absolute">Abs</button>
                 </div>
               </div>
               <div class="wdash-pressure-band-cell">
@@ -3463,7 +3463,7 @@
 .wdash-pressure-band-cell { display: flex; align-items: center; justify-content: center; text-align: center; }
 .wdash-pressure-reading-wrap { display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .wdash-pressure-toggle { display: inline-flex; gap: 4px; padding: 4px; border-radius: 999px; background: rgba(255,255,255,0.05); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04); }
-.wdash-pressure-button { border: none; background: transparent; color: #9badcf; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.12em; padding: 5px 12px; border-radius: 999px; cursor: pointer; transition: all 0.2s ease; }
+.wdash-pressure-button { border: none; background: transparent; color: #9badcf; font-size: 0.7rem; font-weight: 600; text-transform: none; letter-spacing: 0.08em; padding: 4px 10px; border-radius: 999px; cursor: pointer; transition: all 0.2s ease; }
 .wdash-pressure-button:hover { color: #f4f6ff; }
 .wdash-pressure-button.is-active { background: linear-gradient(140deg, #5ab3ff, #3f8bff); color: #0d1426; box-shadow: 0 8px 16px rgba(74,150,255,0.35); }
 .wdash-pressure-reading { font-size: 1.82rem; font-weight: 700; color: #e3edff; min-height: 2.2rem; display: flex; align-items: center; justify-content: center; }
