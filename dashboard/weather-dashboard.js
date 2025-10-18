@@ -231,24 +231,58 @@
   function patchDashboardGlitches() {
     if (typeof window === 'undefined') return;
 
-    if (!window.__wdashHistoryPatched && typeof window.addToDashboardHistory === 'function') {
-      const original = window.addToDashboardHistory;
-      window.addToDashboardHistory = function patchedAddToDashboardHistory(...args) {
-        try {
-          return original.apply(this, args);
-        } catch (err) {
-          console.warn('[WeatherDashboard] Suppressed dashboard history error', err);
-          return undefined;
-        }
+    if (!window.__wdashHistoryPatched) {
+      const installPatchedHistory = original => {
+        const patched = function patchedAddToDashboardHistory(...args) {
+          try {
+            return original.apply(this, args);
+          } catch (err) {
+            console.warn('[WeatherDashboard] Suppressed dashboard history error', err);
+            return undefined;
+          }
+        };
+        Object.defineProperty(window, 'addToDashboardHistory', {
+          configurable: true,
+          writable: true,
+          value: patched
+        });
+        window.__wdashHistoryPatched = true;
       };
-      window.__wdashHistoryPatched = true;
+
+      if (typeof window.addToDashboardHistory === 'function') {
+        installPatchedHistory(window.addToDashboardHistory);
+      } else if (!window.__wdashHistoryPatchedPending) {
+        Object.defineProperty(window, 'addToDashboardHistory', {
+          configurable: true,
+          get() {
+            return undefined;
+          },
+          set(value) {
+            if (typeof value === 'function') {
+              installPatchedHistory(value);
+            } else {
+              Object.defineProperty(window, 'addToDashboardHistory', {
+                configurable: true,
+                writable: true,
+                value
+              });
+            }
+          }
+        });
+        window.__wdashHistoryPatchedPending = true;
+      }
     }
 
     if (!window.__wdashSocketGuard) {
       window.addEventListener('error', event => {
         if (!event) return;
         const message = String(event.message || '');
-        if (message.includes("Cannot set properties of undefined (setting 'value')") && event.filename && event.filename.indexOf('app.js') !== -1) {
+        const isDashboardValueError = (
+          message.includes("Cannot set properties of undefined (setting 'value')") ||
+          message.includes('value is not defined') ||
+          message.includes("can't access property \"value\"")
+        );
+        if (isDashboardValueError && event.filename && event.filename.indexOf('app.js') !== -1) {
           event.preventDefault();
           if (typeof event.stopImmediatePropagation === 'function') {
             event.stopImmediatePropagation();
