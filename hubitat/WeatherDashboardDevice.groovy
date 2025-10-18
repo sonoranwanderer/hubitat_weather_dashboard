@@ -14,6 +14,7 @@ import groovy.transform.Field
 @Field static final Integer AMBIENT_SENSORS_PER_SEGMENT = 4
 @Field static final Integer MAX_AMBIENT_SEGMENTS = 6
 @Field static final String EMPTY_JSON = '{}'
+@Field static final String PREF_SILENT_UPDATES = 'silentAttributeUpdates'
 @Field static final Map<String, String> STATIC_SEGMENTS = [
     core  : 'segmentCore',
     precip: 'segmentPrecip',
@@ -53,6 +54,7 @@ definition(
 
 preferences {
     input name: "enableDebug", type: "bool", title: "Enable debug logging", defaultValue: false
+    input name: PREF_SILENT_UPDATES, type: "bool", title: "Update attributes without emitting events", defaultValue: false
 }
 
 def installed() {
@@ -83,8 +85,8 @@ def clearDashboardData() {
     (STATIC_SEGMENTS.values() + AMBIENT_SEGMENT_ATTRS).each { attr ->
         sendSegmentJson(attr, EMPTY_JSON)
     }
-    sendEvent(name: "dashboardPretty", value: EMPTY_JSON, isStateChange: true)
-    sendEvent(name: "dashboardUpdated", value: timestamp(), isStateChange: true)
+    publishAttribute("dashboardPretty", EMPTY_JSON)
+    publishAttribute("dashboardUpdated", timestamp())
 }
 
 def updateDashboardData(String json, String pretty = null) {
@@ -110,21 +112,21 @@ def updateDashboardData(String json, String pretty = null) {
     sendAmbientSegments(segments.ambient)
 
     if (pretty && pretty.size() <= MAX_EVENT_VALUE_LENGTH) {
-        sendEvent(name: "dashboardPretty", value: pretty, isStateChange: true)
+        publishAttribute("dashboardPretty", pretty)
     } else if (pretty) {
         def placeholder = JsonOutput.toJson([message: "Pretty payload omitted (length ${pretty.size()} exceeds limit)"])
-        sendEvent(name: "dashboardPretty", value: placeholder, isStateChange: true)
+        publishAttribute("dashboardPretty", placeholder)
     } else {
         def prettyText = JsonOutput.prettyPrint(json)
         if (prettyText.size() <= MAX_EVENT_VALUE_LENGTH) {
-            sendEvent(name: "dashboardPretty", value: prettyText, isStateChange: true)
+            publishAttribute("dashboardPretty", prettyText)
         } else {
             def placeholder = JsonOutput.toJson([message: "Pretty payload omitted (length ${prettyText.size()} exceeds limit)"])
-            sendEvent(name: "dashboardPretty", value: placeholder, isStateChange: true)
+            publishAttribute("dashboardPretty", placeholder)
         }
     }
 
-    sendEvent(name: "dashboardUpdated", value: timestamp(), isStateChange: true)
+    publishAttribute("dashboardUpdated", timestamp())
 }
 
 private Map parsePayload(String json) {
@@ -289,7 +291,7 @@ private void sendSegmentJson(String attr, String json) {
         log.error "Weather Dashboard Device: Segment ${attr} exceeds Hubitat event limit (${payload.length()} chars)"
         payload = payload.take(MAX_EVENT_VALUE_LENGTH)
     }
-    sendEvent(name: attr, value: payload, isStateChange: true)
+    publishAttribute(attr, payload)
 }
 
 private void sendAmbientSegments(List<Map> segments) {
@@ -298,6 +300,25 @@ private void sendAmbientSegments(List<Map> segments) {
         Map segmentData = (idx < count) ? segments[idx] : null
         sendSegmentMap(attr, segmentData ?: [:])
     }
+}
+
+private void publishAttribute(String name, Object value) {
+    String payload = (value != null) ? value.toString() : ''
+    if (silentAttributeUpdatesEnabled()) {
+        if (device?.respondsTo('updateAttribute')) {
+            device.updateAttribute(name, payload)
+            return
+        }
+        if (!state?.silentUpdateWarningIssued) {
+            log.warn "Weather Dashboard Device: Silent attribute updates requested, but updateAttribute is unavailable; falling back to sendEvent"
+            state.silentUpdateWarningIssued = true
+        }
+    }
+    sendEvent(name: name, value: payload, isStateChange: true)
+}
+
+private boolean silentAttributeUpdatesEnabled() {
+    settings?.get(PREF_SILENT_UPDATES) == true
 }
 
 private void copyIfPresent(Map target, Map source, String key) {
