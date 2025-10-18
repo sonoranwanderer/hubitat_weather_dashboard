@@ -3247,9 +3247,9 @@
 .wdash-sun-time { position: absolute; font-size: 0.8rem; font-weight: 600; color: #c9d8ff; transform: translate(-50%, 8px); white-space: nowrap; }
 .wdash-sun-time--rise { /* Positioned by inline style */ }
 .wdash-sun-time--set { /* Positioned by inline style */ }
-.wdash-metric-row--compact .wdash-metric { flex: unset; min-height: 0; width: 100%; height: 100%; padding: 4px 6px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 2px 6px; text-align: left; }
-.wdash-metric-row--compact .wdash-metric-label { font-size: 0.56rem; letter-spacing: 0.12em; }
-.wdash-metric-row--compact .wdash-metric-value { font-size: 0.96rem; justify-self: end; }
+.wdash-metric-row--compact .wdash-metric { flex: unset; min-height: 0; width: 100%; height: 100%; padding: 4px 6px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 2px 6px; text-align: left; }
+.wdash-metric-row--compact .wdash-metric-label { font-size: 0.56rem; letter-spacing: 0.12em; align-self: center; }
+.wdash-metric-row--compact .wdash-metric-value { font-size: 0.96rem; justify-self: end; align-self: center; }
 .wdash-metric-row--compact .wdash-metric-sub { grid-column: 1 / -1; justify-self: start; }
 .wdash-air-metrics { grid-auto-rows: auto; }
 .wdash-air-metrics .wdash-metric-label { white-space: normal; line-height: 1.3; overflow-wrap: anywhere; }
