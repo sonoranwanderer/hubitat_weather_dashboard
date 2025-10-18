@@ -1536,14 +1536,16 @@
   function determineAirMetricGrid(metrics) {
     const metricCount = Array.isArray(metrics) ? metrics.length : 0;
     const safeCount = Math.max(1, Number(metricCount) || 0);
-    const maxColumns = 4;
+    const spansAllColumns = airQualitySpansAllColumns();
+    const maxRowsAllowed = spansAllColumns ? 1 : 2;
+    const maxColumns = spansAllColumns ? Math.max(1, safeCount) : Math.min(4, Math.max(1, safeCount));
     let bestColumns = maxColumns;
-    let bestRows = Math.min(2, Math.max(1, Math.ceil(safeCount / maxColumns)));
+    let bestRows = Math.min(maxRowsAllowed, Math.max(1, Math.ceil(safeCount / maxColumns)));
     let bestPlaceholders = Infinity;
 
     for (let columns = maxColumns; columns >= 1; columns -= 1) {
       const rows = Math.max(1, Math.ceil(safeCount / columns));
-      if (rows > 2) continue;
+      if (rows > maxRowsAllowed) continue;
       const placeholders = rows * columns - safeCount;
       if (
         placeholders < bestPlaceholders
@@ -1558,10 +1560,45 @@
 
     if (!Number.isFinite(bestPlaceholders)) {
       bestColumns = maxColumns;
-      bestRows = Math.min(2, Math.max(1, Math.ceil(safeCount / maxColumns)));
+      bestRows = Math.min(maxRowsAllowed, Math.max(1, Math.ceil(safeCount / maxColumns)));
     }
 
     return { columns: bestColumns, rows: bestRows };
+  }
+
+  function airQualitySpansAllColumns() {
+    const templates = layoutState?.templates || DEFAULT_TEMPLATES;
+    const breakpoints = ['desktop', 'tablet', 'mobile'];
+    for (const key of breakpoints) {
+      const template = templates?.[key] || DEFAULT_TEMPLATES[key];
+      if (templateHasFullRowOfArea(template, 'air')) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function templateHasFullRowOfArea(compiledTemplate, areaName) {
+    if (!compiledTemplate || typeof compiledTemplate.areas !== 'string' || !areaName) {
+      return false;
+    }
+    const normalizedArea = normalizeAreaToken(areaName);
+    if (!normalizedArea) return false;
+    const lines = compiledTemplate.areas
+      .split(/\n+/)
+      .map(line => line.replace(/["']/g, ' ').trim())
+      .filter(Boolean);
+    for (const line of lines) {
+      const tokens = line
+        .split(/\s+/)
+        .map(token => normalizeAreaToken(token))
+        .filter(Boolean);
+      if (!tokens.length) continue;
+      if (tokens.every(token => token === normalizedArea)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /* ---------- helpers ---------- */
