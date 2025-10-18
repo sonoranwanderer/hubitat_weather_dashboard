@@ -11,8 +11,10 @@
   const CSS_ID = 'weather-dashboard-css';
   const TEMP_RANGE = { min: -40, max: 120 };
   const DEFAULT_AMBIENT_ROTATION_INTERVAL_MS = 5000;
-  const MIN_AMBIENT_ROTATION_SECONDS = 3;
-  const MAX_AMBIENT_ROTATION_SECONDS = 120;
+  const MIN_AMBIENT_ROTATION_SECONDS = 5;
+  const MAX_AMBIENT_ROTATION_SECONDS = 5;
+  // Ambient rotation is currently fixed at five seconds per requirements, so the
+  // clamp above keeps any provided interval aligned with the default.
   const DEFAULT_AIR_QUALITY_ROTATION_INTERVAL_MS = 5000;
   const INIT_RETRY_LIMIT = 40;
   const INIT_RETRY_DELAY = 250;
@@ -3303,6 +3305,7 @@
 .wdash-card-header--ambient .wdash-ambient-rotation { margin-left: auto; text-align: right; }
 .wdash-card-header--air { align-items: center; gap: 10px; }
 .wdash-card-header--air .wdash-card-header-main { flex-direction: row; align-items: baseline; gap: 8px; }
+.wdash-card--solar .wdash-card-header { position: relative; z-index: 2; background: transparent; }
 .wdash-air-header-meta { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
 .wdash-air-source { font-size: 0.62rem; letter-spacing: 0.08em; text-transform: uppercase; color: #9badcf; }
 .wdash-air-battery { display: inline-flex; align-items: center; }
@@ -3473,6 +3476,7 @@
 .wdash-pressure-stats .wdash-metric-value { font-size: 0.88rem; }
 .wdash-solar { display: flex; flex-direction: column; gap: 6px; flex: 1; }
 .wdash-sun-graphic { position: relative; width: 100%; aspect-ratio: 2.6 / 1; border-radius: 16px; background: transparent; overflow: hidden; }
+.wdash-card--solar .wdash-sun-graphic { margin-top: -20px; }
 .wdash-sun-arc { position: absolute; inset: 16% 12% 42%; border: 2px solid rgba(255,255,255,0.25); border-bottom: none; border-radius: 100% 100% 0 0 / 100% 100% 0 0; }
 .wdash-sun-horizon { position: absolute; left: 12%; right: 12%; bottom: 42%; height: 2px; background: rgba(255,255,255,0.25); }
 .wdash-sun-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
