@@ -1252,6 +1252,18 @@
     const rate = toNumber(pressure.trendInHgPerHour);
     const change = toNumber(pressure.changeInTrendWindow);
     const outlook = data.outlook24h || {};
+    const outlookLabel = (() => {
+      const text = outlook.category || outlook.label;
+      if (text == null) return 'Outlook';
+      const str = typeof text === 'string' ? text : String(text);
+      return str.trim() || 'Outlook';
+    })();
+    const outlookSummary = (() => {
+      const text = outlook.summary || outlook.text;
+      if (text == null) return '';
+      const str = typeof text === 'string' ? text : String(text);
+      return str.trim();
+    })();
     const mode = pressureMode === 'absolute' ? 'absolute' : 'relative';
     const relative = escapeHtml(formatPressure(pressure.relativeInHg));
     const absolute = escapeHtml(formatPressure(pressure.absoluteInHg));
@@ -1263,23 +1275,27 @@
 
     return `
       <section class="wdash-card wdash-card--pressure" data-pressure-mode="${mode}">
-        ${cardHeader(CARD_TITLES.pressure, data)}
+        ${cardHeader(
+          CARD_TITLES.pressure,
+          data,
+          outlookSummary || null,
+          { fallbackToRelative: !outlookSummary }
+        )}
         <div class="wdash-pressure">
           <div class="wdash-pressure-main">
             <div class="wdash-pressure-toggle" role="group" aria-label="Barometer mode">
               <button type="button" class="wdash-pressure-button${mode === 'relative' ? ' is-active' : ''}" data-pressure-mode="relative" aria-pressed="${mode === 'relative'}">Relative</button>
               <button type="button" class="wdash-pressure-button${mode === 'absolute' ? ' is-active' : ''}" data-pressure-mode="absolute" aria-pressed="${mode === 'absolute'}">Absolute</button>
             </div>
-            <div class="wdash-pressure-reading">
-              <span class="wdash-pressure-value" data-pressure-value="relative">${relative}</span>
-              <span class="wdash-pressure-value" data-pressure-value="absolute">${absolute}</span>
+            <div class="wdash-pressure-reading-wrap">
+              <div class="wdash-pressure-reading">
+                <span class="wdash-pressure-value" data-pressure-value="relative">${relative}</span>
+                <span class="wdash-pressure-value" data-pressure-value="absolute">${absolute}</span>
+              </div>
+              <span class="wdash-pressure-outlook-label">${escapeHtml(outlookLabel)}</span>
             </div>
           </div>
           ${buildMetricRow(stats, 'wdash-pressure-stats')}
-          <div class="wdash-pressure-outlook">
-            <span class="wdash-outlook-label">${outlook.category || 'Outlook'}</span>
-            <span class="wdash-outlook-text">${outlook.summary || 'No forecast available.'}</span>
-          </div>
         </div>
       </section>
     `;
@@ -3231,21 +3247,20 @@
 .wdash-rain-stats.wdash-metric-row--table .wdash-metric:last-child { border-bottom: none; }
 .wdash-rain-stats.wdash-metric-row--table .wdash-metric-label { text-align: left; font-size: 0.9rem; font-weight: 600; color: #c9d8ff; }
 .wdash-rain-stats.wdash-metric-row--table .wdash-metric-value { text-align: right; font-size: 0.9rem; font-weight: 600; color: #f4f6ff; font-variant-numeric: tabular-nums; }
-.wdash-pressure-main { display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 16px; }
+.wdash-pressure-main { display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 16px; flex-wrap: wrap; }
+.wdash-pressure-reading-wrap { display: inline-flex; align-items: center; gap: 14px; }
 .wdash-pressure-toggle { display: inline-flex; gap: 4px; padding: 4px; border-radius: 999px; background: rgba(255,255,255,0.05); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04); }
 .wdash-pressure-button { border: none; background: transparent; color: #9badcf; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.12em; padding: 5px 12px; border-radius: 999px; cursor: pointer; transition: all 0.2s ease; }
 .wdash-pressure-button:hover { color: #f4f6ff; }
 .wdash-pressure-button.is-active { background: linear-gradient(140deg, #5ab3ff, #3f8bff); color: #0d1426; box-shadow: 0 8px 16px rgba(74,150,255,0.35); }
 .wdash-pressure-reading { font-size: 1.82rem; font-weight: 700; color: #e3edff; min-height: 2.2rem; display: flex; align-items: center; justify-content: center; }
+.wdash-pressure-outlook-label { font-weight: 700; color: #ffb95a; text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.75rem; white-space: nowrap; }
 .wdash-temp-wind-footer { position: relative; }
 .wdash-temp-wind-footer .wdash-temp-wind-details { position: relative; z-index: 1; }
 .wdash-pressure-value { display: none; }
 .wdash-card--pressure[data-pressure-mode="relative"] .wdash-pressure-value[data-pressure-value="relative"],
 .wdash-card--pressure[data-pressure-mode="absolute"] .wdash-pressure-value[data-pressure-value="absolute"] { display: inline-flex; }
 .wdash-pressure-stats .wdash-metric-value { font-size: 0.88rem; }
-.wdash-pressure-outlook { background: rgba(255,255,255,0.06); border-radius: 10px; padding: 8px 10px; font-size: 0.76rem; display: grid; gap: 4px; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04); }
-.wdash-outlook-label { font-weight: 700; color: #ffb95a; text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.75rem; }
-.wdash-outlook-text { line-height: 1.35; }
 .wdash-solar { display: flex; flex-direction: column; gap: 6px; flex: 1; }
 .wdash-sun-graphic { position: relative; width: 100%; aspect-ratio: 2.6 / 1; border-radius: 16px; background: transparent; overflow: hidden; }
 .wdash-sun-arc { position: absolute; inset: 16% 12% 42%; border: 2px solid rgba(255,255,255,0.25); border-bottom: none; border-radius: 100% 100% 0 0 / 100% 100% 0 0; }
