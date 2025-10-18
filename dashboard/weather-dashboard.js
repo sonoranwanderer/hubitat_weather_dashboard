@@ -2209,9 +2209,9 @@
       ambientRotation.index = ambientRotation.sensors.length ? ambientRotation.sensors.length - 1 : 0;
     }
 
-    updateAmbientDisplay();
-
     stopAmbientRotationTimer();
+
+    updateAmbientDisplay();
 
     if (ambientRotation.sensors.length <= 1) {
       ambientRotation.index = 0;
