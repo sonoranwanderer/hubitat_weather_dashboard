@@ -23,41 +23,23 @@
   const DEFAULT_BASE_HEIGHT = 900;
   const LAYOUT_STYLE_ID = 'weather-dashboard-layout-style';
 
+  const SHARED_DESKTOP_LAYOUT = {
+    columns: 'repeat(2, minmax(0, 1fr))',
+    gap: '14px',
+    rows: [
+      { columns: ['temp-wind', 'ambient'], height: 450 },
+      { columns: ['air', 'rain'], height: 140 },
+      { columns: ['solar', 'rain'], height: 180 },
+      { columns: ['solar', 'pressure'], height: 110 }
+    ]
+  };
+
   const DEFAULT_LAYOUT = {
     baseWidth: DEFAULT_BASE_WIDTH,
     baseHeight: DEFAULT_BASE_HEIGHT,
-    desktop: {
-      columns: 'repeat(2, minmax(0, 1fr))',
-      gap: '14px',
-      rows: [
-        { columns: ['temp-wind', 'ambient'], height: 450 },
-        { columns: ['air', 'rain'], height: 140 },
-        { columns: ['solar', 'rain'], height: 180 },
-        { columns: ['solar', 'pressure'], height: 110 }
-      ]
-    },
-    tablet: {
-      columns: 'minmax(0, 1.25fr) minmax(0, 1fr)',
-      gap: '12px',
-      rows: [
-        { columns: ['temp-wind', 'temp-wind'], height: 380 },
-        { columns: ['air', 'ambient'], height: 210 },
-        { columns: ['solar', 'rain'], height: 320 },
-        { columns: ['pressure', 'pressure'], height: 220 }
-      ]
-    },
-    mobile: {
-      columns: '1fr',
-      gap: '10px',
-      rows: [
-        { columns: ['temp-wind'], height: 360 },
-        { columns: ['air'], height: 190 },
-        { columns: ['solar'], height: 320 },
-        { columns: ['ambient'], height: 220 },
-        { columns: ['rain'], height: 260 },
-        { columns: ['pressure'], height: 220 }
-      ]
-    }
+    desktop: { ...SHARED_DESKTOP_LAYOUT },
+    tablet: { ...SHARED_DESKTOP_LAYOUT },
+    mobile: { ...SHARED_DESKTOP_LAYOUT }
   };
 
   const DEFAULT_TEMPLATES = compileLayoutTemplates(DEFAULT_LAYOUT);
@@ -520,17 +502,25 @@
     const rawLayout = metadata ? (metadata.layout != null ? metadata.layout : metadata.layoutOverride) : null;
     const override = rawLayout ? extractLayoutOverride(rawLayout) : null;
     const mergedLayout = deepMerge(DEFAULT_LAYOUT, override || {});
-    const compiled = compileLayoutTemplates(mergedLayout);
-
-    const columns = {
-      desktop: sanitizeColumns(mergedLayout.desktop?.columns, DEFAULT_COLUMNS.desktop),
-      tablet: sanitizeColumns(mergedLayout.tablet?.columns, DEFAULT_COLUMNS.tablet),
-      mobile: sanitizeColumns(mergedLayout.mobile?.columns, DEFAULT_COLUMNS.mobile)
+    const desktopLayout = mergedLayout.desktop;
+    const layoutForCompile = {
+      desktop: desktopLayout,
+      tablet: desktopLayout,
+      mobile: desktopLayout
     };
+    const compiled = compileLayoutTemplates(layoutForCompile);
+
+    const desktopColumns = sanitizeColumns(desktopLayout?.columns, DEFAULT_COLUMNS.desktop);
+    const columns = {
+      desktop: desktopColumns,
+      tablet: desktopColumns,
+      mobile: desktopColumns
+    };
+    const desktopGap = sanitizeGap(desktopLayout?.gap, DEFAULT_GAPS.desktop);
     const gaps = {
-      desktop: sanitizeGap(mergedLayout.desktop?.gap, DEFAULT_GAPS.desktop),
-      tablet: sanitizeGap(mergedLayout.tablet?.gap, DEFAULT_GAPS.tablet),
-      mobile: sanitizeGap(mergedLayout.mobile?.gap, DEFAULT_GAPS.mobile)
+      desktop: desktopGap,
+      tablet: desktopGap,
+      mobile: desktopGap
     };
 
     const baseWidth = sanitizeDimension(mergedLayout.baseWidth, DEFAULT_BASE_WIDTH);
@@ -3289,7 +3279,7 @@
 .wdash-source-tile { opacity: 0 !important; pointer-events: none !important; }
 .wdash-root { position: relative; width: 100%; height: 100%; --wdash-base-width: 1200px; --wdash-base-height: 900px; --wdash-scale: 1; --wdash-render-width: var(--wdash-base-width); --wdash-render-height: var(--wdash-base-height); background: rgba(4, 9, 20, 0.85); border-radius: 12px; overflow: hidden; box-sizing: border-box; display: flex; align-items: center; justify-content: center; }
 .wdash-frame { position: relative; width: var(--wdash-render-width); height: var(--wdash-render-height); overflow: hidden; box-sizing: border-box; }
-.wdash { width: var(--wdash-base-width); height: var(--wdash-base-height); font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif; color: #f4f6ff; background: linear-gradient(145deg, rgba(27,35,58,0.95), rgba(13,18,32,0.95)); backdrop-filter: blur(4px); border-radius: 12px; --wdash-frame-gap-desktop: 14px; --wdash-frame-gap-tablet: 12px; --wdash-frame-gap-mobile: 10px; --wdash-frame-gap: var(--wdash-frame-gap-desktop); padding: var(--wdash-frame-gap, 18px); box-sizing: border-box; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05); transform-origin: top left; transform: scale(var(--wdash-scale)); }
+  .wdash { width: var(--wdash-base-width); height: var(--wdash-base-height); font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif; color: #f4f6ff; background: linear-gradient(145deg, rgba(27,35,58,0.95), rgba(13,18,32,0.95)); backdrop-filter: blur(4px); border-radius: 12px; --wdash-frame-gap-desktop: 14px; --wdash-frame-gap-tablet: 14px; --wdash-frame-gap-mobile: 14px; --wdash-frame-gap: var(--wdash-frame-gap-desktop); padding: var(--wdash-frame-gap, 18px); box-sizing: border-box; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05); transform-origin: top left; transform: scale(var(--wdash-scale)); }
 .wdash-grid { display: grid; gap: var(--wdash-grid-gap-desktop, ${DEFAULT_GAPS.desktop}); height: 100%; width: 100%; grid-template-columns: var(--wdash-grid-columns-desktop, ${DEFAULT_COLUMNS.desktop}); grid-template-rows: var(--wdash-grid-rows-desktop, ${DEFAULT_TEMPLATES.desktop.rows}); grid-template-areas: var(--wdash-grid-areas-desktop, ${DEFAULT_TEMPLATES.desktop.areas}); }
 .wdash-grid[data-empty="true"] { display: flex; align-items: center; justify-content: center; }
 .wdash-grid > * { min-height: 0; }
