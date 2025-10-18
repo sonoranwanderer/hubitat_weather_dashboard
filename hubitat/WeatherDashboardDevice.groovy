@@ -14,19 +14,17 @@ import groovy.transform.Field
 @Field static final Integer AMBIENT_SENSORS_PER_SEGMENT = 4
 @Field static final Integer MAX_AMBIENT_SEGMENTS = 6
 @Field static final String EMPTY_JSON = '{}'
-@Field static final Map<String, Map> STATIC_SEGMENTS = [
-    core   : [plain: 'segmentCore',        base: 'segmentCoreB64'],
-    precip : [plain: 'segmentPrecip',      base: 'segmentPrecipB64'],
-    air    : [plain: 'segmentAirQuality',  base: 'segmentAirQualityB64'],
-    meta   : [plain: 'segmentMeta',        base: 'segmentMetaB64'],
-    layout : [plain: 'segmentLayout',      base: 'segmentLayoutB64']
+@Field static final Map<String, String> STATIC_SEGMENTS = [
+    core  : 'segmentCore',
+    precip: 'segmentPrecip',
+    air   : 'segmentAirQuality',
+    meta  : 'segmentMeta',
+    layout: 'segmentLayout'
 ]
-@Field static final List<Map> AMBIENT_SEGMENT_ATTRS = buildAmbientSegmentAttrs()
+@Field static final List<String> AMBIENT_SEGMENT_ATTRS = buildAmbientSegmentAttrs()
 
-private static List<Map> buildAmbientSegmentAttrs() {
-    (1..MAX_AMBIENT_SEGMENTS).collect { index ->
-        [plain: "segmentAmbient${index}", base: "segmentAmbient${index}B64"]
-    }
+private static List<String> buildAmbientSegmentAttrs() {
+    (1..MAX_AMBIENT_SEGMENTS).collect { index -> "segmentAmbient${index}" }
 }
 
 definition(
@@ -38,13 +36,11 @@ definition(
     capability "Sensor"
     capability "Refresh"
 
-    STATIC_SEGMENTS.values().each { seg ->
-        attribute seg.plain, "string"
-        attribute seg.base, "string"
+    STATIC_SEGMENTS.values().each { attr ->
+        attribute attr, "string"
     }
-    AMBIENT_SEGMENT_ATTRS.each { seg ->
-        attribute seg.plain, "string"
-        attribute seg.base, "string"
+    AMBIENT_SEGMENT_ATTRS.each { attr ->
+        attribute attr, "string"
     }
 
     attribute "dashboardPretty", "string"
@@ -84,8 +80,8 @@ def refresh() {
 
 def clearDashboardData() {
     if (enableDebug) log.debug "Clearing dashboard attributes"
-    (STATIC_SEGMENTS.values() + AMBIENT_SEGMENT_ATTRS).each { seg ->
-        sendSegmentJson(seg.plain, seg.base, EMPTY_JSON)
+    (STATIC_SEGMENTS.values() + AMBIENT_SEGMENT_ATTRS).each { attr ->
+        sendSegmentJson(attr, EMPTY_JSON)
     }
     sendEvent(name: "dashboardPretty", value: EMPTY_JSON, isStateChange: true)
     sendEvent(name: "dashboardUpdated", value: timestamp(), isStateChange: true)
@@ -257,52 +253,50 @@ private Map buildMetaAndLayoutSegments(Map payload) {
 }
 
 private void sendSegment(String key, Map data) {
-    def attrs = STATIC_SEGMENTS[key]
-    if (!attrs) return
-    sendSegmentMap(attrs.plain, attrs.base, data)
+    def attr = STATIC_SEGMENTS[key]
+    if (!attr) return
+    sendSegmentMap(attr, data)
 }
 
 private void sendAirQualitySegment(Map data) {
-    sendSegmentMap(STATIC_SEGMENTS.air.plain, STATIC_SEGMENTS.air.base, data)
+    sendSegmentMap(STATIC_SEGMENTS.air, data)
 }
 
 private void sendMetaSegment(Map data) {
-    sendSegmentMap(STATIC_SEGMENTS.meta.plain, STATIC_SEGMENTS.meta.base, data)
+    sendSegmentMap(STATIC_SEGMENTS.meta, data)
 }
 
 private void sendLayoutSegment(def layout) {
-    def attrs = STATIC_SEGMENTS.layout
+    def attr = STATIC_SEGMENTS.layout
     if (layout instanceof Map && !layout.isEmpty()) {
-        sendSegmentMap(attrs.plain, attrs.base, [layout: layout])
+        sendSegmentMap(attr, [layout: layout])
     } else {
-        sendSegmentJson(attrs.plain, attrs.base, EMPTY_JSON)
+        sendSegmentJson(attr, EMPTY_JSON)
     }
 }
 
-private void sendSegmentMap(String plainAttr, String baseAttr, Map data) {
+private void sendSegmentMap(String attr, Map data) {
     def json = (data instanceof Map && !data.isEmpty()) ? JsonOutput.toJson(data) : EMPTY_JSON
-    sendSegmentJson(plainAttr, baseAttr, json)
+    sendSegmentJson(attr, json)
 }
 
-private void sendSegmentJson(String plainAttr, String baseAttr, String json) {
+private void sendSegmentJson(String attr, String json) {
     def payload = json ?: EMPTY_JSON
     if (payload.length() > SEGMENT_SIZE_LIMIT) {
-        log.warn "Weather Dashboard Device: Segment ${plainAttr} exceeds recommended size (${payload.length()} bytes)"
+        log.warn "Weather Dashboard Device: Segment ${attr} exceeds recommended size (${payload.length()} bytes)"
     }
     if (payload.length() > MAX_EVENT_VALUE_LENGTH) {
-        log.error "Weather Dashboard Device: Segment ${plainAttr} exceeds Hubitat event limit (${payload.length()} chars)"
+        log.error "Weather Dashboard Device: Segment ${attr} exceeds Hubitat event limit (${payload.length()} chars)"
         payload = payload.take(MAX_EVENT_VALUE_LENGTH)
     }
-    def encoded = payload.getBytes('UTF-8').encodeBase64().toString()
-    sendEvent(name: plainAttr, value: payload, isStateChange: true)
-    sendEvent(name: baseAttr, value: encoded, isStateChange: true)
+    sendEvent(name: attr, value: payload, isStateChange: true)
 }
 
 private void sendAmbientSegments(List<Map> segments) {
     int count = segments instanceof List ? segments.size() : 0
-    AMBIENT_SEGMENT_ATTRS.eachWithIndex { seg, idx ->
+    AMBIENT_SEGMENT_ATTRS.eachWithIndex { attr, idx ->
         Map segmentData = (idx < count) ? segments[idx] : null
-        sendSegmentMap(seg.plain, seg.base, segmentData ?: [:])
+        sendSegmentMap(attr, segmentData ?: [:])
     }
 }
 
