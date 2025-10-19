@@ -3517,10 +3517,6 @@
 @media (max-width: 720px) {
   .wdash-grid { gap: var(--wdash-grid-gap-mobile, ${DEFAULT_GAPS.mobile}); grid-template-columns: var(--wdash-grid-columns-mobile, ${DEFAULT_COLUMNS.mobile}); grid-template-rows: var(--wdash-grid-rows-mobile, ${DEFAULT_TEMPLATES.mobile.rows}); grid-template-areas: var(--wdash-grid-areas-mobile, ${DEFAULT_TEMPLATES.mobile.areas}); }
   .wdash { --wdash-frame-gap: var(--wdash-frame-gap-mobile, var(--wdash-frame-gap-tablet, var(--wdash-frame-gap-desktop, 18px))); }
-  .wdash-card { padding: 10px; }
-  .wdash-metric-row { flex-direction: column; }
-  .wdash-metric { min-width: unset; }
-  .wdash-ambient-circles { flex-direction: column; }
 }
 
     `;
