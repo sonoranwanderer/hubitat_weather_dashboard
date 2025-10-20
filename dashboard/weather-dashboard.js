@@ -536,19 +536,28 @@
 
     const layoutForCompile = {};
     let inheritedRows = null;
-    let inheritFromOverride = false;
     for (const key of BREAKPOINTS) {
       const overrideValue = overrideSectionValues[key];
+      const overrideObject = overrideSectionObjects[key];
+      const sectionDefined = Boolean(overrideLayout && hasOwn(overrideLayout, key));
+      const explicitRowsKey = Boolean(overrideObject && Object.prototype.hasOwnProperty.call(overrideObject, 'rows'));
+
       if (hasRowConfig(overrideValue)) {
         inheritedRows = overrideValue;
-        inheritFromOverride = true;
         layoutForCompile[key] = overrideValue;
         continue;
       }
-      if (inheritFromOverride && inheritedRows) {
+
+      if (!sectionDefined && inheritedRows) {
         layoutForCompile[key] = inheritedRows;
         continue;
       }
+
+      if (sectionDefined && !explicitRowsKey && inheritedRows) {
+        layoutForCompile[key] = inheritedRows;
+        continue;
+      }
+
       const defaultSection = DEFAULT_LAYOUT[key] || DEFAULT_LAYOUT.desktop;
       const defaultRows = hasRowConfig(defaultSection) ? defaultSection : DEFAULT_LAYOUT.desktop;
       inheritedRows = defaultRows;
