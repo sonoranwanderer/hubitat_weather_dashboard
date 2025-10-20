@@ -2508,18 +2508,6 @@
 
       const header = card.querySelector('.wdash-card-header');
       const cardStyle = getComputedStyle(card);
-      const mainStyle = getComputedStyle(main);
-      const paddingBlockStart = parseFloat(mainStyle.paddingBlockStart || mainStyle.paddingTop) || 0;
-      const paddingBlockEnd = parseFloat(mainStyle.paddingBlockEnd || mainStyle.paddingBottom) || 0;
-      const paddingInlineStart = parseFloat(mainStyle.paddingInlineStart || mainStyle.paddingLeft) || 0;
-      const paddingInlineEnd = parseFloat(mainStyle.paddingInlineEnd || mainStyle.paddingRight) || 0;
-      let inlineGap = parseFloat(mainStyle.columnGap);
-      if (!Number.isFinite(inlineGap)) {
-        inlineGap = parseFloat(mainStyle.gap);
-      }
-      if (!Number.isFinite(inlineGap) || inlineGap < 0) {
-        inlineGap = 0;
-      }
       const headerUnderlap = Math.max(0, parseFloat(cardStyle.getPropertyValue('--temp-wind-header-underlap')) || 0);
       const headerRect = header ? header.getBoundingClientRect() : null;
       const mainRect = main.getBoundingClientRect();
@@ -2537,36 +2525,44 @@
         delete card.dataset.tempWindHeaderOverlap;
       }
 
-      const measuredHeight = mainRect ? mainRect.height : 0;
-      const measuredWidth = mainRect ? mainRect.width : 0;
-      let availableHeight = measuredHeight - paddingBlockStart - paddingBlockEnd;
-      if (!Number.isFinite(availableHeight) || availableHeight <= 0) {
-        availableHeight = 0;
-      }
+      const gaugeHosts = [];
+      const tempHost = main.querySelector('.wdash-temp');
+      if (tempHost) gaugeHosts.push(tempHost);
+      const windHost = main.querySelector('.wdash-wind');
+      if (windHost) gaugeHosts.push(windHost);
 
-      let availableWidth = measuredWidth - paddingInlineStart - paddingInlineEnd;
-      if (!Number.isFinite(availableWidth) || availableWidth <= 0) {
-        availableWidth = 0;
-      }
-
-      const columnCount = Math.max(1, main && main.children ? main.children.length : 0);
-      if (columnCount > 1 && inlineGap > 0) {
-        availableWidth -= inlineGap * (columnCount - 1);
-      }
-      if (availableWidth < 0) {
-        availableWidth = 0;
-      }
-      availableWidth = availableWidth / columnCount;
-
-      let gaugeSize = Math.min(availableHeight, availableWidth);
-      if (!Number.isFinite(gaugeSize) || gaugeSize <= 0) {
-        if (Number.isFinite(availableHeight) && availableHeight > 0) {
-          gaugeSize = availableHeight;
-        } else if (Number.isFinite(availableWidth) && availableWidth > 0 && availableWidth !== Infinity) {
-          gaugeSize = availableWidth;
-        } else {
-          gaugeSize = 0;
+      let gaugeSize = 0;
+      if (gaugeHosts.length) {
+        for (const host of gaugeHosts) {
+          const hostRect = host.getBoundingClientRect();
+          if (!hostRect) continue;
+          const hostStyle = getComputedStyle(host);
+          const hostPaddingInline =
+            (parseFloat(hostStyle.paddingInlineStart || hostStyle.paddingLeft) || 0) +
+            (parseFloat(hostStyle.paddingInlineEnd || hostStyle.paddingRight) || 0);
+          const hostPaddingBlock =
+            (parseFloat(hostStyle.paddingBlockStart || hostStyle.paddingTop) || 0) +
+            (parseFloat(hostStyle.paddingBlockEnd || hostStyle.paddingBottom) || 0);
+          const usableWidth = Math.max(0, hostRect.width - hostPaddingInline);
+          const usableHeight = Math.max(0, hostRect.height - hostPaddingBlock);
+          const hostSize = Math.min(usableWidth, usableHeight);
+          if (Number.isFinite(hostSize) && hostSize > 0) {
+            if (!Number.isFinite(gaugeSize) || gaugeSize <= 0) {
+              gaugeSize = hostSize;
+            } else {
+              gaugeSize = Math.min(gaugeSize, hostSize);
+            }
+          }
         }
+      }
+
+      if (!Number.isFinite(gaugeSize) || gaugeSize <= 0) {
+        const measuredHeight = mainRect ? mainRect.height : 0;
+        const measuredWidth = mainRect ? mainRect.width : 0;
+        const availableHeight = Number.isFinite(measuredHeight) && measuredHeight > 0 ? measuredHeight : 0;
+        const availableWidth = Number.isFinite(measuredWidth) && measuredWidth > 0 ? measuredWidth : 0;
+        const fallbackSize = Math.min(availableHeight, availableWidth);
+        gaugeSize = Number.isFinite(fallbackSize) && fallbackSize > 0 ? fallbackSize : 0;
       }
 
       if (!Number.isFinite(gaugeSize) || gaugeSize <= 0) {
@@ -2582,9 +2578,9 @@
         return;
       }
 
-      const normalized = Math.max(0, Math.round(gaugeSize * 1000) / 1000);
+      const normalized = Math.max(0, Math.round(gaugeSize * 10) / 10);
       const previous = Number(card.dataset.tempWindGaugeSize);
-      if (Number.isFinite(previous) && Math.abs(previous - normalized) <= 0.25) {
+      if (Number.isFinite(previous) && Math.abs(previous - normalized) <= 0.5) {
         tempWindGaugeLastSize = previous;
         return;
       }
