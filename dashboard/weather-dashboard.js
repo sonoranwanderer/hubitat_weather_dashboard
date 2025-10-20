@@ -2507,59 +2507,22 @@
       }
 
       const header = card.querySelector('.wdash-card-header');
-      const footer = card.querySelector('.wdash-temp-wind-footer');
-      const metrics = card.querySelector('.wdash-temp-wind-details');
       const tempColumn = main.querySelector('.wdash-temp');
       const windColumn = main.querySelector('.wdash-wind');
       const cardStyle = getComputedStyle(card);
       const mainStyle = getComputedStyle(main);
-      const paddingTop = parseFloat(cardStyle.paddingTop) || 0;
-      const paddingBottom = parseFloat(cardStyle.paddingBottom) || 0;
-      const paddingLeft = parseFloat(cardStyle.paddingLeft) || 0;
-      const paddingRight = parseFloat(cardStyle.paddingRight) || 0;
-      const rowGap = parseFloat(cardStyle.rowGap) || parseFloat(cardStyle.gap) || 0;
       const mainPaddingTop = parseFloat(mainStyle.paddingTop) || 0;
       const mainPaddingBottom = parseFloat(mainStyle.paddingBottom) || 0;
       const headerUnderlap = Math.max(0, parseFloat(cardStyle.getPropertyValue('--temp-wind-header-underlap')) || 0);
-      const columnGap = parseFloat(mainStyle.columnGap) || parseFloat(mainStyle.gap) || 0;
-
-      const cardRect = card.getBoundingClientRect();
       const headerRect = header ? header.getBoundingClientRect() : null;
-      const footerRect = footer ? footer.getBoundingClientRect() : null;
       const tempRect = tempColumn ? tempColumn.getBoundingClientRect() : null;
       const windRect = windColumn ? windColumn.getBoundingClientRect() : null;
+      const mainRect = main.getBoundingClientRect();
 
-      let available = cardRect.height - paddingTop - paddingBottom;
-      let headerReclaim = 0;
-      if (headerRect) {
-        available -= headerRect.height;
-        if (headerUnderlap > 0 && headerRect.height > 0) {
-          const maxReclaim = headerRect.height + (rowGap > 0 ? rowGap : 0);
-          if (maxReclaim > 0) {
-            headerReclaim = Math.min(headerUnderlap, maxReclaim);
-            available += headerReclaim;
-          }
-        }
+      let headerOverlapOffset = 0;
+      if (headerRect && headerUnderlap > 0 && headerRect.height > 0) {
+        headerOverlapOffset = Math.min(headerUnderlap, headerRect.height);
       }
-      if (footerRect) {
-        available -= footerRect.height;
-      } else if (metrics) {
-        available -= metrics.getBoundingClientRect().height;
-      }
-
-      if (rowGap > 0) {
-        let gapCount = 0;
-        if (headerRect && main) gapCount += 1;
-        if ((footerRect || metrics) && main) gapCount += 1;
-        if (gapCount > 0) {
-          available -= gapCount * rowGap;
-          if (headerReclaim > 0 && headerRect && gapCount > 0) {
-            available += Math.min(rowGap, headerReclaim);
-          }
-        }
-      }
-
-      const headerOverlapOffset = headerReclaim > 0 ? headerReclaim + (rowGap > 0 ? rowGap : 0) : 0;
       if (headerOverlapOffset > 0) {
         const normalizedHeaderOffset = Math.max(0, Math.round(headerOverlapOffset * 100) / 100);
         card.style.setProperty('--temp-wind-header-overlap-offset', `${normalizedHeaderOffset}px`);
@@ -2569,24 +2532,29 @@
         delete card.dataset.tempWindHeaderOverlap;
       }
 
-      available -= mainPaddingTop + mainPaddingBottom;
-      if (!Number.isFinite(available) || available <= 0) {
-        available = 0;
+      let availableHeight = mainRect ? mainRect.height - mainPaddingTop - mainPaddingBottom : 0;
+      if (!Number.isFinite(availableHeight) || availableHeight <= 0) {
+        availableHeight = 0;
       }
 
-      const cardInnerWidth = Math.max(0, cardRect.width - paddingLeft - paddingRight);
-      let horizontalLimit = cardInnerWidth > 0 ? (cardInnerWidth - (columnGap > 0 ? columnGap : 0)) / 2 : 0;
-      const minColumnWidth = Math.min(
-        tempRect && Number.isFinite(tempRect.width) ? tempRect.width : Infinity,
-        windRect && Number.isFinite(windRect.width) ? windRect.width : Infinity
-      );
-      if (Number.isFinite(minColumnWidth)) {
-        horizontalLimit = horizontalLimit > 0 ? Math.min(horizontalLimit, minColumnWidth) : minColumnWidth;
+      const widthCandidates = [];
+      if (tempRect && Number.isFinite(tempRect.width) && tempRect.width > 0) {
+        widthCandidates.push(tempRect.width);
       }
+      if (windRect && Number.isFinite(windRect.width) && windRect.width > 0) {
+        widthCandidates.push(windRect.width);
+      }
+      const availableWidth = widthCandidates.length > 0 ? Math.min(...widthCandidates) : Infinity;
 
-      let gaugeSize = available;
-      if (horizontalLimit > 0 && gaugeSize > horizontalLimit) {
-        gaugeSize = horizontalLimit;
+      let gaugeSize = Math.min(availableHeight, availableWidth);
+      if (!Number.isFinite(gaugeSize) || gaugeSize <= 0) {
+        if (Number.isFinite(availableHeight) && availableHeight > 0) {
+          gaugeSize = availableHeight;
+        } else if (Number.isFinite(availableWidth) && availableWidth > 0 && availableWidth !== Infinity) {
+          gaugeSize = availableWidth;
+        } else {
+          gaugeSize = 0;
+        }
       }
 
       if (!Number.isFinite(gaugeSize) || gaugeSize <= 0) {
@@ -3659,10 +3627,10 @@
 .wdash-card--solar { grid-area: solar; }
 .wdash-card--air { grid-area: air; gap: 8px; }
 .wdash-temp, .wdash-wind, .wdash-solar, .wdash-pressure { display: flex; flex-direction: column; gap: 10px; flex: 1; }
-.wdash-card--temp-wind .wdash-temp, .wdash-card--temp-wind .wdash-wind { align-items: stretch; }
+.wdash-card--temp-wind .wdash-temp, .wdash-card--temp-wind .wdash-wind { align-items: center; justify-content: center; min-width: 0; min-height: 0; }
 .wdash-pressure { gap: 10px; }
-.wdash-temp-wind-main { display: flex; gap: 14px; flex: 1; }
-.wdash-temp-wind-main > .wdash-temp, .wdash-temp-wind-main > .wdash-wind { flex: 1; }
+.wdash-temp-wind-main { display: flex; gap: 14px; flex: 1; align-items: stretch; min-height: 0; }
+.wdash-temp-wind-main > .wdash-temp, .wdash-temp-wind-main > .wdash-wind { flex: 1; min-width: 0; min-height: 0; }
 .wdash-temp-wind-details { display: flex; justify-content: space-between; gap: 12px; }
 .wdash-temp { align-items: center; }
 .wdash-wind { align-items: center; }
