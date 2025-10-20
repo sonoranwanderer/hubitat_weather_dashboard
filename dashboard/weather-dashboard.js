@@ -2507,16 +2507,21 @@
       }
 
       const header = card.querySelector('.wdash-card-header');
-      const tempColumn = main.querySelector('.wdash-temp');
-      const windColumn = main.querySelector('.wdash-wind');
       const cardStyle = getComputedStyle(card);
       const mainStyle = getComputedStyle(main);
-      const mainPaddingTop = parseFloat(mainStyle.paddingTop) || 0;
-      const mainPaddingBottom = parseFloat(mainStyle.paddingBottom) || 0;
+      const paddingBlockStart = parseFloat(mainStyle.paddingBlockStart || mainStyle.paddingTop) || 0;
+      const paddingBlockEnd = parseFloat(mainStyle.paddingBlockEnd || mainStyle.paddingBottom) || 0;
+      const paddingInlineStart = parseFloat(mainStyle.paddingInlineStart || mainStyle.paddingLeft) || 0;
+      const paddingInlineEnd = parseFloat(mainStyle.paddingInlineEnd || mainStyle.paddingRight) || 0;
+      let inlineGap = parseFloat(mainStyle.columnGap);
+      if (!Number.isFinite(inlineGap)) {
+        inlineGap = parseFloat(mainStyle.gap);
+      }
+      if (!Number.isFinite(inlineGap) || inlineGap < 0) {
+        inlineGap = 0;
+      }
       const headerUnderlap = Math.max(0, parseFloat(cardStyle.getPropertyValue('--temp-wind-header-underlap')) || 0);
       const headerRect = header ? header.getBoundingClientRect() : null;
-      const tempRect = tempColumn ? tempColumn.getBoundingClientRect() : null;
-      const windRect = windColumn ? windColumn.getBoundingClientRect() : null;
       const mainRect = main.getBoundingClientRect();
 
       let headerOverlapOffset = 0;
@@ -2532,19 +2537,26 @@
         delete card.dataset.tempWindHeaderOverlap;
       }
 
-      let availableHeight = mainRect ? mainRect.height - mainPaddingTop - mainPaddingBottom : 0;
+      const measuredHeight = mainRect ? mainRect.height : 0;
+      const measuredWidth = mainRect ? mainRect.width : 0;
+      let availableHeight = measuredHeight - paddingBlockStart - paddingBlockEnd;
       if (!Number.isFinite(availableHeight) || availableHeight <= 0) {
         availableHeight = 0;
       }
 
-      const widthCandidates = [];
-      if (tempRect && Number.isFinite(tempRect.width) && tempRect.width > 0) {
-        widthCandidates.push(tempRect.width);
+      let availableWidth = measuredWidth - paddingInlineStart - paddingInlineEnd;
+      if (!Number.isFinite(availableWidth) || availableWidth <= 0) {
+        availableWidth = 0;
       }
-      if (windRect && Number.isFinite(windRect.width) && windRect.width > 0) {
-        widthCandidates.push(windRect.width);
+
+      const columnCount = Math.max(1, main && main.children ? main.children.length : 0);
+      if (columnCount > 1 && inlineGap > 0) {
+        availableWidth -= inlineGap * (columnCount - 1);
       }
-      const availableWidth = widthCandidates.length > 0 ? Math.min(...widthCandidates) : Infinity;
+      if (availableWidth < 0) {
+        availableWidth = 0;
+      }
+      availableWidth = availableWidth / columnCount;
 
       let gaugeSize = Math.min(availableHeight, availableWidth);
       if (!Number.isFinite(gaugeSize) || gaugeSize <= 0) {
@@ -2570,9 +2582,9 @@
         return;
       }
 
-      const normalized = Math.max(0, Math.round(gaugeSize * 100) / 100);
+      const normalized = Math.max(0, Math.round(gaugeSize * 1000) / 1000);
       const previous = Number(card.dataset.tempWindGaugeSize);
-      if (Number.isFinite(previous) && Math.abs(previous - normalized) < 0.5) {
+      if (Number.isFinite(previous) && Math.abs(previous - normalized) <= 0.25) {
         tempWindGaugeLastSize = previous;
         return;
       }
