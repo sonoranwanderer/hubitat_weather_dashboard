@@ -2499,7 +2499,9 @@
         card.style.removeProperty('--temp-wind-gauge-center-inset');
         card.style.removeProperty('--temp-wind-compass-block-inset');
         card.style.removeProperty('--temp-wind-compass-inline-inset');
+        card.style.removeProperty('--temp-wind-header-overlap-offset');
         delete card.dataset.tempWindGaugeSize;
+        delete card.dataset.tempWindHeaderOverlap;
         tempWindGaugeLastSize = null;
         return;
       }
@@ -2528,10 +2530,15 @@
       const windRect = windColumn ? windColumn.getBoundingClientRect() : null;
 
       let available = cardRect.height - paddingTop - paddingBottom;
+      let headerReclaim = 0;
       if (headerRect) {
         available -= headerRect.height;
         if (headerUnderlap > 0 && headerRect.height > 0) {
-          available += Math.min(headerUnderlap, headerRect.height);
+          const maxReclaim = headerRect.height + (rowGap > 0 ? rowGap : 0);
+          if (maxReclaim > 0) {
+            headerReclaim = Math.min(headerUnderlap, maxReclaim);
+            available += headerReclaim;
+          }
         }
       }
       if (footerRect) {
@@ -2546,10 +2553,20 @@
         if ((footerRect || metrics) && main) gapCount += 1;
         if (gapCount > 0) {
           available -= gapCount * rowGap;
-          if (headerUnderlap > 0 && headerRect && gapCount > 0) {
-            available += Math.min(headerUnderlap, rowGap);
+          if (headerReclaim > 0 && headerRect && gapCount > 0) {
+            available += Math.min(rowGap, headerReclaim);
           }
         }
+      }
+
+      const headerOverlapOffset = headerReclaim > 0 ? headerReclaim + (rowGap > 0 ? rowGap : 0) : 0;
+      if (headerOverlapOffset > 0) {
+        const normalizedHeaderOffset = Math.max(0, Math.round(headerOverlapOffset * 100) / 100);
+        card.style.setProperty('--temp-wind-header-overlap-offset', `${normalizedHeaderOffset}px`);
+        card.dataset.tempWindHeaderOverlap = String(normalizedHeaderOffset);
+      } else {
+        card.style.removeProperty('--temp-wind-header-overlap-offset');
+        delete card.dataset.tempWindHeaderOverlap;
       }
 
       available -= mainPaddingTop + mainPaddingBottom;
@@ -2579,7 +2596,9 @@
         card.style.removeProperty('--temp-wind-gauge-center-inset');
         card.style.removeProperty('--temp-wind-compass-block-inset');
         card.style.removeProperty('--temp-wind-compass-inline-inset');
+        card.style.removeProperty('--temp-wind-header-overlap-offset');
         delete card.dataset.tempWindGaugeSize;
+        delete card.dataset.tempWindHeaderOverlap;
         return;
       }
 
@@ -3616,7 +3635,7 @@
 .wdash-air-header-meta { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
 .wdash-air-source { font-size: 0.62rem; letter-spacing: 0.08em; text-transform: uppercase; color: #9badcf; }
 .wdash-air-battery { display: inline-flex; align-items: center; }
-.wdash-card-header--temp-wind { align-items: center; gap: 10px; position: relative; z-index: 2; padding-bottom: calc(10px + var(--temp-wind-header-underlap, 0px)); margin-bottom: calc(var(--temp-wind-header-underlap, 0px) * -1); background: transparent; }
+.wdash-card-header--temp-wind { align-items: center; gap: 10px; position: relative; z-index: 2; padding-bottom: 10px; margin-bottom: 0; background: transparent; }
 .wdash-card-header--temp-wind .wdash-card-header-main { align-items: flex-start; text-align: left; }
 .wdash-temp-wind-header-meta { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
 .wdash-temp-wind-battery { display: inline-flex; align-items: center; }
@@ -3627,7 +3646,7 @@
 .wdash-card--temp-wind { grid-area: temp-wind; gap: 6px; padding-block: 5px; --temp-wind-gauge-size: 260px; --temp-wind-header-underlap: 28px; --temp-wind-gauge-svg-inset: 11%; --temp-wind-gauge-center-inset: 26%; --temp-wind-compass-block-inset: 24%; --temp-wind-compass-inline-inset: 20%; position: relative; }
 .wdash-card--temp-wind .wdash-gauge, .wdash-card--temp-wind .wdash-wind-compass { width: min(100%, var(--temp-wind-gauge-size, 260px)); }
 .wdash-card--temp-wind .wdash-metric-row--gauge { max-width: var(--temp-wind-gauge-size, 260px); }
-.wdash-card--temp-wind .wdash-temp-wind-main { padding-block: 2px; position: relative; z-index: 1; }
+.wdash-card--temp-wind .wdash-temp-wind-main { padding-block: 2px; position: relative; z-index: 1; margin-top: calc(var(--temp-wind-header-overlap-offset, 0px) * -1); }
 .wdash-card--ambient { grid-area: ambient; gap: 12px; align-items: stretch; }
 .wdash-card--lightning { grid-area: lightning; gap: 8px; align-items: stretch; min-width: 0; display: none; }
 .wdash[data-layout-has-lightning="true"] .wdash-card--lightning { display: flex; }
