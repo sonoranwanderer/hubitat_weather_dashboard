@@ -21,6 +21,7 @@
   const DATA_REFRESH_INTERVAL = 5000;
   const DEFAULT_BASE_WIDTH = 1200;
   const DEFAULT_BASE_HEIGHT = 900;
+  const BREAKPOINTS = ['desktop', 'tablet', 'mobile'];
   const LAYOUT_STYLE_ID = 'weather-dashboard-layout-style';
 
   const SHARED_DESKTOP_LAYOUT = {
@@ -42,7 +43,18 @@
     mobile: { ...SHARED_DESKTOP_LAYOUT }
   };
 
+  const DEFAULT_BASE_DIMENSIONS = {
+    desktop: { width: DEFAULT_BASE_WIDTH, height: DEFAULT_BASE_HEIGHT },
+    tablet: { width: DEFAULT_BASE_WIDTH, height: DEFAULT_BASE_HEIGHT },
+    mobile: { width: DEFAULT_BASE_WIDTH, height: DEFAULT_BASE_HEIGHT }
+  };
+
   const DEFAULT_TEMPLATES = compileLayoutTemplates(DEFAULT_LAYOUT);
+  const DEFAULT_NORMALIZED_AREAS = {
+    desktop: normalizeTemplateAreas(DEFAULT_TEMPLATES.desktop.areas),
+    tablet: normalizeTemplateAreas(DEFAULT_TEMPLATES.tablet.areas),
+    mobile: normalizeTemplateAreas(DEFAULT_TEMPLATES.mobile.areas)
+  };
   const DEFAULT_COLUMNS = {
     desktop: DEFAULT_LAYOUT.desktop.columns,
     tablet: DEFAULT_LAYOUT.tablet.columns,
@@ -60,9 +72,15 @@
   const layoutState = {
     baseWidth: DEFAULT_BASE_WIDTH,
     baseHeight: DEFAULT_BASE_HEIGHT,
+    baseDimensions: {
+      desktop: { ...DEFAULT_BASE_DIMENSIONS.desktop },
+      tablet: { ...DEFAULT_BASE_DIMENSIONS.tablet },
+      mobile: { ...DEFAULT_BASE_DIMENSIONS.mobile }
+    },
     columns: { ...DEFAULT_COLUMNS },
     gaps: { ...DEFAULT_GAPS },
     templates: DEFAULT_TEMPLATES,
+    normalizedAreas: { ...DEFAULT_NORMALIZED_AREAS },
     signature: null,
     pendingApply: false
   };
@@ -196,6 +214,7 @@
   let domObserver = null;
   let scaleObserver = null;
   let scaleResizeHandler = null;
+  let breakpointListenersRegistered = false;
   let tempWindGaugeObserver = null;
   let tempWindGaugeResizeHandler = null;
   let tempWindGaugeRaf = null;
@@ -501,34 +520,121 @@
 
     const rawLayout = metadata ? (metadata.layout != null ? metadata.layout : metadata.layoutOverride) : null;
     const override = rawLayout ? extractLayoutOverride(rawLayout) : null;
-    const mergedLayout = deepMerge(DEFAULT_LAYOUT, override || {});
-    const desktopLayout = mergedLayout.desktop;
-    const layoutForCompile = {
-      desktop: desktopLayout,
-      tablet: desktopLayout,
-      mobile: desktopLayout
-    };
-    const compiled = compileLayoutTemplates(layoutForCompile);
+    const overrideLayout = isPlainObject(override) ? override : null;
+    const hasOwn = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
 
-    const desktopColumns = sanitizeColumns(desktopLayout?.columns, DEFAULT_COLUMNS.desktop);
+    const hasRowConfig = value => Array.isArray(value) || Array.isArray(value?.rows);
+    const sanitizeSectionObject = section => (isPlainObject(section) ? section : null);
+
+    const overrideSectionValues = {};
+    const overrideSectionObjects = {};
+    for (const key of BREAKPOINTS) {
+      const value = overrideLayout && hasOwn(overrideLayout, key) ? overrideLayout[key] : undefined;
+      overrideSectionValues[key] = value;
+      overrideSectionObjects[key] = sanitizeSectionObject(value);
+    }
+
+    const layoutForCompile = {};
+    let inheritedRows = null;
+    for (const key of BREAKPOINTS) {
+      const overrideValue = overrideSectionValues[key];
+      const overrideObject = overrideSectionObjects[key];
+      const sectionDefined = Boolean(overrideLayout && hasOwn(overrideLayout, key));
+      const explicitRowsKey = Boolean(overrideObject && Object.prototype.hasOwnProperty.call(overrideObject, 'rows'));
+
+      if (hasRowConfig(overrideValue)) {
+        inheritedRows = overrideValue;
+        layoutForCompile[key] = overrideValue;
+        continue;
+      }
+
+      if (!sectionDefined && inheritedRows) {
+        layoutForCompile[key] = inheritedRows;
+        continue;
+      }
+
+      if (sectionDefined && !explicitRowsKey && inheritedRows) {
+        layoutForCompile[key] = inheritedRows;
+        continue;
+      }
+
+      const defaultSection = DEFAULT_LAYOUT[key] || DEFAULT_LAYOUT.desktop;
+      const defaultRows = hasRowConfig(defaultSection) ? defaultSection : DEFAULT_LAYOUT.desktop;
+      inheritedRows = defaultRows;
+      layoutForCompile[key] = defaultRows;
+    }
+    const compiled = compileLayoutTemplates(layoutForCompile);
+    const normalizedAreas = {
+      desktop: normalizeTemplateAreas(compiled.desktop.areas),
+      tablet: normalizeTemplateAreas(compiled.tablet.areas),
+      mobile: normalizeTemplateAreas(compiled.mobile.areas)
+    };
+
+    const desktopSection = overrideSectionObjects.desktop;
+    const tabletSection = overrideSectionObjects.tablet;
+    const mobileSection = overrideSectionObjects.mobile;
+    const hasDesktopOverride = Boolean(overrideLayout && hasOwn(overrideLayout, 'desktop'));
+    const hasTabletOverride = Boolean(overrideLayout && hasOwn(overrideLayout, 'tablet'));
+    const hasMobileOverride = Boolean(overrideLayout && hasOwn(overrideLayout, 'mobile'));
+
+    const desktopColumns = sanitizeColumns(desktopSection?.columns, DEFAULT_COLUMNS.desktop);
+    const tabletColumns = sanitizeColumns(
+      tabletSection?.columns,
+      hasTabletOverride ? desktopColumns : hasDesktopOverride ? desktopColumns : DEFAULT_COLUMNS.tablet
+    );
+    const mobileColumns = sanitizeColumns(
+      mobileSection?.columns,
+      hasMobileOverride
+        ? tabletColumns
+        : hasTabletOverride || hasDesktopOverride
+          ? tabletColumns
+          : DEFAULT_COLUMNS.mobile
+    );
     const columns = {
       desktop: desktopColumns,
-      tablet: desktopColumns,
-      mobile: desktopColumns
+      tablet: tabletColumns,
+      mobile: mobileColumns
     };
-    const desktopGap = sanitizeGap(desktopLayout?.gap, DEFAULT_GAPS.desktop);
+
+    const desktopGap = sanitizeGap(desktopSection?.gap, DEFAULT_GAPS.desktop);
+    const tabletGap = sanitizeGap(
+      tabletSection?.gap,
+      hasTabletOverride ? desktopGap : hasDesktopOverride ? desktopGap : DEFAULT_GAPS.tablet
+    );
+    const mobileGap = sanitizeGap(
+      mobileSection?.gap,
+      hasMobileOverride
+        ? tabletGap
+        : hasTabletOverride || hasDesktopOverride
+          ? tabletGap
+          : DEFAULT_GAPS.mobile
+    );
     const gaps = {
       desktop: desktopGap,
-      tablet: desktopGap,
-      mobile: desktopGap
+      tablet: tabletGap,
+      mobile: mobileGap
     };
 
-    const baseWidth = sanitizeDimension(mergedLayout.baseWidth, DEFAULT_BASE_WIDTH);
-    const baseHeight = sanitizeDimension(mergedLayout.baseHeight, DEFAULT_BASE_HEIGHT);
+    const fallbackWidth = sanitizeDimension(overrideLayout?.baseWidth, DEFAULT_BASE_WIDTH);
+    const fallbackHeight = sanitizeDimension(overrideLayout?.baseHeight, DEFAULT_BASE_HEIGHT);
+    const desktopWidth = sanitizeDimension(desktopSection?.baseWidth, fallbackWidth);
+    const desktopHeight = sanitizeDimension(desktopSection?.baseHeight, fallbackHeight);
+    const tabletWidth = sanitizeDimension(tabletSection?.baseWidth, desktopWidth);
+    const tabletHeight = sanitizeDimension(tabletSection?.baseHeight, desktopHeight);
+    const mobileWidth = sanitizeDimension(mobileSection?.baseWidth, tabletWidth);
+    const mobileHeight = sanitizeDimension(mobileSection?.baseHeight, tabletHeight);
+
+    const baseDimensions = {
+      desktop: { width: desktopWidth, height: desktopHeight },
+      tablet: { width: tabletWidth, height: tabletHeight },
+      mobile: { width: mobileWidth, height: mobileHeight }
+    };
+
+    const baseWidth = desktopWidth;
+    const baseHeight = desktopHeight;
 
     const signature = JSON.stringify({
-      baseWidth,
-      baseHeight,
+      baseDimensions,
       columns,
       gaps,
       templates: {
@@ -538,11 +644,13 @@
       }
     });
 
+    layoutState.normalizedAreas = normalizedAreas;
     const changed = layoutState.signature !== signature;
     if (changed) {
       layoutState.signature = signature;
       layoutState.baseWidth = baseWidth;
       layoutState.baseHeight = baseHeight;
+      layoutState.baseDimensions = baseDimensions;
       layoutState.columns = columns;
       layoutState.gaps = gaps;
       layoutState.templates = compiled;
@@ -551,11 +659,12 @@
 
     if (!changed && !layoutState.pendingApply) return;
 
-    currentBaseWidth = baseWidth;
-    currentBaseHeight = baseHeight;
+    const activeBase = getActiveBaseDimensions(baseDimensions);
+    currentBaseWidth = activeBase.width;
+    currentBaseHeight = activeBase.height;
 
-    root.style.setProperty('--wdash-base-width', `${baseWidth}px`);
-    root.style.setProperty('--wdash-base-height', `${baseHeight}px`);
+    root.style.setProperty('--wdash-base-width', `${currentBaseWidth}px`);
+    root.style.setProperty('--wdash-base-height', `${currentBaseHeight}px`);
 
     dash.style.setProperty('--wdash-grid-columns-desktop', columns.desktop);
     dash.style.setProperty('--wdash-grid-columns-tablet', columns.tablet);
@@ -576,10 +685,13 @@
     applyLayoutStyle({
       baseWidth,
       baseHeight,
+      baseDimensions,
       columns,
       gaps,
       templates: compiled
     });
+
+    applyScale(root);
 
     const gridEl = dash.querySelector('.wdash-grid');
     if (gridEl) {
@@ -639,12 +751,93 @@
       scaleResizeHandler = () => applyScale();
       window.addEventListener('resize', scaleResizeHandler);
     }
+    setupBreakpointListeners();
     if (typeof ResizeObserver !== 'function') return;
     if (scaleObserver) {
       scaleObserver.disconnect();
     }
     scaleObserver = new ResizeObserver(() => applyScale(root));
     scaleObserver.observe(displayTile);
+  }
+
+  function setupBreakpointListeners() {
+    if (breakpointListenersRegistered) return;
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const handler = () => applyScale();
+    const queries = ['(max-width: 720px)', '(max-width: 1100px)'];
+    let attached = false;
+    for (const query of queries) {
+      let mql = null;
+      try {
+        mql = window.matchMedia(query);
+      } catch (err) {
+        mql = null;
+      }
+      if (!mql) continue;
+      if (typeof mql.addEventListener === 'function') {
+        mql.addEventListener('change', handler);
+        attached = true;
+      } else if (typeof mql.addListener === 'function') {
+        mql.addListener(handler);
+        attached = true;
+      }
+    }
+    if (attached) {
+      breakpointListenersRegistered = true;
+    }
+  }
+
+  function normalizeDimensionEntry(entry, fallback) {
+    const fallbackWidth = Number(fallback?.width) || DEFAULT_BASE_WIDTH;
+    const fallbackHeight = Number(fallback?.height) || DEFAULT_BASE_HEIGHT;
+    return {
+      width: Number(entry?.width) || fallbackWidth,
+      height: Number(entry?.height) || fallbackHeight
+    };
+  }
+
+  function getActiveBreakpoint() {
+    const grid = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-grid');
+    if (grid && typeof window !== 'undefined' && typeof window.getComputedStyle === 'function') {
+      try {
+        const computed = window.getComputedStyle(grid);
+        const areasValue = computed.getPropertyValue('grid-template-areas');
+        const normalized = normalizeTemplateAreas(areasValue);
+        if (normalized && normalized !== 'none') {
+          const lookup = layoutState.normalizedAreas || DEFAULT_NORMALIZED_AREAS;
+          const matches = [];
+          if (normalized === lookup.mobile) matches.push('mobile');
+          if (normalized === lookup.tablet) matches.push('tablet');
+          if (normalized === lookup.desktop) matches.push('desktop');
+          if (matches.length === 1) {
+            return matches[0];
+          }
+        }
+      } catch (err) {
+        /* ignore */
+      }
+    }
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+      return 'desktop';
+    }
+    if (window.matchMedia('(max-width: 720px)').matches) {
+      return 'mobile';
+    }
+    if (window.matchMedia('(max-width: 1100px)').matches) {
+      return 'tablet';
+    }
+    return 'desktop';
+  }
+
+  function getActiveBaseDimensions(dimensionsOverride) {
+    const source = dimensionsOverride || layoutState.baseDimensions || DEFAULT_BASE_DIMENSIONS;
+    const desktop = normalizeDimensionEntry(source.desktop, DEFAULT_BASE_DIMENSIONS.desktop);
+    const tablet = normalizeDimensionEntry(source.tablet, desktop);
+    const mobile = normalizeDimensionEntry(source.mobile, tablet);
+    const breakpoint = getActiveBreakpoint();
+    if (breakpoint === 'mobile') return mobile;
+    if (breakpoint === 'tablet') return tablet;
+    return desktop;
   }
 
   function applyScale(rootEl) {
@@ -654,9 +847,15 @@
     const width = rect.width;
     const height = rect.height;
     if (!width || !height) return;
-    const baseWidth = Math.max(1, Number(currentBaseWidth) || DEFAULT_BASE_WIDTH);
-    const baseHeight = Math.max(1, Number(currentBaseHeight) || DEFAULT_BASE_HEIGHT);
-    const scale = Math.max(0.1, Math.min(width / baseWidth, height / baseHeight));
+    const activeBase = getActiveBaseDimensions();
+    const baseWidth = Math.max(1, Number(activeBase?.width) || Number(currentBaseWidth) || DEFAULT_BASE_WIDTH);
+    const baseHeight = Math.max(1, Number(activeBase?.height) || Number(currentBaseHeight) || DEFAULT_BASE_HEIGHT);
+    currentBaseWidth = baseWidth;
+    currentBaseHeight = baseHeight;
+    root.style.setProperty('--wdash-base-width', `${baseWidth}px`);
+    root.style.setProperty('--wdash-base-height', `${baseHeight}px`);
+    const rawScale = Math.min(width / baseWidth, height / baseHeight);
+    const scale = Math.max(0.1, Math.min(rawScale, 1));
     const renderWidth = baseWidth * scale;
     const renderHeight = baseHeight * scale;
     root.style.setProperty('--wdash-scale', `${scale}`);
@@ -3140,6 +3339,18 @@
       .split(/\s+/)
       .filter(Boolean);
     return tokens.includes(areaName);
+  }
+
+  function normalizeTemplateAreas(value) {
+    if (value == null) return '';
+    const str = typeof value === 'string' ? value : String(value);
+    const trimmed = str.trim();
+    if (!trimmed) return '';
+    if (trimmed.toLowerCase() === 'none') return 'none';
+    return trimmed
+      .replace(/["']/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
   }
 
   function normalizeAreaToken(value) {
