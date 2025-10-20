@@ -3510,7 +3510,7 @@
 .wdash-air-header-meta { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
 .wdash-air-source { font-size: 0.62rem; letter-spacing: 0.08em; text-transform: uppercase; color: #9badcf; }
 .wdash-air-battery { display: inline-flex; align-items: center; }
-.wdash-card-header--temp-wind { align-items: center; gap: 10px; position: relative; z-index: 2; padding-bottom: calc(10px + var(--temp-wind-header-underlap, 0px)); margin-bottom: calc(var(--temp-wind-header-underlap, 0px) * -1); background: linear-gradient(to bottom, rgba(6, 12, 24, 0.96), rgba(6, 12, 24, 0.82)); }
+.wdash-card-header--temp-wind { align-items: center; gap: 10px; position: relative; z-index: 2; padding-bottom: calc(10px + var(--temp-wind-header-underlap, 0px)); margin-bottom: calc(var(--temp-wind-header-underlap, 0px) * -1); background: transparent; }
 .wdash-card-header--temp-wind .wdash-card-header-main { align-items: flex-start; text-align: left; }
 .wdash-temp-wind-header-meta { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
 .wdash-temp-wind-battery { display: inline-flex; align-items: center; }
