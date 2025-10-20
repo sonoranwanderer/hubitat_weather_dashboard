@@ -3476,7 +3476,7 @@
 .wdash-updated-line { white-space: nowrap; line-height: 1.2; }
 .wdash-updated-line--secondary { font-size: 0.62rem; opacity: 0.65; }
 .wdash-clock-time { font-family: 'SFMono-Regular', 'Roboto Mono', 'Menlo', 'Courier New', monospace; font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
-.wdash-card--temp-wind { grid-area: temp-wind; gap: 6px; padding-block: 5px; --temp-wind-gauge-svg-inset: 11%; --temp-wind-gauge-center-inset: 26%; --temp-wind-compass-block-inset: 24%; --temp-wind-compass-inline-inset: 20%; position: relative; }
+.wdash-card--temp-wind { grid-area: temp-wind; gap: 6px; padding-block: 5px; --temp-wind-gauge-center-inset: 26%; --temp-wind-compass-block-inset: 24%; --temp-wind-compass-inline-inset: 20%; position: relative; }
 .wdash-card--temp-wind .wdash-gauge, .wdash-card--temp-wind .wdash-wind-compass { width: 100%; height: 100%; max-width: none; max-height: none; }
 .wdash-card--temp-wind .wdash-metric-row--gauge { max-width: 100%; }
 .wdash-card--temp-wind .wdash-temp-wind-main { padding-block: 2px; position: relative; z-index: 1; }
@@ -3500,7 +3500,7 @@
 .wdash-temp { align-items: center; }
 .wdash-wind { align-items: center; }
 .wdash-gauge, .wdash-wind-compass { position: relative; width: 100%; height: 100%; margin: 0 auto; }
-  .wdash-gauge-svg { position: absolute; inset: var(--temp-wind-gauge-svg-inset, 11%); width: calc(100% - (var(--temp-wind-gauge-svg-inset, 11%) * 2)); height: calc(100% - (var(--temp-wind-gauge-svg-inset, 11%) * 2)); display: block; }
+  .wdash-gauge-svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .wdash-gauge-center { position: absolute; inset: var(--temp-wind-gauge-center-inset, 26%); border-radius: 50%; background: rgba(5,10,20,0.85); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 12px 10px; gap: 6px; text-align: center; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04); }
 .wdash-gauge-current { display: flex; flex-direction: column; gap: 4px; align-items: center; }
 .wdash-gauge-value { font-size: 2.32rem; font-weight: 800; letter-spacing: -0.02em; }
@@ -3532,7 +3532,7 @@
 .wdash-wind-speed { display: inline-flex; align-items: baseline; gap: 4px; font-weight: 700; }
 .wdash-wind-speed-value { font-size: 2.1rem; color: #5bd6ff; }
 .wdash-wind-heading { font-size: 0.78rem; color: #9badcf; letter-spacing: 0.08em; }
-  .wdash-wind-compass svg { position: absolute; inset: var(--temp-wind-gauge-svg-inset, 11%); width: calc(100% - (var(--temp-wind-gauge-svg-inset, 11%) * 2)); height: calc(100% - (var(--temp-wind-gauge-svg-inset, 11%) * 2)); display: block; filter: drop-shadow(0 8px 18px rgba(0,0,0,0.4)); }
+  .wdash-wind-compass svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; filter: drop-shadow(0 8px 18px rgba(0,0,0,0.4)); }
 .wdash-wind-gust { display: inline-flex; align-items: baseline; gap: 4px; font-weight: 700; }
 .wdash-wind-gust-value { font-size: 0.98rem; font-weight: 600; color: #f4f6ff; }
 .wdash-wind-gust-label { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.08em; color: #8ea0c8; }
