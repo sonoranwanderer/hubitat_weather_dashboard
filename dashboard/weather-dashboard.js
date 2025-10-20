@@ -520,21 +520,39 @@
 
     const rawLayout = metadata ? (metadata.layout != null ? metadata.layout : metadata.layoutOverride) : null;
     const override = rawLayout ? extractLayoutOverride(rawLayout) : null;
-    const mergedLayout = deepMerge(DEFAULT_LAYOUT, override || {});
+    const overrideLayout = isPlainObject(override) ? override : null;
+    const hasOwn = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
 
     const hasRowConfig = value => Array.isArray(value) || Array.isArray(value?.rows);
     const sanitizeSectionObject = section => (isPlainObject(section) ? section : null);
 
-    const layoutForCompile = {};
-    let previousRows = hasRowConfig(mergedLayout.desktop)
-      ? mergedLayout.desktop
-      : DEFAULT_LAYOUT.desktop;
+    const overrideSectionValues = {};
+    const overrideSectionObjects = {};
     for (const key of BREAKPOINTS) {
-      const section = mergedLayout[key];
-      if (hasRowConfig(section)) {
-        previousRows = section;
+      const value = overrideLayout && hasOwn(overrideLayout, key) ? overrideLayout[key] : undefined;
+      overrideSectionValues[key] = value;
+      overrideSectionObjects[key] = sanitizeSectionObject(value);
+    }
+
+    const layoutForCompile = {};
+    let inheritedRows = null;
+    let inheritFromOverride = false;
+    for (const key of BREAKPOINTS) {
+      const overrideValue = overrideSectionValues[key];
+      if (hasRowConfig(overrideValue)) {
+        inheritedRows = overrideValue;
+        inheritFromOverride = true;
+        layoutForCompile[key] = overrideValue;
+        continue;
       }
-      layoutForCompile[key] = previousRows;
+      if (inheritFromOverride && inheritedRows) {
+        layoutForCompile[key] = inheritedRows;
+        continue;
+      }
+      const defaultSection = DEFAULT_LAYOUT[key] || DEFAULT_LAYOUT.desktop;
+      const defaultRows = hasRowConfig(defaultSection) ? defaultSection : DEFAULT_LAYOUT.desktop;
+      inheritedRows = defaultRows;
+      layoutForCompile[key] = defaultRows;
     }
     const compiled = compileLayoutTemplates(layoutForCompile);
     const normalizedAreas = {
@@ -543,13 +561,26 @@
       mobile: normalizeTemplateAreas(compiled.mobile.areas)
     };
 
-    const desktopSection = sanitizeSectionObject(mergedLayout.desktop);
-    const tabletSection = sanitizeSectionObject(mergedLayout.tablet);
-    const mobileSection = sanitizeSectionObject(mergedLayout.mobile);
+    const desktopSection = overrideSectionObjects.desktop;
+    const tabletSection = overrideSectionObjects.tablet;
+    const mobileSection = overrideSectionObjects.mobile;
+    const hasDesktopOverride = Boolean(overrideLayout && hasOwn(overrideLayout, 'desktop'));
+    const hasTabletOverride = Boolean(overrideLayout && hasOwn(overrideLayout, 'tablet'));
+    const hasMobileOverride = Boolean(overrideLayout && hasOwn(overrideLayout, 'mobile'));
 
     const desktopColumns = sanitizeColumns(desktopSection?.columns, DEFAULT_COLUMNS.desktop);
-    const tabletColumns = sanitizeColumns(tabletSection?.columns, desktopColumns);
-    const mobileColumns = sanitizeColumns(mobileSection?.columns, tabletColumns);
+    const tabletColumns = sanitizeColumns(
+      tabletSection?.columns,
+      hasTabletOverride ? desktopColumns : hasDesktopOverride ? desktopColumns : DEFAULT_COLUMNS.tablet
+    );
+    const mobileColumns = sanitizeColumns(
+      mobileSection?.columns,
+      hasMobileOverride
+        ? tabletColumns
+        : hasTabletOverride || hasDesktopOverride
+          ? tabletColumns
+          : DEFAULT_COLUMNS.mobile
+    );
     const columns = {
       desktop: desktopColumns,
       tablet: tabletColumns,
@@ -557,16 +588,26 @@
     };
 
     const desktopGap = sanitizeGap(desktopSection?.gap, DEFAULT_GAPS.desktop);
-    const tabletGap = sanitizeGap(tabletSection?.gap, desktopGap);
-    const mobileGap = sanitizeGap(mobileSection?.gap, tabletGap);
+    const tabletGap = sanitizeGap(
+      tabletSection?.gap,
+      hasTabletOverride ? desktopGap : hasDesktopOverride ? desktopGap : DEFAULT_GAPS.tablet
+    );
+    const mobileGap = sanitizeGap(
+      mobileSection?.gap,
+      hasMobileOverride
+        ? tabletGap
+        : hasTabletOverride || hasDesktopOverride
+          ? tabletGap
+          : DEFAULT_GAPS.mobile
+    );
     const gaps = {
       desktop: desktopGap,
       tablet: tabletGap,
       mobile: mobileGap
     };
 
-    const fallbackWidth = sanitizeDimension(mergedLayout.baseWidth, DEFAULT_BASE_WIDTH);
-    const fallbackHeight = sanitizeDimension(mergedLayout.baseHeight, DEFAULT_BASE_HEIGHT);
+    const fallbackWidth = sanitizeDimension(overrideLayout?.baseWidth, DEFAULT_BASE_WIDTH);
+    const fallbackHeight = sanitizeDimension(overrideLayout?.baseHeight, DEFAULT_BASE_HEIGHT);
     const desktopWidth = sanitizeDimension(desktopSection?.baseWidth, fallbackWidth);
     const desktopHeight = sanitizeDimension(desktopSection?.baseHeight, fallbackHeight);
     const tabletWidth = sanitizeDimension(tabletSection?.baseWidth, desktopWidth);
@@ -804,7 +845,8 @@
     currentBaseHeight = baseHeight;
     root.style.setProperty('--wdash-base-width', `${baseWidth}px`);
     root.style.setProperty('--wdash-base-height', `${baseHeight}px`);
-    const scale = Math.max(0.1, Math.min(width / baseWidth, height / baseHeight));
+    const rawScale = Math.min(width / baseWidth, height / baseHeight);
+    const scale = Math.max(0.1, Math.min(rawScale, 1));
     const renderWidth = baseWidth * scale;
     const renderHeight = baseHeight * scale;
     root.style.setProperty('--wdash-scale', `${scale}`);
