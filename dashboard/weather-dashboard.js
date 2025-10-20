@@ -102,16 +102,6 @@
   const AMBIENT_RING = { r: 45, stroke: 10 };
   // separate ring geometry for outdoor gauge and wind compass
   const OUTDOOR_RING = { r: 45, stroke: 10 };
-  const TEMP_WIND_BASE_GAUGE_SIZE = 260;
-  const TEMP_WIND_BASE_SVG_INSET = 0.11;
-  const TEMP_WIND_BASE_CENTER_INSET = 0.26;
-  const TEMP_WIND_BASE_COMPASS_BLOCK_INSET = 0.24;
-  const TEMP_WIND_BASE_COMPASS_INLINE_INSET = 0.2;
-  const TEMP_WIND_BASE_SVG_INSET_PX = TEMP_WIND_BASE_GAUGE_SIZE * TEMP_WIND_BASE_SVG_INSET;
-  const TEMP_WIND_BASE_CENTER_INSET_PX = TEMP_WIND_BASE_GAUGE_SIZE * TEMP_WIND_BASE_CENTER_INSET;
-  const TEMP_WIND_BASE_COMPASS_BLOCK_INSET_PX = TEMP_WIND_BASE_GAUGE_SIZE * TEMP_WIND_BASE_COMPASS_BLOCK_INSET;
-  const TEMP_WIND_BASE_COMPASS_INLINE_INSET_PX = TEMP_WIND_BASE_GAUGE_SIZE * TEMP_WIND_BASE_COMPASS_INLINE_INSET;
-
   const CARD_TITLES = {
     temperature: 'Outdoor Temperature',
     wind: 'Wind',
@@ -226,10 +216,6 @@
   let breakpointListenersRegistered = false;
   let tempWindGaugeObserver = null;
   let tempWindGaugeResizeHandler = null;
-  let tempWindGaugeRaf = null;
-  let tempWindGaugeRafType = null;
-  let tempWindGaugeApplying = false;
-  let tempWindGaugePendingCard = null;
   let tempWindGaugeLastSize = null;
   let rainDropObserver = null;
   let rainDropResizeHandler = null;
@@ -1029,7 +1015,7 @@
     let gaugeSizeAttr = '';
     if (Number.isFinite(tempWindGaugeLastSize) && tempWindGaugeLastSize > 0) {
       const normalizedGaugeSize = Math.max(0, Math.round(tempWindGaugeLastSize * 100) / 100);
-      gaugeSizeAttr = ` data-temp-wind-gauge-size="${normalizedGaugeSize}" style="--temp-wind-gauge-size:${normalizedGaugeSize}px;"`;
+      gaugeSizeAttr = ` style="--temp-wind-gauge-size:${normalizedGaugeSize}px;"`;
     }
 
     const detailsRow = buildMetricRow([
@@ -2405,39 +2391,6 @@
       window.removeEventListener('resize', tempWindGaugeResizeHandler);
       tempWindGaugeResizeHandler = null;
     }
-    if (tempWindGaugeRaf != null) {
-      if (tempWindGaugeRafType === 'raf' && typeof cancelAnimationFrame === 'function') {
-        cancelAnimationFrame(tempWindGaugeRaf);
-      } else if (tempWindGaugeRafType === 'timeout') {
-        clearTimeout(tempWindGaugeRaf);
-      }
-      tempWindGaugeRaf = null;
-      tempWindGaugeRafType = null;
-    }
-    tempWindGaugeApplying = false;
-    tempWindGaugePendingCard = null;
-  }
-
-  function scheduleTempWindGaugeSizing(card) {
-    const target = card || document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-card--temp-wind');
-    if (!target) return;
-    if (tempWindGaugeApplying) {
-      tempWindGaugePendingCard = target;
-      return;
-    }
-    if (tempWindGaugeRaf != null) return;
-    const runner = () => {
-      tempWindGaugeRaf = null;
-      tempWindGaugeRafType = null;
-      applyTempWindGaugeSizing(target);
-    };
-    if (typeof requestAnimationFrame === 'function') {
-      tempWindGaugeRafType = 'raf';
-      tempWindGaugeRaf = requestAnimationFrame(runner);
-    } else {
-      tempWindGaugeRafType = 'timeout';
-      tempWindGaugeRaf = setTimeout(runner, 16);
-    }
   }
 
   function setupTempWindGaugeSizing(container) {
@@ -2448,179 +2401,67 @@
     if (!main) return;
 
     if (Number.isFinite(tempWindGaugeLastSize) && tempWindGaugeLastSize > 0) {
-      card.dataset.tempWindGaugeSize = String(tempWindGaugeLastSize);
       card.style.setProperty('--temp-wind-gauge-size', `${tempWindGaugeLastSize}px`);
     } else {
       card.style.removeProperty('--temp-wind-gauge-size');
-      delete card.dataset.tempWindGaugeSize;
     }
 
-    applyTempWindGaugeSizing(card);
-    scheduleTempWindGaugeSizing(card);
+    applyTempWindGaugeSizing(card, main);
 
     if (typeof ResizeObserver === 'function') {
       tempWindGaugeObserver = new ResizeObserver(() => {
-        if (tempWindGaugeApplying) return;
-        scheduleTempWindGaugeSizing(card);
+        applyTempWindGaugeSizing(card, main);
       });
-      tempWindGaugeObserver.observe(card);
+      tempWindGaugeObserver.observe(main);
     } else {
-      tempWindGaugeResizeHandler = () => scheduleTempWindGaugeSizing(card);
+      tempWindGaugeResizeHandler = () => applyTempWindGaugeSizing(card, main);
       window.addEventListener('resize', tempWindGaugeResizeHandler);
     }
   }
 
-  function computeTempWindInsetPercent(baselinePx, gaugeSize, minPercent, maxPercent) {
-    if (!Number.isFinite(gaugeSize) || gaugeSize <= 0) return null;
-    const percent = (baselinePx / gaugeSize) * 100;
-    const clamped = clamp(percent, minPercent, maxPercent);
-    const rounded = Math.round(clamped * 1000) / 1000;
-    return `${rounded}%`;
-  }
-
-  function applyTempWindGaugeSizing(cardOverride) {
-    if (tempWindGaugeApplying) {
-      if (cardOverride) {
-        tempWindGaugePendingCard = cardOverride;
-      }
-      return;
-    }
+  function applyTempWindGaugeSizing(cardOverride, mainOverride) {
     const card = cardOverride || document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-card--temp-wind');
     if (!card) {
       tempWindGaugeLastSize = null;
       return;
     }
-    tempWindGaugeApplying = true;
-    try {
-      const main = card.querySelector('.wdash-temp-wind-main');
-      if (!main) {
-        card.style.removeProperty('--temp-wind-gauge-size');
-        card.style.removeProperty('--temp-wind-gauge-svg-inset');
-        card.style.removeProperty('--temp-wind-gauge-center-inset');
-        card.style.removeProperty('--temp-wind-compass-block-inset');
-        card.style.removeProperty('--temp-wind-compass-inline-inset');
-        card.style.removeProperty('--temp-wind-header-overlap-offset');
-        delete card.dataset.tempWindGaugeSize;
-        delete card.dataset.tempWindHeaderOverlap;
-        tempWindGaugeLastSize = null;
-        return;
-      }
 
-      const header = card.querySelector('.wdash-card-header');
-      const cardStyle = getComputedStyle(card);
-      const headerUnderlap = Math.max(0, parseFloat(cardStyle.getPropertyValue('--temp-wind-header-underlap')) || 0);
-      const headerRect = header ? header.getBoundingClientRect() : null;
-      const mainRect = main.getBoundingClientRect();
-
-      let headerOverlapOffset = 0;
-      if (headerRect && headerUnderlap > 0 && headerRect.height > 0) {
-        headerOverlapOffset = Math.min(headerUnderlap, headerRect.height);
-      }
-      if (headerOverlapOffset > 0) {
-        const normalizedHeaderOffset = Math.max(0, Math.round(headerOverlapOffset * 100) / 100);
-        card.style.setProperty('--temp-wind-header-overlap-offset', `${normalizedHeaderOffset}px`);
-        card.dataset.tempWindHeaderOverlap = String(normalizedHeaderOffset);
-      } else {
-        card.style.removeProperty('--temp-wind-header-overlap-offset');
-        delete card.dataset.tempWindHeaderOverlap;
-      }
-
-      const gaugeHosts = [];
-      const tempHost = main.querySelector('.wdash-temp');
-      if (tempHost) gaugeHosts.push(tempHost);
-      const windHost = main.querySelector('.wdash-wind');
-      if (windHost) gaugeHosts.push(windHost);
-
-      let gaugeSize = 0;
-      if (gaugeHosts.length) {
-        for (const host of gaugeHosts) {
-          const hostRect = host.getBoundingClientRect();
-          if (!hostRect) continue;
-          const hostStyle = getComputedStyle(host);
-          const hostPaddingInline =
-            (parseFloat(hostStyle.paddingInlineStart || hostStyle.paddingLeft) || 0) +
-            (parseFloat(hostStyle.paddingInlineEnd || hostStyle.paddingRight) || 0);
-          const hostPaddingBlock =
-            (parseFloat(hostStyle.paddingBlockStart || hostStyle.paddingTop) || 0) +
-            (parseFloat(hostStyle.paddingBlockEnd || hostStyle.paddingBottom) || 0);
-          const usableWidth = Math.max(0, hostRect.width - hostPaddingInline);
-          const usableHeight = Math.max(0, hostRect.height - hostPaddingBlock);
-          const hostSize = Math.min(usableWidth, usableHeight);
-          if (Number.isFinite(hostSize) && hostSize > 0) {
-            if (!Number.isFinite(gaugeSize) || gaugeSize <= 0) {
-              gaugeSize = hostSize;
-            } else {
-              gaugeSize = Math.min(gaugeSize, hostSize);
-            }
-          }
-        }
-      }
-
-      if (!Number.isFinite(gaugeSize) || gaugeSize <= 0) {
-        const measuredHeight = mainRect ? mainRect.height : 0;
-        const measuredWidth = mainRect ? mainRect.width : 0;
-        const availableHeight = Number.isFinite(measuredHeight) && measuredHeight > 0 ? measuredHeight : 0;
-        const availableWidth = Number.isFinite(measuredWidth) && measuredWidth > 0 ? measuredWidth : 0;
-        const fallbackSize = Math.min(availableHeight, availableWidth);
-        gaugeSize = Number.isFinite(fallbackSize) && fallbackSize > 0 ? fallbackSize : 0;
-      }
-
-      if (!Number.isFinite(gaugeSize) || gaugeSize <= 0) {
-        tempWindGaugeLastSize = 0;
-        card.style.removeProperty('--temp-wind-gauge-size');
-        card.style.removeProperty('--temp-wind-gauge-svg-inset');
-        card.style.removeProperty('--temp-wind-gauge-center-inset');
-        card.style.removeProperty('--temp-wind-compass-block-inset');
-        card.style.removeProperty('--temp-wind-compass-inline-inset');
-        card.style.removeProperty('--temp-wind-header-overlap-offset');
-        delete card.dataset.tempWindGaugeSize;
-        delete card.dataset.tempWindHeaderOverlap;
-        return;
-      }
-
-      const normalized = Math.max(0, Math.round(gaugeSize * 10) / 10);
-      const previous = Number(card.dataset.tempWindGaugeSize);
-      if (Number.isFinite(previous) && Math.abs(previous - normalized) <= 0.5) {
-        tempWindGaugeLastSize = previous;
-        return;
-      }
-
-      tempWindGaugeLastSize = normalized;
-      card.style.setProperty('--temp-wind-gauge-size', `${normalized}px`);
-      const svgInset = computeTempWindInsetPercent(TEMP_WIND_BASE_SVG_INSET_PX, normalized, 4, 14);
-      if (svgInset) {
-        card.style.setProperty('--temp-wind-gauge-svg-inset', svgInset);
-      } else {
-        card.style.removeProperty('--temp-wind-gauge-svg-inset');
-      }
-      const centerInset = computeTempWindInsetPercent(TEMP_WIND_BASE_CENTER_INSET_PX, normalized, 16, 34);
-      if (centerInset) {
-        card.style.setProperty('--temp-wind-gauge-center-inset', centerInset);
-      } else {
-        card.style.removeProperty('--temp-wind-gauge-center-inset');
-      }
-      const compassBlockInset = computeTempWindInsetPercent(TEMP_WIND_BASE_COMPASS_BLOCK_INSET_PX, normalized, 16, 30);
-      if (compassBlockInset) {
-        card.style.setProperty('--temp-wind-compass-block-inset', compassBlockInset);
-      } else {
-        card.style.removeProperty('--temp-wind-compass-block-inset');
-      }
-      const compassInlineInset = computeTempWindInsetPercent(TEMP_WIND_BASE_COMPASS_INLINE_INSET_PX, normalized, 14, 26);
-      if (compassInlineInset) {
-        card.style.setProperty('--temp-wind-compass-inline-inset', compassInlineInset);
-      } else {
-        card.style.removeProperty('--temp-wind-compass-inline-inset');
-      }
-
-      card.dataset.tempWindGaugeSize = String(normalized);
-    } finally {
-      tempWindGaugeApplying = false;
-      if (tempWindGaugePendingCard) {
-        const pending = tempWindGaugePendingCard;
-        tempWindGaugePendingCard = null;
-        scheduleTempWindGaugeSizing(pending);
-      }
+    const main = mainOverride || card.querySelector('.wdash-temp-wind-main');
+    if (!main) {
+      card.style.removeProperty('--temp-wind-gauge-size');
+      tempWindGaugeLastSize = null;
+      return;
     }
+
+    const hosts = main.querySelectorAll('.wdash-temp, .wdash-wind');
+    let gaugeSize = 0;
+    hosts.forEach(host => {
+      const width = host?.clientWidth || 0;
+      const height = host?.clientHeight || 0;
+      const hostSize = Math.min(width, height);
+      if (hostSize > 0) {
+        gaugeSize = gaugeSize > 0 ? Math.min(gaugeSize, hostSize) : hostSize;
+      }
+    });
+
+    if (!Number.isFinite(gaugeSize) || gaugeSize <= 0) {
+      const fallbackSize = Math.min(main.clientWidth || 0, main.clientHeight || 0);
+      gaugeSize = Number.isFinite(fallbackSize) && fallbackSize > 0 ? fallbackSize : 0;
+    }
+
+    if (!Number.isFinite(gaugeSize) || gaugeSize <= 0) {
+      card.style.removeProperty('--temp-wind-gauge-size');
+      tempWindGaugeLastSize = null;
+      return;
+    }
+
+    const normalized = Math.max(0, Math.round(gaugeSize * 10) / 10);
+    if (Number.isFinite(tempWindGaugeLastSize) && Math.abs(tempWindGaugeLastSize - normalized) <= 0.5) {
+      return;
+    }
+
+    tempWindGaugeLastSize = normalized;
+    card.style.setProperty('--temp-wind-gauge-size', `${normalized}px`);
   }
 
   function setupPressureToggle(container) {
@@ -3619,10 +3460,10 @@
 .wdash-updated-line { white-space: nowrap; line-height: 1.2; }
 .wdash-updated-line--secondary { font-size: 0.62rem; opacity: 0.65; }
 .wdash-clock-time { font-family: 'SFMono-Regular', 'Roboto Mono', 'Menlo', 'Courier New', monospace; font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
-.wdash-card--temp-wind { grid-area: temp-wind; gap: 6px; padding-block: 5px; --temp-wind-gauge-size: 260px; --temp-wind-header-underlap: 28px; --temp-wind-gauge-svg-inset: 11%; --temp-wind-gauge-center-inset: 26%; --temp-wind-compass-block-inset: 24%; --temp-wind-compass-inline-inset: 20%; position: relative; }
+.wdash-card--temp-wind { grid-area: temp-wind; gap: 6px; padding-block: 5px; --temp-wind-gauge-size: 260px; --temp-wind-gauge-svg-inset: 11%; --temp-wind-gauge-center-inset: 26%; --temp-wind-compass-block-inset: 24%; --temp-wind-compass-inline-inset: 20%; position: relative; }
 .wdash-card--temp-wind .wdash-gauge, .wdash-card--temp-wind .wdash-wind-compass { width: min(100%, var(--temp-wind-gauge-size, 260px)); }
 .wdash-card--temp-wind .wdash-metric-row--gauge { max-width: var(--temp-wind-gauge-size, 260px); }
-.wdash-card--temp-wind .wdash-temp-wind-main { padding-block: 2px; position: relative; z-index: 1; margin-top: calc(var(--temp-wind-header-overlap-offset, 0px) * -1); }
+.wdash-card--temp-wind .wdash-temp-wind-main { padding-block: 2px; position: relative; z-index: 1; }
 .wdash-card--ambient { grid-area: ambient; gap: 12px; align-items: stretch; }
 .wdash-card--lightning { grid-area: lightning; gap: 8px; align-items: stretch; min-width: 0; display: none; }
 .wdash[data-layout-has-lightning="true"] .wdash-card--lightning { display: flex; }
