@@ -3510,7 +3510,7 @@
 .wdash-air-header-meta { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
 .wdash-air-source { font-size: 0.62rem; letter-spacing: 0.08em; text-transform: uppercase; color: #9badcf; }
 .wdash-air-battery { display: inline-flex; align-items: center; }
-.wdash-card-header--temp-wind { align-items: center; gap: 10px; }
+.wdash-card-header--temp-wind { align-items: center; gap: 10px; position: relative; z-index: 2; padding-bottom: calc(10px + var(--temp-wind-header-underlap, 0px)); margin-bottom: calc(var(--temp-wind-header-underlap, 0px) * -1); background: linear-gradient(to bottom, rgba(6, 12, 24, 0.96), rgba(6, 12, 24, 0.82)); }
 .wdash-card-header--temp-wind .wdash-card-header-main { align-items: flex-start; text-align: left; }
 .wdash-temp-wind-header-meta { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
 .wdash-temp-wind-battery { display: inline-flex; align-items: center; }
@@ -3518,10 +3518,10 @@
 .wdash-updated-line { white-space: nowrap; line-height: 1.2; }
 .wdash-updated-line--secondary { font-size: 0.62rem; opacity: 0.65; }
 .wdash-clock-time { font-family: 'SFMono-Regular', 'Roboto Mono', 'Menlo', 'Courier New', monospace; font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
-.wdash-card--temp-wind { grid-area: temp-wind; gap: 6px; padding-block: 5px; --temp-wind-gauge-size: 260px; }
+.wdash-card--temp-wind { grid-area: temp-wind; gap: 6px; padding-block: 5px; --temp-wind-gauge-size: 260px; --temp-wind-header-underlap: 28px; position: relative; }
 .wdash-card--temp-wind .wdash-gauge, .wdash-card--temp-wind .wdash-wind-compass { width: min(100%, var(--temp-wind-gauge-size, 260px)); }
 .wdash-card--temp-wind .wdash-metric-row--gauge { max-width: var(--temp-wind-gauge-size, 260px); }
-.wdash-card--temp-wind .wdash-temp-wind-main { padding-block: 2px; }
+.wdash-card--temp-wind .wdash-temp-wind-main { padding-block: 2px; position: relative; z-index: 1; }
 .wdash-card--ambient { grid-area: ambient; gap: 12px; align-items: stretch; }
 .wdash-card--lightning { grid-area: lightning; gap: 8px; align-items: stretch; min-width: 0; display: none; }
 .wdash[data-layout-has-lightning="true"] .wdash-card--lightning { display: flex; }
