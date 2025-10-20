@@ -102,6 +102,15 @@
   const AMBIENT_RING = { r: 45, stroke: 10 };
   // separate ring geometry for outdoor gauge and wind compass
   const OUTDOOR_RING = { r: 45, stroke: 10 };
+  const TEMP_WIND_BASE_GAUGE_SIZE = 260;
+  const TEMP_WIND_BASE_SVG_INSET = 0.11;
+  const TEMP_WIND_BASE_CENTER_INSET = 0.26;
+  const TEMP_WIND_BASE_COMPASS_BLOCK_INSET = 0.24;
+  const TEMP_WIND_BASE_COMPASS_INLINE_INSET = 0.2;
+  const TEMP_WIND_BASE_SVG_INSET_PX = TEMP_WIND_BASE_GAUGE_SIZE * TEMP_WIND_BASE_SVG_INSET;
+  const TEMP_WIND_BASE_CENTER_INSET_PX = TEMP_WIND_BASE_GAUGE_SIZE * TEMP_WIND_BASE_CENTER_INSET;
+  const TEMP_WIND_BASE_COMPASS_BLOCK_INSET_PX = TEMP_WIND_BASE_GAUGE_SIZE * TEMP_WIND_BASE_COMPASS_BLOCK_INSET;
+  const TEMP_WIND_BASE_COMPASS_INLINE_INSET_PX = TEMP_WIND_BASE_GAUGE_SIZE * TEMP_WIND_BASE_COMPASS_INLINE_INSET;
 
   const CARD_TITLES = {
     temperature: 'Outdoor Temperature',
@@ -2450,6 +2459,14 @@
     }
   }
 
+  function computeTempWindInsetPercent(baselinePx, gaugeSize, minPercent, maxPercent) {
+    if (!Number.isFinite(gaugeSize) || gaugeSize <= 0) return null;
+    const percent = (baselinePx / gaugeSize) * 100;
+    const clamped = clamp(percent, minPercent, maxPercent);
+    const rounded = Math.round(clamped * 1000) / 1000;
+    return `${rounded}%`;
+  }
+
   function applyTempWindGaugeSizing(cardOverride) {
     const card = cardOverride || document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-card--temp-wind');
     if (!card) {
@@ -2476,6 +2493,7 @@
     const mainPaddingTop = parseFloat(mainStyle.paddingTop) || 0;
     const mainPaddingBottom = parseFloat(mainStyle.paddingBottom) || 0;
     const headerUnderlap = Math.max(0, parseFloat(cardStyle.getPropertyValue('--temp-wind-header-underlap')) || 0);
+    const columnGap = parseFloat(mainStyle.columnGap) || parseFloat(mainStyle.gap) || 0;
 
     let available = card.offsetHeight - paddingTop - paddingBottom;
     if (header) {
@@ -2512,7 +2530,15 @@
     }
 
     const cardInnerWidth = Math.max(0, card.clientWidth - paddingLeft - paddingRight);
-    const horizontalLimit = cardInnerWidth > 0 ? cardInnerWidth / 2 : 0;
+    let horizontalLimit = cardInnerWidth > 0 ? cardInnerWidth / 2 : 0;
+    const mainWidth = main.clientWidth || 0;
+    if (mainWidth > 0) {
+      const adjustedMain = columnGap > 0 ? mainWidth - columnGap : mainWidth;
+      const columnLimit = adjustedMain > 0 ? adjustedMain / 2 : 0;
+      if (columnLimit > 0) {
+        horizontalLimit = horizontalLimit > 0 ? Math.min(horizontalLimit, columnLimit) : columnLimit;
+      }
+    }
     if (horizontalLimit > 0 && gaugeSize > horizontalLimit) {
       gaugeSize = horizontalLimit;
     }
@@ -2522,11 +2548,46 @@
     }
 
     const normalized = Math.max(0, Math.round(gaugeSize * 100) / 100);
-    const previous = Number(card.dataset.tempWindGaugeSize);
     tempWindGaugeLastSize = normalized;
+    if (normalized <= 0) {
+      card.style.removeProperty('--temp-wind-gauge-size');
+      card.style.removeProperty('--temp-wind-gauge-svg-inset');
+      card.style.removeProperty('--temp-wind-gauge-center-inset');
+      card.style.removeProperty('--temp-wind-compass-block-inset');
+      card.style.removeProperty('--temp-wind-compass-inline-inset');
+      delete card.dataset.tempWindGaugeSize;
+      return;
+    }
+
+    card.style.setProperty('--temp-wind-gauge-size', `${normalized}px`);
+    const svgInset = computeTempWindInsetPercent(TEMP_WIND_BASE_SVG_INSET_PX, normalized, 4, 14);
+    if (svgInset) {
+      card.style.setProperty('--temp-wind-gauge-svg-inset', svgInset);
+    } else {
+      card.style.removeProperty('--temp-wind-gauge-svg-inset');
+    }
+    const centerInset = computeTempWindInsetPercent(TEMP_WIND_BASE_CENTER_INSET_PX, normalized, 16, 34);
+    if (centerInset) {
+      card.style.setProperty('--temp-wind-gauge-center-inset', centerInset);
+    } else {
+      card.style.removeProperty('--temp-wind-gauge-center-inset');
+    }
+    const compassBlockInset = computeTempWindInsetPercent(TEMP_WIND_BASE_COMPASS_BLOCK_INSET_PX, normalized, 16, 30);
+    if (compassBlockInset) {
+      card.style.setProperty('--temp-wind-compass-block-inset', compassBlockInset);
+    } else {
+      card.style.removeProperty('--temp-wind-compass-block-inset');
+    }
+    const compassInlineInset = computeTempWindInsetPercent(TEMP_WIND_BASE_COMPASS_INLINE_INSET_PX, normalized, 14, 26);
+    if (compassInlineInset) {
+      card.style.setProperty('--temp-wind-compass-inline-inset', compassInlineInset);
+    } else {
+      card.style.removeProperty('--temp-wind-compass-inline-inset');
+    }
+
+    const previous = Number(card.dataset.tempWindGaugeSize);
     if (Number.isFinite(previous) && Math.abs(previous - normalized) < 0.5) return;
     card.dataset.tempWindGaugeSize = String(normalized);
-    card.style.setProperty('--temp-wind-gauge-size', `${normalized}px`);
   }
 
   function setupPressureToggle(container) {
@@ -3525,7 +3586,7 @@
 .wdash-updated-line { white-space: nowrap; line-height: 1.2; }
 .wdash-updated-line--secondary { font-size: 0.62rem; opacity: 0.65; }
 .wdash-clock-time { font-family: 'SFMono-Regular', 'Roboto Mono', 'Menlo', 'Courier New', monospace; font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
-.wdash-card--temp-wind { grid-area: temp-wind; gap: 6px; padding-block: 5px; --temp-wind-gauge-size: 260px; --temp-wind-header-underlap: 28px; position: relative; }
+.wdash-card--temp-wind { grid-area: temp-wind; gap: 6px; padding-block: 5px; --temp-wind-gauge-size: 260px; --temp-wind-header-underlap: 28px; --temp-wind-gauge-svg-inset: 11%; --temp-wind-gauge-center-inset: 26%; --temp-wind-compass-block-inset: 24%; --temp-wind-compass-inline-inset: 20%; position: relative; }
 .wdash-card--temp-wind .wdash-gauge, .wdash-card--temp-wind .wdash-wind-compass { width: min(100%, var(--temp-wind-gauge-size, 260px)); }
 .wdash-card--temp-wind .wdash-metric-row--gauge { max-width: var(--temp-wind-gauge-size, 260px); }
 .wdash-card--temp-wind .wdash-temp-wind-main { padding-block: 2px; position: relative; z-index: 1; }
@@ -3548,8 +3609,8 @@
 .wdash-temp { align-items: center; }
 .wdash-wind { align-items: center; }
 .wdash-gauge, .wdash-wind-compass { position: relative; width: min(100%, 260px); aspect-ratio: 1 / 1; margin: 0 auto; }
-  .wdash-gauge-svg { position: absolute; inset: 11%; width: calc(100% - 22%); height: calc(100% - 22%); display: block; }
-.wdash-gauge-center { position: absolute; inset: 26%; border-radius: 50%; background: rgba(5,10,20,0.85); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 12px 10px; gap: 6px; text-align: center; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04); }
+  .wdash-gauge-svg { position: absolute; inset: var(--temp-wind-gauge-svg-inset, 11%); width: calc(100% - (var(--temp-wind-gauge-svg-inset, 11%) * 2)); height: calc(100% - (var(--temp-wind-gauge-svg-inset, 11%) * 2)); display: block; }
+.wdash-gauge-center { position: absolute; inset: var(--temp-wind-gauge-center-inset, 26%); border-radius: 50%; background: rgba(5,10,20,0.85); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 12px 10px; gap: 6px; text-align: center; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04); }
 .wdash-gauge-current { display: flex; flex-direction: column; gap: 4px; align-items: center; }
 .wdash-gauge-value { font-size: 2.32rem; font-weight: 800; letter-spacing: -0.02em; }
 .wdash-gauge-label { font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.12em; color: #9badcf; }
@@ -3574,13 +3635,13 @@
 .wdash-metric-row--gauge .wdash-metric-value { font-size: 0.92rem; }
 .wdash-metric-row--gauge .wdash-metric-sub { font-size: 0.68rem; color: #a6b5d6; }
 .wdash-unit { font-size: 0.9rem; margin-left: 2px; opacity: 0.8; }
-.wdash-wind-overlay { position: absolute; inset: 24% 20%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; text-align: center; pointer-events: none; text-shadow: 0 2px 8px rgba(0,0,0,0.45); }
+.wdash-wind-overlay { position: absolute; inset: var(--temp-wind-compass-block-inset, 24%) var(--temp-wind-compass-inline-inset, 20%); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; text-align: center; pointer-events: none; text-shadow: 0 2px 8px rgba(0,0,0,0.45); }
 .wdash-wind-bearing-line { display: inline-flex; align-items: baseline; gap: 4px; font-weight: 700; }
 .wdash-wind-bearing { font-size: 0.78rem; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: #dbe8ff; }
 .wdash-wind-speed { display: inline-flex; align-items: baseline; gap: 4px; font-weight: 700; }
 .wdash-wind-speed-value { font-size: 2.1rem; color: #5bd6ff; }
 .wdash-wind-heading { font-size: 0.78rem; color: #9badcf; letter-spacing: 0.08em; }
-  .wdash-wind-compass svg { position: absolute; inset: 11%; width: calc(100% - 22%); height: calc(100% - 22%); display: block; filter: drop-shadow(0 8px 18px rgba(0,0,0,0.4)); }
+  .wdash-wind-compass svg { position: absolute; inset: var(--temp-wind-gauge-svg-inset, 11%); width: calc(100% - (var(--temp-wind-gauge-svg-inset, 11%) * 2)); height: calc(100% - (var(--temp-wind-gauge-svg-inset, 11%) * 2)); display: block; filter: drop-shadow(0 8px 18px rgba(0,0,0,0.4)); }
 .wdash-wind-gust { display: inline-flex; align-items: baseline; gap: 4px; font-weight: 700; }
 .wdash-wind-gust-value { font-size: 0.98rem; font-weight: 600; color: #f4f6ff; }
 .wdash-wind-gust-label { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.08em; color: #8ea0c8; }
