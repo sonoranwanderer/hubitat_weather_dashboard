@@ -2470,6 +2470,8 @@
     const mainStyle = getComputedStyle(main);
     const paddingTop = parseFloat(cardStyle.paddingTop) || 0;
     const paddingBottom = parseFloat(cardStyle.paddingBottom) || 0;
+    const paddingLeft = parseFloat(cardStyle.paddingLeft) || 0;
+    const paddingRight = parseFloat(cardStyle.paddingRight) || 0;
     const rowGap = parseFloat(cardStyle.rowGap) || parseFloat(cardStyle.gap) || 0;
     const mainPaddingTop = parseFloat(mainStyle.paddingTop) || 0;
     const mainPaddingBottom = parseFloat(mainStyle.paddingBottom) || 0;
@@ -2509,17 +2511,10 @@
       gaugeSize = available;
     }
 
-    const tempCol = main.querySelector('.wdash-temp');
-    const windCol = main.querySelector('.wdash-wind');
-    let columnWidth = 0;
-    if (tempCol && tempCol.offsetWidth) {
-      columnWidth = tempCol.offsetWidth;
-    }
-    if (windCol && windCol.offsetWidth) {
-      columnWidth = columnWidth > 0 ? Math.min(columnWidth, windCol.offsetWidth) : windCol.offsetWidth;
-    }
-    if (columnWidth > 0 && gaugeSize > columnWidth) {
-      gaugeSize = columnWidth;
+    const cardInnerWidth = Math.max(0, card.clientWidth - paddingLeft - paddingRight);
+    const horizontalLimit = cardInnerWidth > 0 ? cardInnerWidth / 2 : 0;
+    if (horizontalLimit > 0 && gaugeSize > horizontalLimit) {
+      gaugeSize = horizontalLimit;
     }
 
     if (!Number.isFinite(gaugeSize)) {
