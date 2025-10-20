@@ -102,7 +102,6 @@
   const AMBIENT_RING = { r: 45, stroke: 10 };
   // separate ring geometry for outdoor gauge and wind compass
   const OUTDOOR_RING = { r: 45, stroke: 10 };
-
   const CARD_TITLES = {
     temperature: 'Outdoor Temperature',
     wind: 'Wind',
@@ -217,9 +216,8 @@
   let breakpointListenersRegistered = false;
   let tempWindGaugeObserver = null;
   let tempWindGaugeResizeHandler = null;
-  let tempWindGaugeRaf = null;
-  let tempWindGaugeRafType = null;
-  let tempWindGaugeLastSize = null;
+  let tempWindGaugeHosts = [];
+  const tempWindGaugeLastSizes = new WeakMap();
   let rainDropObserver = null;
   let rainDropResizeHandler = null;
   let rainDropRaf = null;
@@ -1015,12 +1013,6 @@
       titlePrefix: 'Outdoor sensor battery'
     });
 
-    let gaugeSizeAttr = '';
-    if (Number.isFinite(tempWindGaugeLastSize) && tempWindGaugeLastSize > 0) {
-      const normalizedGaugeSize = Math.max(0, Math.round(tempWindGaugeLastSize * 100) / 100);
-      gaugeSizeAttr = ` data-temp-wind-gauge-size="${normalizedGaugeSize}" style="--temp-wind-gauge-size:${normalizedGaugeSize}px;"`;
-    }
-
     const detailsRow = buildMetricRow([
       { label: 'Feels Like', value: feelsText },
       { label: 'Dew Point', value: dewText },
@@ -1040,7 +1032,7 @@
     `;
 
     return `
-      <section class="wdash-card wdash-card--temp-wind"${gaugeSizeAttr}>
+      <section class="wdash-card wdash-card--temp-wind">
         <header class="wdash-card-header wdash-card-header--temp-wind">
           <div class="wdash-card-header-main">
             <h3>Outdoor Conditions</h3>
@@ -2394,132 +2386,98 @@
       window.removeEventListener('resize', tempWindGaugeResizeHandler);
       tempWindGaugeResizeHandler = null;
     }
-    if (tempWindGaugeRaf != null) {
-      if (tempWindGaugeRafType === 'raf' && typeof cancelAnimationFrame === 'function') {
-        cancelAnimationFrame(tempWindGaugeRaf);
-      } else if (tempWindGaugeRafType === 'timeout') {
-        clearTimeout(tempWindGaugeRaf);
-      }
-      tempWindGaugeRaf = null;
-      tempWindGaugeRafType = null;
-    }
-  }
-
-  function scheduleTempWindGaugeSizing(card) {
-    const target = card || document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-card--temp-wind');
-    if (!target) return;
-    if (tempWindGaugeRaf != null) return;
-    const runner = () => {
-      tempWindGaugeRaf = null;
-      tempWindGaugeRafType = null;
-      applyTempWindGaugeSizing(target);
-    };
-    if (typeof requestAnimationFrame === 'function') {
-      tempWindGaugeRafType = 'raf';
-      tempWindGaugeRaf = requestAnimationFrame(runner);
-    } else {
-      tempWindGaugeRafType = 'timeout';
-      tempWindGaugeRaf = setTimeout(runner, 16);
+    if (tempWindGaugeHosts.length) {
+      tempWindGaugeHosts.forEach(host => {
+        const gauge = host?.querySelector?.('.wdash-gauge, .wdash-wind-compass');
+        if (gauge?.style) {
+          gauge.style.removeProperty('width');
+          gauge.style.removeProperty('height');
+        }
+        tempWindGaugeLastSizes.delete(host);
+      });
+      tempWindGaugeHosts = [];
     }
   }
 
   function setupTempWindGaugeSizing(container) {
-    teardownTempWindGaugeSizing();
     const card = container.querySelector('.wdash-card--temp-wind');
-    if (!card) return;
-    const main = card.querySelector('.wdash-temp-wind-main');
-    if (!main) return;
-
-    if (Number.isFinite(tempWindGaugeLastSize) && tempWindGaugeLastSize > 0) {
-      card.dataset.tempWindGaugeSize = String(tempWindGaugeLastSize);
-      card.style.setProperty('--temp-wind-gauge-size', `${tempWindGaugeLastSize}px`);
-    } else {
-      card.style.removeProperty('--temp-wind-gauge-size');
-      delete card.dataset.tempWindGaugeSize;
+    if (!card) {
+      teardownTempWindGaugeSizing();
+      return;
+    }
+    const hosts = Array.from(card.querySelectorAll('.wdash-temp, .wdash-wind'));
+    if (!hosts.length) {
+      teardownTempWindGaugeSizing();
+      return;
     }
 
-    applyTempWindGaugeSizing(card);
-    scheduleTempWindGaugeSizing(card);
+    const hostsChanged =
+      hosts.length !== tempWindGaugeHosts.length
+      || hosts.some((host, index) => tempWindGaugeHosts[index] !== host);
+
+    if (hostsChanged) {
+      teardownTempWindGaugeSizing();
+      tempWindGaugeHosts = hosts;
+    } else {
+      tempWindGaugeHosts = hosts;
+    }
+
+    hosts.forEach(host => applyTempWindGaugeSize(host));
+
+    if (!hostsChanged && tempWindGaugeObserver) {
+      return;
+    }
 
     if (typeof ResizeObserver === 'function') {
-      tempWindGaugeObserver = new ResizeObserver(() => scheduleTempWindGaugeSizing(card));
-      tempWindGaugeObserver.observe(card);
-    } else {
-      tempWindGaugeResizeHandler = () => scheduleTempWindGaugeSizing(card);
+      tempWindGaugeObserver = new ResizeObserver(entries => {
+        entries.forEach(entry => {
+          applyTempWindGaugeSize(entry.target);
+        });
+      });
+      hosts.forEach(host => tempWindGaugeObserver.observe(host));
+    } else if (!tempWindGaugeResizeHandler) {
+      tempWindGaugeResizeHandler = () => {
+        tempWindGaugeHosts.forEach(host => applyTempWindGaugeSize(host));
+      };
       window.addEventListener('resize', tempWindGaugeResizeHandler);
     }
   }
 
-  function applyTempWindGaugeSizing(cardOverride) {
-    const card = cardOverride || document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-card--temp-wind');
-    if (!card) {
-      tempWindGaugeLastSize = null;
+  function applyTempWindGaugeSize(host) {
+    if (!host) return;
+
+    const gauge = host.querySelector('.wdash-gauge, .wdash-wind-compass');
+    if (!gauge) return;
+
+    const measured = typeof host.getBoundingClientRect === 'function'
+      ? host.getBoundingClientRect()
+      : null;
+    const width = measured?.width ?? host.clientWidth ?? 0;
+    const height = measured?.height ?? host.clientHeight ?? 0;
+    const hostSize = Math.min(width, height);
+
+    if (!Number.isFinite(hostSize) || hostSize <= 0) {
+      if (gauge.style) {
+        gauge.style.removeProperty('width');
+        gauge.style.removeProperty('height');
+      }
+      tempWindGaugeLastSizes.delete(host);
       return;
     }
-    const main = card.querySelector('.wdash-temp-wind-main');
-    if (!main) {
-      card.style.removeProperty('--temp-wind-gauge-size');
-      delete card.dataset.tempWindGaugeSize;
-      tempWindGaugeLastSize = null;
+
+    const normalized = Math.max(0, Math.round(hostSize * 10) / 10);
+    const previous = tempWindGaugeLastSizes.get(host);
+
+    if (Number.isFinite(previous) && Math.abs(previous - normalized) <= 0.5) {
       return;
     }
 
-    const header = card.querySelector('.wdash-card-header');
-    const metrics = card.querySelector('.wdash-temp-wind-details');
-    const cardStyle = getComputedStyle(card);
-    const mainStyle = getComputedStyle(main);
-    const paddingTop = parseFloat(cardStyle.paddingTop) || 0;
-    const paddingBottom = parseFloat(cardStyle.paddingBottom) || 0;
-    const rowGap = parseFloat(cardStyle.rowGap) || parseFloat(cardStyle.gap) || 0;
-    const mainPaddingTop = parseFloat(mainStyle.paddingTop) || 0;
-    const mainPaddingBottom = parseFloat(mainStyle.paddingBottom) || 0;
-
-    let available = card.offsetHeight - paddingTop - paddingBottom;
-    if (header) available -= header.offsetHeight;
-    if (metrics) available -= metrics.offsetHeight;
-
-    let gapCount = 0;
-    if (header) gapCount += 1;
-    if (metrics) gapCount += 1;
-    if (gapCount > 0 && rowGap > 0) {
-      available -= rowGap * gapCount;
+    if (gauge.style) {
+      gauge.style.width = `${normalized}px`;
+      gauge.style.height = `${normalized}px`;
     }
 
-    available -= mainPaddingTop + mainPaddingBottom;
-    if (!Number.isFinite(available)) {
-      available = 0;
-    }
-
-    let gaugeSize = available;
-    if (available <= 0) {
-      gaugeSize = 0;
-    } else if (available < 80) {
-      gaugeSize = available;
-    }
-
-    const tempCol = main.querySelector('.wdash-temp');
-    const windCol = main.querySelector('.wdash-wind');
-    let columnWidth = 0;
-    if (tempCol && tempCol.offsetWidth) {
-      columnWidth = tempCol.offsetWidth;
-    }
-    if (windCol && windCol.offsetWidth) {
-      columnWidth = columnWidth > 0 ? Math.min(columnWidth, windCol.offsetWidth) : windCol.offsetWidth;
-    }
-    if (columnWidth > 0 && gaugeSize > columnWidth) {
-      gaugeSize = columnWidth;
-    }
-
-    if (!Number.isFinite(gaugeSize)) {
-      gaugeSize = 0;
-    }
-
-    const normalized = Math.max(0, Math.round(gaugeSize * 100) / 100);
-    const previous = Number(card.dataset.tempWindGaugeSize);
-    tempWindGaugeLastSize = normalized;
-    if (Number.isFinite(previous) && Math.abs(previous - normalized) < 0.5) return;
-    card.dataset.tempWindGaugeSize = String(normalized);
-    card.style.setProperty('--temp-wind-gauge-size', `${normalized}px`);
+    tempWindGaugeLastSizes.set(host, normalized);
   }
 
   function setupPressureToggle(container) {
@@ -3510,7 +3468,7 @@
 .wdash-air-header-meta { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
 .wdash-air-source { font-size: 0.62rem; letter-spacing: 0.08em; text-transform: uppercase; color: #9badcf; }
 .wdash-air-battery { display: inline-flex; align-items: center; }
-.wdash-card-header--temp-wind { align-items: center; gap: 10px; }
+.wdash-card-header--temp-wind { align-items: center; gap: 10px; position: relative; z-index: 2; padding-bottom: 10px; margin-bottom: 0; background: transparent; }
 .wdash-card-header--temp-wind .wdash-card-header-main { align-items: flex-start; text-align: left; }
 .wdash-temp-wind-header-meta { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
 .wdash-temp-wind-battery { display: inline-flex; align-items: center; }
@@ -3518,10 +3476,10 @@
 .wdash-updated-line { white-space: nowrap; line-height: 1.2; }
 .wdash-updated-line--secondary { font-size: 0.62rem; opacity: 0.65; }
 .wdash-clock-time { font-family: 'SFMono-Regular', 'Roboto Mono', 'Menlo', 'Courier New', monospace; font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
-.wdash-card--temp-wind { grid-area: temp-wind; gap: 6px; padding-block: 5px; --temp-wind-gauge-size: 260px; }
-.wdash-card--temp-wind .wdash-gauge, .wdash-card--temp-wind .wdash-wind-compass { width: min(100%, var(--temp-wind-gauge-size, 260px)); }
-.wdash-card--temp-wind .wdash-metric-row--gauge { max-width: var(--temp-wind-gauge-size, 260px); }
-.wdash-card--temp-wind .wdash-temp-wind-main { padding-block: 2px; }
+.wdash-card--temp-wind { grid-area: temp-wind; gap: 6px; padding-block: 5px; --temp-wind-gauge-center-inset: 26%; --temp-wind-compass-block-inset: 24%; --temp-wind-compass-inline-inset: 20%; position: relative; }
+.wdash-card--temp-wind .wdash-gauge, .wdash-card--temp-wind .wdash-wind-compass { width: 100%; height: 100%; max-width: none; max-height: none; }
+.wdash-card--temp-wind .wdash-metric-row--gauge { max-width: 100%; }
+.wdash-card--temp-wind .wdash-temp-wind-main { padding-block: 2px; position: relative; z-index: 1; }
 .wdash-card--ambient { grid-area: ambient; gap: 12px; align-items: stretch; }
 .wdash-card--lightning { grid-area: lightning; gap: 8px; align-items: stretch; min-width: 0; display: none; }
 .wdash[data-layout-has-lightning="true"] .wdash-card--lightning { display: flex; }
@@ -3534,15 +3492,16 @@
 .wdash-card--solar { grid-area: solar; }
 .wdash-card--air { grid-area: air; gap: 8px; }
 .wdash-temp, .wdash-wind, .wdash-solar, .wdash-pressure { display: flex; flex-direction: column; gap: 10px; flex: 1; }
+.wdash-card--temp-wind .wdash-temp, .wdash-card--temp-wind .wdash-wind { align-items: stretch; justify-content: center; min-width: 0; min-height: 0; }
 .wdash-pressure { gap: 10px; }
-.wdash-temp-wind-main { display: flex; gap: 14px; flex: 1; }
-.wdash-temp-wind-main > .wdash-temp, .wdash-temp-wind-main > .wdash-wind { flex: 1; }
+.wdash-temp-wind-main { display: flex; gap: 14px; flex: 1; align-items: stretch; min-height: 0; }
+.wdash-temp-wind-main > .wdash-temp, .wdash-temp-wind-main > .wdash-wind { flex: 1; min-width: 0; min-height: 0; }
 .wdash-temp-wind-details { display: flex; justify-content: space-between; gap: 12px; }
 .wdash-temp { align-items: center; }
 .wdash-wind { align-items: center; }
-.wdash-gauge, .wdash-wind-compass { position: relative; width: min(100%, 260px); aspect-ratio: 1 / 1; margin: 0 auto; }
-  .wdash-gauge-svg { position: absolute; inset: 11%; width: calc(100% - 22%); height: calc(100% - 22%); display: block; }
-.wdash-gauge-center { position: absolute; inset: 26%; border-radius: 50%; background: rgba(5,10,20,0.85); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 12px 10px; gap: 6px; text-align: center; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04); }
+.wdash-gauge, .wdash-wind-compass { position: relative; width: 100%; height: 100%; margin: 0 auto; }
+  .wdash-gauge-svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.wdash-gauge-center { position: absolute; inset: var(--temp-wind-gauge-center-inset, 26%); border-radius: 50%; background: rgba(5,10,20,0.85); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 12px 10px; gap: 6px; text-align: center; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04); }
 .wdash-gauge-current { display: flex; flex-direction: column; gap: 4px; align-items: center; }
 .wdash-gauge-value { font-size: 2.32rem; font-weight: 800; letter-spacing: -0.02em; }
 .wdash-gauge-label { font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.12em; color: #9badcf; }
@@ -3561,19 +3520,19 @@
 .wdash-metric-value { font-size: 0.98rem; font-weight: 600; color: #f4f6ff; white-space: nowrap; }
 .wdash-metric--tinted .wdash-metric-label { color: #f4f6ff; opacity: 0.9; }
 .wdash-metric-sub { font-size: 0.68rem; color: #9badcf; }
-.wdash-metric-row--gauge { display: grid; grid-template-columns: repeat(var(--wdash-columns, 3), minmax(0, 1fr)); width: 100%; max-width: 260px; margin: 0 auto; gap: 4px 12px; justify-items: center; align-items: end; }
+.wdash-metric-row--gauge { display: grid; grid-template-columns: repeat(var(--wdash-columns, 3), minmax(0, 1fr)); width: 100%; max-width: 100%; margin: 0 auto; gap: 4px 12px; justify-items: center; align-items: end; }
 .wdash-metric-row--gauge .wdash-metric { background: transparent; box-shadow: none; padding: 0; gap: 3px; min-width: 0; align-items: center; }
 .wdash-metric-row--gauge .wdash-metric-label { font-size: 0.58rem; letter-spacing: 0.1em; color: #93a5d0; white-space: nowrap; }
 .wdash-metric-row--gauge .wdash-metric-value { font-size: 0.92rem; }
 .wdash-metric-row--gauge .wdash-metric-sub { font-size: 0.68rem; color: #a6b5d6; }
 .wdash-unit { font-size: 0.9rem; margin-left: 2px; opacity: 0.8; }
-.wdash-wind-overlay { position: absolute; inset: 24% 20%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; text-align: center; pointer-events: none; text-shadow: 0 2px 8px rgba(0,0,0,0.45); }
+.wdash-wind-overlay { position: absolute; inset: var(--temp-wind-compass-block-inset, 24%) var(--temp-wind-compass-inline-inset, 20%); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; text-align: center; pointer-events: none; text-shadow: 0 2px 8px rgba(0,0,0,0.45); }
 .wdash-wind-bearing-line { display: inline-flex; align-items: baseline; gap: 4px; font-weight: 700; }
 .wdash-wind-bearing { font-size: 0.78rem; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: #dbe8ff; }
 .wdash-wind-speed { display: inline-flex; align-items: baseline; gap: 4px; font-weight: 700; }
 .wdash-wind-speed-value { font-size: 2.1rem; color: #5bd6ff; }
 .wdash-wind-heading { font-size: 0.78rem; color: #9badcf; letter-spacing: 0.08em; }
-  .wdash-wind-compass svg { position: absolute; inset: 11%; width: calc(100% - 22%); height: calc(100% - 22%); display: block; filter: drop-shadow(0 8px 18px rgba(0,0,0,0.4)); }
+  .wdash-wind-compass svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; filter: drop-shadow(0 8px 18px rgba(0,0,0,0.4)); }
 .wdash-wind-gust { display: inline-flex; align-items: baseline; gap: 4px; font-weight: 700; }
 .wdash-wind-gust-value { font-size: 0.98rem; font-weight: 600; color: #f4f6ff; }
 .wdash-wind-gust-label { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.08em; color: #8ea0c8; }
