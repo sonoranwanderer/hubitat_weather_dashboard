@@ -1,36 +1,72 @@
-# Temp & Wind Gauge Sizing – Follow-up Audit
+# Temp & Wind Gauge Sizing – End-to-End Audit
 
-This addendum replaces the earlier sizing summary and documents every current CSS and JavaScript input that still affects the Temp & Wind gauges inside `dashboard/weather-dashboard.js`. It also calls out the conflicting logic that let two different measurements fight over the live gauge diameter.
+This revision replaces the earlier summary with an exhaustive inventory of every style and script that influences the Temp & Wind gauges, starting from the dashboard container and ending with the inner labels. All references point to `dashboard/weather-dashboard.js` unless noted otherwise.
 
-## Active layout and CSS inputs
+## 1. Layout stack from host tile to gauge wrapper
 
-| Source | Location | Effect |
+| Level | Source | Lines | Contribution to gauge space |
+| --- | --- | --- | --- |
+| Hubitat tile host | `renderDashboard()` markup | 367-374 | Injects `.wdash-root` inside the hub tile so the dashboard can manage its own scaling. |
+| `.wdash-root` | CSS template | 3449 | Flex container that fills the tile, provides `--wdash-base-width/height`, and centers the rendered frame. |
+| `.wdash-frame` | CSS template | 3450 | Holds the rendered dashboard at `--wdash-render-width/height`, clipping overflow. |
+| `.wdash` | CSS template | 3451 & 3685-3689 | Defines the base 1200×900 drawing plane, frame padding (`--wdash-frame-gap`), and applies breakpoint-specific padding via CSS variables. All child sizing, including the gauges, occurs within this scaled plane. |
+| Layout defaults (`DEFAULT_LAYOUT`, `DEFAULT_COLUMNS`, `DEFAULT_GAPS`) | 24-36, 39-71 | Provide the initial grid track sizes (desktop row 0 = 450 px) and gutter spacing that bound the Temp & Wind area before overrides. |
+| Layout compilation (`compileGridTemplate`, `sanitize*`) | 3302-3438 | Normalizes template overrides so that any custom rows/columns still resolve to concrete track sizes used by the grid variables. |
+| Layout application (`applyLayoutOverrides`, `setupScaling`) | 512-699 | Writes the compiled grid row/column/gap values and frame padding to CSS variables on `.wdash`, then applies the calculated scale to `.wdash-root`. |
+| `.wdash-grid` | CSS template | 3452-3454 | Creates the CSS grid, consumes the row/column variables, and enforces the inter-card gap. The Temp & Wind card inherits its footprint from the `grid-area: temp-wind` slot here. |
+| `.wdash-card` | CSS template | 3456 | Gives every card 12 px padding and 10 px internal gap between header / main / footer, reducing the raw area the gauges can occupy. |
+| `.wdash-card--temp-wind` | CSS template | 3479-3482 | Narrows the vertical gap to 6 px, trims block padding to 5 px, keeps the header transparent, and provides custom properties used by the gauge overlays. |
+| `.wdash-card-header--temp-wind` | CSS template | 3471-3474 | Aligns header elements and adds 10 px of padding below the title before the gauge row begins. |
+| `.wdash-temp-wind-main` | CSS template | 3497-3499 | Declares the gauge row as a stretching horizontal flex container with a 14 px column gap. This container is what the sizing helper measures for available height when column hosts are absent. |
+| `.wdash-temp`, `.wdash-wind` | CSS template | 3494-3501 | Set each column to `flex: 1`, `align-items: center`, and ensure `min-width/min-height: 0` so they expand to fill the card slot. Their bounding boxes are the authoritative “parent container” measurements for the gauges. |
+
+## 2. Gauge and inner-element styling
+
+| Element | Selector / Source | Lines | Effect on rendered size |
+| --- | --- | --- | --- |
+| Gauge host markup | Template HTML | 1035-1093 | Emits `<div class="wdash-gauge">` / `.wdash-wind-compass` wrappers and applies color-related custom properties, but no fixed width/height. |
+| `.wdash-gauge`, `.wdash-wind-compass` | CSS template | 3502-3503 & 3535 | Absolutely position the SVG to fill the wrapper and leave width/height at 100%. The runtime inline size determines actual pixels. |
+| `.wdash-gauge-svg` | CSS template | 3503 | Sets the SVG canvas to `position: absolute; inset: 0; width: 100%; height: 100%`, so it mirrors the wrapper size without further clamps. |
+| `.wdash-gauge-center` | CSS template | 3504 | Applies a proportional inset (`--temp-wind-gauge-center-inset`, default 26 %) so the numeric hub scales with the wrapper. |
+| `.wdash-gauge-current`, `.wdash-gauge-value`, `.wdash-gauge-label` | CSS template | 3505-3507 | Provide typographic rules. The font sizes are constant rem values; they do not change the wrapper size but govern legibility once the gauge is scaled. |
+| `.wdash-wind-overlay`, `.wdash-wind-bearing`, `.wdash-wind-speed` etc. | CSS template | 3529-3538 | Use percentage-based insets so wind labels stay centered inside the compass without altering the gauge diameter. |
+| `.wdash-metric-row--gauge` | CSS template | 3523-3527 | Limits only the footer metric presentation. It no longer constrains the gauge column width. |
+
+## 3. Runtime JavaScript affecting gauge dimensions
+
+| Function | Lines | Purpose |
 | --- | --- | --- |
-| `DEFAULT_LAYOUT.desktop.rows[0]`, `tablet.rows[0]`, `mobile.rows[0]` | `dashboard/weather-dashboard.js` lines 26-34 | Establish the base grid row heights (450 px desktop) for the Temp & Wind track. Those row heights bound the vertical space the gauges can ever inherit. |
-| `.wdash-card` | lines 3437-3442 | Applies the shared card padding (12 px on all sides) and `gap: 10px` between the header, main slot, and footer. Even when the Temp & Wind card overrides its block padding, this shared chrome still consumes vertical room. |
-| `.wdash-card--temp-wind` | lines 3451-3456 | Narrows the section gap to 6 px, trims the card’s block padding to 5 px, and exposes inset custom properties used by the SVG artwork. No width or height clamp remains here. |
-| `.wdash-temp-wind-main` | lines 3470-3474 | Declares the gauge row as a horizontal flex container with `flex: 1` so it stretches to absorb the available track height. Its `gap: 14px` reserves horizontal breathing room between the temperature and wind columns. |
-| `.wdash-temp`, `.wdash-wind` | lines 3466-3474 | Make each column a vertical flex stack, `flex: 1`, and `align-items: stretch`. Because the gauges consume 100 % of their host’s width/height, these hosts define the drawing box. |
-| `.wdash-gauge`, `.wdash-wind-compass` | lines 3478-3484 | Keep the wrappers square, position their contents absolutely, and default to `width: 100%; height: 100%`. Inline styles applied by the runtime now determine the concrete pixel diameter. |
+| `setupScaling(displayTile, content)` & `applyScale(root)` | 743-793 & 840-889 | Compute how the rendered 1200×900 dashboard should scale inside the hub tile and update `--wdash-scale`. This uniformly scales the card and gauges together. |
+| `renderFromData()` and `renderLayout()` | 398-707 | Populate the grid, rebuild cards, and ensure the Temp & Wind markup exists so the sizing hooks can attach. |
+| `setupInteractiveComponents()` | 1876-1895 | Entry point after each payload refresh that ensures gauge sizing remains active. |
+| `setupTempWindGaugeSizing()` | 2395-2436 | Locates `.wdash-temp` / `.wdash-wind`, reapplies any cached inline square dimensions, and registers the shared `ResizeObserver`. |
+| `applyTempWindGaugeSize(host)` | 2443-2473 | Measures the host’s `getBoundingClientRect()`, takes `Math.min(width, height)`, rounds to the nearest tenth, and sets that value as inline `width` and `height` on the immediate `.wdash-gauge` / `.wdash-wind-compass` child. This is the only code path that writes explicit pixel sizes. |
+| `teardownTempWindGaugeSizing()` | 2379-2393 | Clears observers and inline sizing only when the card is removed, ensuring steady dimensions during normal refreshes. |
 
-## Runtime sizing code
+No other JavaScript alters the gauge size: ambient rotation, data polling, and metric updates operate on separate DOM nodes and do not touch the gauge wrappers after `applyTempWindGaugeSize` runs.
 
-| Function | Location | Effect |
+## 4. Inline styles and attributes
+
+| Element | Source | Effect |
 | --- | --- | --- |
-| `setupInteractiveComponents` | lines 1876-1895 | Called after every payload refresh. It ensures the Temp & Wind sizing hooks exist alongside other interactive controls. |
-| `setupTempWindGaugeSizing` | lines 2395-2436 | Locates the `.wdash-temp` and `.wdash-wind` hosts, reapplies the last stored size, and, when hosts change, rebuilds the ResizeObserver. It no longer tears everything down on each refresh, so prior inline dimensions remain stable. |
-| `applyTempWindGaugeSize` | lines 2443-2473 | Measures each host via `getBoundingClientRect()`, takes the smaller dimension, rounds to the nearest tenth, and writes that value to the gauge wrapper’s inline `width`/`height`. This is now the sole producer of explicit gauge diameters. |
-| `teardownTempWindGaugeSizing` | lines 2379-2393 | Disconnects the observer, removes the resize fallback, and clears any inline sizing when the card disappears. |
+| `.wdash-root` | Markup (line 369) | Sets initial `--wdash-base-width/height` custom properties used for scaling. |
+| `.wdash-gauge` / `.wdash-wind-compass` | `applyTempWindGaugeSize` | Receives inline `style="width: Npx; height: Npx;"` plus the color-related custom properties already emitted by the template. These square dimensions propagate to the SVG and overlays via the 100% width/height rules. |
+| `.wdash-temp-wind-main` | Markup | Uses no inline sizing; relies entirely on CSS flex growth described above. |
+| SVG child elements | Template | Use intrinsic coordinates (`viewBox="0 0 100 100"`) so scaling the parent wrapper scales the drawing proportionally. No additional runtime transforms adjust their size. |
 
-## What the previous report missed
+## 5. Previously conflicting inputs (now removed)
 
-1. **Repeated teardown/rebuild during data polling.** Every five seconds `renderFromData()` calls `setupInteractiveComponents()`, which in turn invoked `setupTempWindGaugeSizing()` after calling `teardownTempWindGaugeSizing()` unconditionally. That cycle stripped the gauges’ inline dimensions and then re-measured them, which is why the heartbeat reappeared as soon as the next payload arrived. The earlier report claimed only the observer loop was at fault and never mentioned this polling trigger.
-2. **Mismatched measurement boxes.** `applyTempWindGaugeSize()` used `getBoundingClientRect()` during manual calls but trusted the `ResizeObserver`’s `contentRect` when the observer fired. Because the `contentRect` excludes borders and padding, the observer consistently reported a smaller box than the manual measurement, so the gauges toggled between two diameters on every update. The previous audit failed to note this discrepancy, leaving the duel in place.
+- `teardownTempWindGaugeSizing()` is no longer called during routine data refreshes, so inline widths persist until the card is truly removed. (lines 1876-1895 & 2379-2436)
+- The `.wdash-gauge-svg` inset clamp (`calc(100% - 22%)`) was deleted in the prior change set, leaving the SVG to fill its parent without subtracting padding. (lines 3503-3504)
+- Observer callbacks now always trigger `applyTempWindGaugeSize` without feeding `contentRect`, so manual and observer measurements rely on the same bounding box. (lines 2406-2473)
 
-## Conflicting inputs now identified
+## 6. Verification scope
 
-- The **manual measurement path** (initial setup and resize fallback) uses `getBoundingClientRect()` to compute the host size.  
-- The **observer callback** now invokes the same helper without passing the `contentRect`, forcing it to use `getBoundingClientRect()` as well.  
-- The **data-refresh loop** no longer tears down observers or clears inline sizes when the host set is unchanged, so the gauges retain their dimensions between payloads instead of bouncing between two answers.
+This audit now covers:
 
-With both sources now aligned to a single measurement and the periodic teardown removed, the gauges receive one stable diameter taken directly from their parent containers on load and only change when the parents themselves are resized.
+1. Every layout container between the hub tile and the gauge wrappers.
+2. All CSS selectors that affect the gauge wrappers, SVG canvas, center hub, and textual overlays.
+3. All JavaScript functions that can write size information or scale the containing layout.
+4. Inline styles that originate from markup or runtime helpers.
+
+No additional CSS or JavaScript in the repository applies explicit width, height, max-size, or scaling constraints to the Temp & Wind gauges beyond what is listed above. Any future sizing regression would therefore originate from changes to these documented sources.
