@@ -21,6 +21,7 @@
   const DATA_REFRESH_INTERVAL = 5000;
   const DEFAULT_BASE_WIDTH = 1200;
   const DEFAULT_BASE_HEIGHT = 900;
+  const BREAKPOINTS = ['desktop', 'tablet', 'mobile'];
   const LAYOUT_STYLE_ID = 'weather-dashboard-layout-style';
 
   const SHARED_DESKTOP_LAYOUT = {
@@ -42,6 +43,12 @@
     mobile: { ...SHARED_DESKTOP_LAYOUT }
   };
 
+  const DEFAULT_BASE_DIMENSIONS = {
+    desktop: { width: DEFAULT_BASE_WIDTH, height: DEFAULT_BASE_HEIGHT },
+    tablet: { width: DEFAULT_BASE_WIDTH, height: DEFAULT_BASE_HEIGHT },
+    mobile: { width: DEFAULT_BASE_WIDTH, height: DEFAULT_BASE_HEIGHT }
+  };
+
   const DEFAULT_TEMPLATES = compileLayoutTemplates(DEFAULT_LAYOUT);
   const DEFAULT_COLUMNS = {
     desktop: DEFAULT_LAYOUT.desktop.columns,
@@ -60,6 +67,11 @@
   const layoutState = {
     baseWidth: DEFAULT_BASE_WIDTH,
     baseHeight: DEFAULT_BASE_HEIGHT,
+    baseDimensions: {
+      desktop: { ...DEFAULT_BASE_DIMENSIONS.desktop },
+      tablet: { ...DEFAULT_BASE_DIMENSIONS.tablet },
+      mobile: { ...DEFAULT_BASE_DIMENSIONS.mobile }
+    },
     columns: { ...DEFAULT_COLUMNS },
     gaps: { ...DEFAULT_GAPS },
     templates: DEFAULT_TEMPLATES,
@@ -502,33 +514,65 @@
     const rawLayout = metadata ? (metadata.layout != null ? metadata.layout : metadata.layoutOverride) : null;
     const override = rawLayout ? extractLayoutOverride(rawLayout) : null;
     const mergedLayout = deepMerge(DEFAULT_LAYOUT, override || {});
-    const desktopLayout = mergedLayout.desktop;
-    const layoutForCompile = {
-      desktop: desktopLayout,
-      tablet: desktopLayout,
-      mobile: desktopLayout
-    };
+
+    const hasRowConfig = value => Array.isArray(value) || Array.isArray(value?.rows);
+    const sanitizeSectionObject = section => (isPlainObject(section) ? section : null);
+
+    const layoutForCompile = {};
+    let previousRows = hasRowConfig(mergedLayout.desktop)
+      ? mergedLayout.desktop
+      : DEFAULT_LAYOUT.desktop;
+    for (const key of BREAKPOINTS) {
+      const section = mergedLayout[key];
+      if (hasRowConfig(section)) {
+        previousRows = section;
+      }
+      layoutForCompile[key] = previousRows;
+    }
     const compiled = compileLayoutTemplates(layoutForCompile);
 
-    const desktopColumns = sanitizeColumns(desktopLayout?.columns, DEFAULT_COLUMNS.desktop);
+    const desktopSection = sanitizeSectionObject(mergedLayout.desktop);
+    const tabletSection = sanitizeSectionObject(mergedLayout.tablet);
+    const mobileSection = sanitizeSectionObject(mergedLayout.mobile);
+
+    const desktopColumns = sanitizeColumns(desktopSection?.columns, DEFAULT_COLUMNS.desktop);
+    const tabletColumns = sanitizeColumns(tabletSection?.columns, desktopColumns);
+    const mobileColumns = sanitizeColumns(mobileSection?.columns, tabletColumns);
     const columns = {
       desktop: desktopColumns,
-      tablet: desktopColumns,
-      mobile: desktopColumns
+      tablet: tabletColumns,
+      mobile: mobileColumns
     };
-    const desktopGap = sanitizeGap(desktopLayout?.gap, DEFAULT_GAPS.desktop);
+
+    const desktopGap = sanitizeGap(desktopSection?.gap, DEFAULT_GAPS.desktop);
+    const tabletGap = sanitizeGap(tabletSection?.gap, desktopGap);
+    const mobileGap = sanitizeGap(mobileSection?.gap, tabletGap);
     const gaps = {
       desktop: desktopGap,
-      tablet: desktopGap,
-      mobile: desktopGap
+      tablet: tabletGap,
+      mobile: mobileGap
     };
 
-    const baseWidth = sanitizeDimension(mergedLayout.baseWidth, DEFAULT_BASE_WIDTH);
-    const baseHeight = sanitizeDimension(mergedLayout.baseHeight, DEFAULT_BASE_HEIGHT);
+    const fallbackWidth = sanitizeDimension(mergedLayout.baseWidth, DEFAULT_BASE_WIDTH);
+    const fallbackHeight = sanitizeDimension(mergedLayout.baseHeight, DEFAULT_BASE_HEIGHT);
+    const desktopWidth = sanitizeDimension(desktopSection?.baseWidth, fallbackWidth);
+    const desktopHeight = sanitizeDimension(desktopSection?.baseHeight, fallbackHeight);
+    const tabletWidth = sanitizeDimension(tabletSection?.baseWidth, desktopWidth);
+    const tabletHeight = sanitizeDimension(tabletSection?.baseHeight, desktopHeight);
+    const mobileWidth = sanitizeDimension(mobileSection?.baseWidth, tabletWidth);
+    const mobileHeight = sanitizeDimension(mobileSection?.baseHeight, tabletHeight);
+
+    const baseDimensions = {
+      desktop: { width: desktopWidth, height: desktopHeight },
+      tablet: { width: tabletWidth, height: tabletHeight },
+      mobile: { width: mobileWidth, height: mobileHeight }
+    };
+
+    const baseWidth = desktopWidth;
+    const baseHeight = desktopHeight;
 
     const signature = JSON.stringify({
-      baseWidth,
-      baseHeight,
+      baseDimensions,
       columns,
       gaps,
       templates: {
@@ -543,6 +587,7 @@
       layoutState.signature = signature;
       layoutState.baseWidth = baseWidth;
       layoutState.baseHeight = baseHeight;
+      layoutState.baseDimensions = baseDimensions;
       layoutState.columns = columns;
       layoutState.gaps = gaps;
       layoutState.templates = compiled;
@@ -551,11 +596,12 @@
 
     if (!changed && !layoutState.pendingApply) return;
 
-    currentBaseWidth = baseWidth;
-    currentBaseHeight = baseHeight;
+    const activeBase = getActiveBaseDimensions(baseDimensions);
+    currentBaseWidth = activeBase.width;
+    currentBaseHeight = activeBase.height;
 
-    root.style.setProperty('--wdash-base-width', `${baseWidth}px`);
-    root.style.setProperty('--wdash-base-height', `${baseHeight}px`);
+    root.style.setProperty('--wdash-base-width', `${currentBaseWidth}px`);
+    root.style.setProperty('--wdash-base-height', `${currentBaseHeight}px`);
 
     dash.style.setProperty('--wdash-grid-columns-desktop', columns.desktop);
     dash.style.setProperty('--wdash-grid-columns-tablet', columns.tablet);
@@ -576,10 +622,13 @@
     applyLayoutStyle({
       baseWidth,
       baseHeight,
+      baseDimensions,
       columns,
       gaps,
       templates: compiled
     });
+
+    applyScale(root);
 
     const gridEl = dash.querySelector('.wdash-grid');
     if (gridEl) {
@@ -647,6 +696,39 @@
     scaleObserver.observe(displayTile);
   }
 
+  function normalizeDimensionEntry(entry, fallback) {
+    const fallbackWidth = Number(fallback?.width) || DEFAULT_BASE_WIDTH;
+    const fallbackHeight = Number(fallback?.height) || DEFAULT_BASE_HEIGHT;
+    return {
+      width: Number(entry?.width) || fallbackWidth,
+      height: Number(entry?.height) || fallbackHeight
+    };
+  }
+
+  function getActiveBreakpoint() {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+      return 'desktop';
+    }
+    if (window.matchMedia('(max-width: 720px)').matches) {
+      return 'mobile';
+    }
+    if (window.matchMedia('(max-width: 1100px)').matches) {
+      return 'tablet';
+    }
+    return 'desktop';
+  }
+
+  function getActiveBaseDimensions(dimensionsOverride) {
+    const source = dimensionsOverride || layoutState.baseDimensions || DEFAULT_BASE_DIMENSIONS;
+    const desktop = normalizeDimensionEntry(source.desktop, DEFAULT_BASE_DIMENSIONS.desktop);
+    const tablet = normalizeDimensionEntry(source.tablet, desktop);
+    const mobile = normalizeDimensionEntry(source.mobile, tablet);
+    const breakpoint = getActiveBreakpoint();
+    if (breakpoint === 'mobile') return mobile;
+    if (breakpoint === 'tablet') return tablet;
+    return desktop;
+  }
+
   function applyScale(rootEl) {
     const root = rootEl || document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-root');
     if (!root) return;
@@ -654,8 +736,13 @@
     const width = rect.width;
     const height = rect.height;
     if (!width || !height) return;
-    const baseWidth = Math.max(1, Number(currentBaseWidth) || DEFAULT_BASE_WIDTH);
-    const baseHeight = Math.max(1, Number(currentBaseHeight) || DEFAULT_BASE_HEIGHT);
+    const activeBase = getActiveBaseDimensions();
+    const baseWidth = Math.max(1, Number(activeBase?.width) || Number(currentBaseWidth) || DEFAULT_BASE_WIDTH);
+    const baseHeight = Math.max(1, Number(activeBase?.height) || Number(currentBaseHeight) || DEFAULT_BASE_HEIGHT);
+    currentBaseWidth = baseWidth;
+    currentBaseHeight = baseHeight;
+    root.style.setProperty('--wdash-base-width', `${baseWidth}px`);
+    root.style.setProperty('--wdash-base-height', `${baseHeight}px`);
     const scale = Math.max(0.1, Math.min(width / baseWidth, height / baseHeight));
     const renderWidth = baseWidth * scale;
     const renderHeight = baseHeight * scale;
