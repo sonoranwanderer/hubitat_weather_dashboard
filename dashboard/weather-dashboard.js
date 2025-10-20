@@ -50,6 +50,11 @@
   };
 
   const DEFAULT_TEMPLATES = compileLayoutTemplates(DEFAULT_LAYOUT);
+  const DEFAULT_NORMALIZED_AREAS = {
+    desktop: normalizeTemplateAreas(DEFAULT_TEMPLATES.desktop.areas),
+    tablet: normalizeTemplateAreas(DEFAULT_TEMPLATES.tablet.areas),
+    mobile: normalizeTemplateAreas(DEFAULT_TEMPLATES.mobile.areas)
+  };
   const DEFAULT_COLUMNS = {
     desktop: DEFAULT_LAYOUT.desktop.columns,
     tablet: DEFAULT_LAYOUT.tablet.columns,
@@ -75,6 +80,7 @@
     columns: { ...DEFAULT_COLUMNS },
     gaps: { ...DEFAULT_GAPS },
     templates: DEFAULT_TEMPLATES,
+    normalizedAreas: { ...DEFAULT_NORMALIZED_AREAS },
     signature: null,
     pendingApply: false
   };
@@ -208,6 +214,7 @@
   let domObserver = null;
   let scaleObserver = null;
   let scaleResizeHandler = null;
+  let breakpointListenersRegistered = false;
   let tempWindGaugeObserver = null;
   let tempWindGaugeResizeHandler = null;
   let tempWindGaugeRaf = null;
@@ -530,6 +537,11 @@
       layoutForCompile[key] = previousRows;
     }
     const compiled = compileLayoutTemplates(layoutForCompile);
+    const normalizedAreas = {
+      desktop: normalizeTemplateAreas(compiled.desktop.areas),
+      tablet: normalizeTemplateAreas(compiled.tablet.areas),
+      mobile: normalizeTemplateAreas(compiled.mobile.areas)
+    };
 
     const desktopSection = sanitizeSectionObject(mergedLayout.desktop);
     const tabletSection = sanitizeSectionObject(mergedLayout.tablet);
@@ -582,6 +594,7 @@
       }
     });
 
+    layoutState.normalizedAreas = normalizedAreas;
     const changed = layoutState.signature !== signature;
     if (changed) {
       layoutState.signature = signature;
@@ -688,12 +701,40 @@
       scaleResizeHandler = () => applyScale();
       window.addEventListener('resize', scaleResizeHandler);
     }
+    setupBreakpointListeners();
     if (typeof ResizeObserver !== 'function') return;
     if (scaleObserver) {
       scaleObserver.disconnect();
     }
     scaleObserver = new ResizeObserver(() => applyScale(root));
     scaleObserver.observe(displayTile);
+  }
+
+  function setupBreakpointListeners() {
+    if (breakpointListenersRegistered) return;
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const handler = () => applyScale();
+    const queries = ['(max-width: 720px)', '(max-width: 1100px)'];
+    let attached = false;
+    for (const query of queries) {
+      let mql = null;
+      try {
+        mql = window.matchMedia(query);
+      } catch (err) {
+        mql = null;
+      }
+      if (!mql) continue;
+      if (typeof mql.addEventListener === 'function') {
+        mql.addEventListener('change', handler);
+        attached = true;
+      } else if (typeof mql.addListener === 'function') {
+        mql.addListener(handler);
+        attached = true;
+      }
+    }
+    if (attached) {
+      breakpointListenersRegistered = true;
+    }
   }
 
   function normalizeDimensionEntry(entry, fallback) {
@@ -706,6 +747,26 @@
   }
 
   function getActiveBreakpoint() {
+    const grid = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-grid');
+    if (grid && typeof window !== 'undefined' && typeof window.getComputedStyle === 'function') {
+      try {
+        const computed = window.getComputedStyle(grid);
+        const areasValue = computed.getPropertyValue('grid-template-areas');
+        const normalized = normalizeTemplateAreas(areasValue);
+        if (normalized && normalized !== 'none') {
+          const lookup = layoutState.normalizedAreas || DEFAULT_NORMALIZED_AREAS;
+          const matches = [];
+          if (normalized === lookup.mobile) matches.push('mobile');
+          if (normalized === lookup.tablet) matches.push('tablet');
+          if (normalized === lookup.desktop) matches.push('desktop');
+          if (matches.length === 1) {
+            return matches[0];
+          }
+        }
+      } catch (err) {
+        /* ignore */
+      }
+    }
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
       return 'desktop';
     }
@@ -3227,6 +3288,18 @@
       .split(/\s+/)
       .filter(Boolean);
     return tokens.includes(areaName);
+  }
+
+  function normalizeTemplateAreas(value) {
+    if (value == null) return '';
+    const str = typeof value === 'string' ? value : String(value);
+    const trimmed = str.trim();
+    if (!trimmed) return '';
+    if (trimmed.toLowerCase() === 'none') return 'none';
+    return trimmed
+      .replace(/["']/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
   }
 
   function normalizeAreaToken(value) {
