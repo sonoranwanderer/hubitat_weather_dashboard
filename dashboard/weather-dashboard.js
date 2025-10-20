@@ -216,7 +216,6 @@
   let breakpointListenersRegistered = false;
   let tempWindGaugeObserver = null;
   let tempWindGaugeResizeHandler = null;
-  let tempWindGaugeLastSize = null;
   let rainDropObserver = null;
   let rainDropResizeHandler = null;
   let rainDropRaf = null;
@@ -1012,12 +1011,6 @@
       titlePrefix: 'Outdoor sensor battery'
     });
 
-    let gaugeSizeAttr = '';
-    if (Number.isFinite(tempWindGaugeLastSize) && tempWindGaugeLastSize > 0) {
-      const normalizedGaugeSize = Math.max(0, Math.round(tempWindGaugeLastSize * 100) / 100);
-      gaugeSizeAttr = ` style="--temp-wind-gauge-size:${normalizedGaugeSize}px;"`;
-    }
-
     const detailsRow = buildMetricRow([
       { label: 'Feels Like', value: feelsText },
       { label: 'Dew Point', value: dewText },
@@ -1037,7 +1030,7 @@
     `;
 
     return `
-      <section class="wdash-card wdash-card--temp-wind"${gaugeSizeAttr}>
+      <section class="wdash-card wdash-card--temp-wind">
         <header class="wdash-card-header wdash-card-header--temp-wind">
           <div class="wdash-card-header-main">
             <h3>Outdoor Conditions</h3>
@@ -2400,11 +2393,7 @@
     const main = card.querySelector('.wdash-temp-wind-main');
     if (!main) return;
 
-    if (Number.isFinite(tempWindGaugeLastSize) && tempWindGaugeLastSize > 0) {
-      card.style.setProperty('--temp-wind-gauge-size', `${tempWindGaugeLastSize}px`);
-    } else {
-      card.style.removeProperty('--temp-wind-gauge-size');
-    }
+    card.style.removeProperty('--temp-wind-gauge-size');
 
     applyTempWindGaugeSizing(card, main);
 
@@ -2421,47 +2410,53 @@
 
   function applyTempWindGaugeSizing(cardOverride, mainOverride) {
     const card = cardOverride || document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-card--temp-wind');
-    if (!card) {
-      tempWindGaugeLastSize = null;
-      return;
-    }
+    if (!card) return;
 
     const main = mainOverride || card.querySelector('.wdash-temp-wind-main');
     if (!main) {
       card.style.removeProperty('--temp-wind-gauge-size');
-      tempWindGaugeLastSize = null;
       return;
     }
 
     const hosts = main.querySelectorAll('.wdash-temp, .wdash-wind');
-    let gaugeSize = 0;
+    if (!hosts.length) {
+      card.style.removeProperty('--temp-wind-gauge-size');
+      return;
+    }
+
+    let largest = 0;
+
     hosts.forEach(host => {
-      const width = host?.clientWidth || 0;
-      const height = host?.clientHeight || 0;
+      if (!host) return;
+      const rect = typeof host.getBoundingClientRect === 'function' ? host.getBoundingClientRect() : null;
+      const width = rect?.width ?? host.clientWidth ?? 0;
+      const height = rect?.height ?? host.clientHeight ?? 0;
       const hostSize = Math.min(width, height);
-      if (hostSize > 0) {
-        gaugeSize = gaugeSize > 0 ? Math.min(gaugeSize, hostSize) : hostSize;
+
+      if (!Number.isFinite(hostSize) || hostSize <= 0) {
+        if (host.style) host.style.removeProperty('--temp-wind-gauge-size');
+        return;
       }
+
+      const normalized = Math.max(0, Math.round(hostSize * 10) / 10);
+      const previous = Number.parseFloat(host.style.getPropertyValue('--temp-wind-gauge-size'));
+
+      if (!Number.isFinite(previous) || Math.abs(previous - normalized) > 0.5) {
+        host.style.setProperty('--temp-wind-gauge-size', `${normalized}px`);
+      }
+
+      largest = Math.max(largest, normalized);
     });
 
-    if (!Number.isFinite(gaugeSize) || gaugeSize <= 0) {
-      const fallbackSize = Math.min(main.clientWidth || 0, main.clientHeight || 0);
-      gaugeSize = Number.isFinite(fallbackSize) && fallbackSize > 0 ? fallbackSize : 0;
-    }
-
-    if (!Number.isFinite(gaugeSize) || gaugeSize <= 0) {
+    if (!Number.isFinite(largest) || largest <= 0) {
       card.style.removeProperty('--temp-wind-gauge-size');
-      tempWindGaugeLastSize = null;
       return;
     }
 
-    const normalized = Math.max(0, Math.round(gaugeSize * 10) / 10);
-    if (Number.isFinite(tempWindGaugeLastSize) && Math.abs(tempWindGaugeLastSize - normalized) <= 0.5) {
-      return;
+    const previousCard = Number.parseFloat(card.style.getPropertyValue('--temp-wind-gauge-size'));
+    if (!Number.isFinite(previousCard) || Math.abs(previousCard - largest) > 0.5) {
+      card.style.setProperty('--temp-wind-gauge-size', `${largest}px`);
     }
-
-    tempWindGaugeLastSize = normalized;
-    card.style.setProperty('--temp-wind-gauge-size', `${normalized}px`);
   }
 
   function setupPressureToggle(container) {
@@ -3476,7 +3471,7 @@
 .wdash-card--solar { grid-area: solar; }
 .wdash-card--air { grid-area: air; gap: 8px; }
 .wdash-temp, .wdash-wind, .wdash-solar, .wdash-pressure { display: flex; flex-direction: column; gap: 10px; flex: 1; }
-.wdash-card--temp-wind .wdash-temp, .wdash-card--temp-wind .wdash-wind { align-items: center; justify-content: center; min-width: 0; min-height: 0; }
+.wdash-card--temp-wind .wdash-temp, .wdash-card--temp-wind .wdash-wind { align-items: stretch; justify-content: center; min-width: 0; min-height: 0; }
 .wdash-pressure { gap: 10px; }
 .wdash-temp-wind-main { display: flex; gap: 14px; flex: 1; align-items: stretch; min-height: 0; }
 .wdash-temp-wind-main > .wdash-temp, .wdash-temp-wind-main > .wdash-wind { flex: 1; min-width: 0; min-height: 0; }
