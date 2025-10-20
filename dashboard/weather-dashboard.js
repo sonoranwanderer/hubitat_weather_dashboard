@@ -2400,24 +2400,42 @@
   }
 
   function setupTempWindGaugeSizing(container) {
-    teardownTempWindGaugeSizing();
     const card = container.querySelector('.wdash-card--temp-wind');
-    if (!card) return;
+    if (!card) {
+      teardownTempWindGaugeSizing();
+      return;
+    }
     const hosts = Array.from(card.querySelectorAll('.wdash-temp, .wdash-wind'));
-    if (!hosts.length) return;
+    if (!hosts.length) {
+      teardownTempWindGaugeSizing();
+      return;
+    }
 
-    tempWindGaugeHosts = hosts;
+    const hostsChanged =
+      hosts.length !== tempWindGaugeHosts.length
+      || hosts.some((host, index) => tempWindGaugeHosts[index] !== host);
+
+    if (hostsChanged) {
+      teardownTempWindGaugeSizing();
+      tempWindGaugeHosts = hosts;
+    } else {
+      tempWindGaugeHosts = hosts;
+    }
 
     hosts.forEach(host => applyTempWindGaugeSize(host));
+
+    if (!hostsChanged && tempWindGaugeObserver) {
+      return;
+    }
 
     if (typeof ResizeObserver === 'function') {
       tempWindGaugeObserver = new ResizeObserver(entries => {
         entries.forEach(entry => {
-          applyTempWindGaugeSize(entry.target, entry.contentRect);
+          applyTempWindGaugeSize(entry.target);
         });
       });
       hosts.forEach(host => tempWindGaugeObserver.observe(host));
-    } else {
+    } else if (!tempWindGaugeResizeHandler) {
       tempWindGaugeResizeHandler = () => {
         tempWindGaugeHosts.forEach(host => applyTempWindGaugeSize(host));
       };
@@ -2425,13 +2443,15 @@
     }
   }
 
-  function applyTempWindGaugeSize(host, rect) {
+  function applyTempWindGaugeSize(host) {
     if (!host) return;
 
     const gauge = host.querySelector('.wdash-gauge, .wdash-wind-compass');
     if (!gauge) return;
 
-    const measured = rect || (typeof host.getBoundingClientRect === 'function' ? host.getBoundingClientRect() : null);
+    const measured = typeof host.getBoundingClientRect === 'function'
+      ? host.getBoundingClientRect()
+      : null;
     const width = measured?.width ?? host.clientWidth ?? 0;
     const height = measured?.height ?? host.clientHeight ?? 0;
     const hostSize = Math.min(width, height);
