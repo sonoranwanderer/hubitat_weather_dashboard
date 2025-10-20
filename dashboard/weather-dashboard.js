@@ -2473,16 +2473,28 @@
     const rowGap = parseFloat(cardStyle.rowGap) || parseFloat(cardStyle.gap) || 0;
     const mainPaddingTop = parseFloat(mainStyle.paddingTop) || 0;
     const mainPaddingBottom = parseFloat(mainStyle.paddingBottom) || 0;
+    const headerUnderlap = Math.max(0, parseFloat(cardStyle.getPropertyValue('--temp-wind-header-underlap')) || 0);
 
     let available = card.offsetHeight - paddingTop - paddingBottom;
-    if (header) available -= header.offsetHeight;
+    if (header) {
+      const headerHeight = header.offsetHeight;
+      available -= headerHeight;
+      if (headerHeight > 0 && headerUnderlap > 0) {
+        available += Math.min(headerUnderlap, headerHeight);
+      }
+    }
     if (metrics) available -= metrics.offsetHeight;
 
-    let gapCount = 0;
-    if (header) gapCount += 1;
-    if (metrics) gapCount += 1;
-    if (gapCount > 0 && rowGap > 0) {
-      available -= rowGap * gapCount;
+    let totalGap = 0;
+    if (rowGap > 0) {
+      if (header) totalGap += rowGap;
+      if (metrics) totalGap += rowGap;
+    }
+    if (totalGap > 0) {
+      available -= totalGap;
+      if (header && headerUnderlap > 0 && rowGap > 0) {
+        available += Math.min(headerUnderlap, rowGap);
+      }
     }
 
     available -= mainPaddingTop + mainPaddingBottom;
