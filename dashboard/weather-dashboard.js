@@ -365,8 +365,12 @@
       return;
     }
 
+    const measuredBase = measureDisplayTileBaseDimensions(displayTile, content);
+    const initialBaseWidth = sanitizeDimension(measuredBase.width, DEFAULT_BASE_WIDTH);
+    const initialBaseHeight = sanitizeDimension(measuredBase.height, DEFAULT_BASE_HEIGHT);
+
     content.innerHTML = `
-      <div class="wdash-root" style="--wdash-base-width:${DEFAULT_BASE_WIDTH}px;--wdash-base-height:${DEFAULT_BASE_HEIGHT}px;">
+      <div class="wdash-root" style="--wdash-base-width:${initialBaseWidth}px;--wdash-base-height:${initialBaseHeight}px;">
         <div class="wdash-frame">
           <div class="wdash" role="presentation">
             <div class="wdash-grid" data-empty="true"></div>
@@ -520,7 +524,8 @@
       return;
     }
 
-    const rawLayout = metadata ? (metadata.layout != null ? metadata.layout : metadata.layoutOverride) : null;
+    const layoutMetadata = metadata !== undefined ? metadata : lastSuccessfulPayload?.metadata;
+    const rawLayout = layoutMetadata ? (layoutMetadata.layout != null ? layoutMetadata.layout : layoutMetadata.layoutOverride) : null;
     const override = rawLayout ? extractLayoutOverride(rawLayout) : null;
     const overrideLayout = isPlainObject(override) ? override : null;
     const hasOwn = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
@@ -535,6 +540,22 @@
       overrideSectionValues[key] = value;
       overrideSectionObjects[key] = sanitizeSectionObject(value);
     }
+
+    const measuredBase = measureDisplayTileBaseDimensions();
+    const measuredBaseWidth = sanitizeDimension(measuredBase.width, DEFAULT_BASE_WIDTH);
+    const measuredBaseHeight = sanitizeDimension(measuredBase.height, DEFAULT_BASE_HEIGHT);
+
+    const dimensionUnit = sanitizeLayoutDimensionUnit(
+      overrideLayout
+        ? hasOwn(overrideLayout, 'dimensionUnits')
+          ? overrideLayout.dimensionUnits
+          : hasOwn(overrideLayout, 'units')
+            ? overrideLayout.units
+            : hasOwn(overrideLayout, 'unit')
+              ? overrideLayout.unit
+              : null
+        : null
+    );
 
     const layoutForCompile = {};
     let inheritedRows = null;
@@ -565,7 +586,7 @@
       inheritedRows = defaultRows;
       layoutForCompile[key] = defaultRows;
     }
-    const compiled = compileLayoutTemplates(layoutForCompile);
+    const compiled = compileLayoutTemplates(layoutForCompile, { dimensionUnit });
     const normalizedAreas = {
       desktop: normalizeTemplateAreas(compiled.desktop.areas),
       tablet: normalizeTemplateAreas(compiled.tablet.areas),
@@ -579,18 +600,33 @@
     const hasTabletOverride = Boolean(overrideLayout && hasOwn(overrideLayout, 'tablet'));
     const hasMobileOverride = Boolean(overrideLayout && hasOwn(overrideLayout, 'mobile'));
 
-    const desktopColumns = sanitizeColumns(desktopSection?.columns, DEFAULT_COLUMNS.desktop);
-    const tabletColumns = sanitizeColumns(
-      tabletSection?.columns,
-      hasTabletOverride ? desktopColumns : hasDesktopOverride ? desktopColumns : DEFAULT_COLUMNS.tablet
+    const globalColumnValue = resolveColumnValue(overrideLayout);
+    const desktopColumnValue = resolveColumnValue(desktopSection);
+    const tabletColumnValue = resolveColumnValue(tabletSection);
+    const mobileColumnValue = resolveColumnValue(mobileSection);
+    const hasGlobalColumnOverride = globalColumnValue !== undefined;
+    const columnOptions = { dimensionUnit };
+
+    const desktopColumns = sanitizeColumns(
+      desktopColumnValue !== undefined ? desktopColumnValue : globalColumnValue,
+      DEFAULT_COLUMNS.desktop,
+      columnOptions
     );
+    const tabletFallback = (hasTabletOverride || hasDesktopOverride || hasGlobalColumnOverride)
+      ? desktopColumns
+      : DEFAULT_COLUMNS.tablet;
+    const tabletColumns = sanitizeColumns(
+      tabletColumnValue !== undefined ? tabletColumnValue : globalColumnValue,
+      tabletFallback,
+      columnOptions
+    );
+    const mobileFallback = (hasMobileOverride || hasTabletOverride || hasDesktopOverride || hasGlobalColumnOverride)
+      ? tabletColumns
+      : DEFAULT_COLUMNS.mobile;
     const mobileColumns = sanitizeColumns(
-      mobileSection?.columns,
-      hasMobileOverride
-        ? tabletColumns
-        : hasTabletOverride || hasDesktopOverride
-          ? tabletColumns
-          : DEFAULT_COLUMNS.mobile
+      mobileColumnValue !== undefined ? mobileColumnValue : globalColumnValue,
+      mobileFallback,
+      columnOptions
     );
     const columns = {
       desktop: desktopColumns,
@@ -617,8 +653,8 @@
       mobile: mobileGap
     };
 
-    const fallbackWidth = sanitizeDimension(overrideLayout?.baseWidth, DEFAULT_BASE_WIDTH);
-    const fallbackHeight = sanitizeDimension(overrideLayout?.baseHeight, DEFAULT_BASE_HEIGHT);
+    const fallbackWidth = sanitizeDimension(overrideLayout?.baseWidth, measuredBaseWidth);
+    const fallbackHeight = sanitizeDimension(overrideLayout?.baseHeight, measuredBaseHeight);
     const desktopWidth = sanitizeDimension(desktopSection?.baseWidth, fallbackWidth);
     const desktopHeight = sanitizeDimension(desktopSection?.baseHeight, fallbackHeight);
     const tabletWidth = sanitizeDimension(tabletSection?.baseWidth, desktopWidth);
@@ -758,7 +794,9 @@
     if (scaleObserver) {
       scaleObserver.disconnect();
     }
-    scaleObserver = new ResizeObserver(() => applyScale(root));
+    scaleObserver = new ResizeObserver(() => {
+      applyLayoutOverrides(lastSuccessfulPayload?.metadata);
+    });
     scaleObserver.observe(displayTile);
   }
 
@@ -3295,7 +3333,7 @@
     return match ? `#${match[1]}` : null;
   }
 
-  function compileLayoutTemplates(layoutConfig) {
+  function compileLayoutTemplates(layoutConfig, options = {}) {
     const breakpoints = ['desktop', 'tablet', 'mobile'];
     const result = {};
     for (const key of breakpoints) {
@@ -3305,7 +3343,7 @@
         : Array.isArray(section?.rows)
           ? section.rows
           : [];
-      result[key] = compileGridTemplate(rows);
+      result[key] = compileGridTemplate(rows, options);
     }
     return result;
   }
@@ -3405,7 +3443,7 @@
     return token;
   }
 
-  function compileGridTemplate(layout) {
+  function compileGridTemplate(layout, options = {}) {
     if (!Array.isArray(layout)) {
       return { areas: '"."', rows: 'repeat(1, minmax(0, 1fr))', rowCount: 1 };
     }
@@ -3420,7 +3458,7 @@
             .filter(col => typeof col === 'string' && col.length)
         : [];
       if (!columns.length) continue;
-      const track = normalizeTrackSize(entry?.height ?? entry?.rowHeight ?? entry?.size);
+      const track = normalizeTrackSize(entry?.height ?? entry?.rowHeight ?? entry?.size, options);
       for (let i = 0; i < repeat; i += 1) {
         areaLines.push(`"${columns.join(' ')}"`);
         rowTracks.push(track);
@@ -3439,11 +3477,14 @@
     return { areas: areaLines.join('\n  '), rows: rowsValue, rowCount: safeRowCount };
   }
 
-  function normalizeTrackSize(value) {
+  function normalizeTrackSize(value, options = {}) {
     const defaultTrack = 'minmax(0, 1fr)';
+    const unitMode = options && options.dimensionUnit === 'percent' ? 'percent' : 'px';
     if (value == null) return defaultTrack;
     if (typeof value === 'number' && Number.isFinite(value)) {
-      return `${Math.max(0, value)}px`;
+      const clamped = Math.max(0, value);
+      const unit = unitMode === 'percent' ? '%' : 'px';
+      return `${clamped}${unit}`;
     }
     if (typeof value === 'string') {
       const trimmed = value.trim();
@@ -3456,14 +3497,17 @@
     return defaultTrack;
   }
 
-  function sanitizeColumns(value, fallback) {
+  function sanitizeColumns(value, fallback, options = {}) {
     if (Array.isArray(value)) {
       const tracks = value
-        .map(item => normalizeTrackSize(item))
+        .map(item => normalizeTrackSize(item, options))
         .filter(Boolean);
       if (tracks.length) {
         return tracks.join(' ');
       }
+    }
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return normalizeTrackSize(value, options);
     }
     if (typeof value === 'string') {
       const trimmed = value.trim();
@@ -3484,6 +3528,25 @@
     return fallback;
   }
 
+  function sanitizeLayoutDimensionUnit(value) {
+    if (typeof value !== 'string') return 'px';
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'percent' || normalized === 'percentage' || normalized === '%') return 'percent';
+    if (normalized === 'px' || normalized === 'pixel' || normalized === 'pixels') return 'px';
+    return 'px';
+  }
+
+  function resolveColumnValue(section) {
+    if (!section || typeof section !== 'object') return undefined;
+    if (Object.prototype.hasOwnProperty.call(section, 'columns')) {
+      return section.columns;
+    }
+    if (Object.prototype.hasOwnProperty.call(section, 'columnWidths')) {
+      return section.columnWidths;
+    }
+    return undefined;
+  }
+
   function sanitizeDimension(value, fallback) {
     if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
       return value;
@@ -3498,6 +3561,67 @@
       }
     }
     return fallback;
+  }
+
+  function measureDisplayTileBaseDimensions(tile, content) {
+    const targets = [];
+    if (content) targets.push(content);
+    if (tile) targets.push(tile);
+    if (!targets.length) {
+      const host = byId(DISPLAY_TILE_ID);
+      if (host) {
+        const hostContent = findContentElement(host);
+        if (hostContent && hostContent !== host) targets.push(hostContent);
+        targets.push(host);
+      }
+    }
+    let width = null;
+    let height = null;
+    for (const target of targets) {
+      if (!target) continue;
+      const size = measureNodeSize(target);
+      if (!width && size.width) width = size.width;
+      if (!height && size.height) height = size.height;
+      if (width && height) break;
+    }
+    return {
+      width: Number.isFinite(width) && width > 0 ? Math.round(width) : null,
+      height: Number.isFinite(height) && height > 0 ? Math.round(height) : null
+    };
+  }
+
+  function measureNodeSize(node) {
+    if (!node) return { width: null, height: null };
+    let width = null;
+    let height = null;
+    if (typeof node.getBoundingClientRect === 'function') {
+      const rect = node.getBoundingClientRect();
+      if (rect) {
+        if (Number.isFinite(rect.width) && rect.width > 0) width = rect.width;
+        if (Number.isFinite(rect.height) && rect.height > 0) height = rect.height;
+      }
+    }
+    if ((width == null || width <= 0 || height == null || height <= 0)
+      && typeof window !== 'undefined'
+      && typeof window.getComputedStyle === 'function') {
+      try {
+        const computed = window.getComputedStyle(node);
+        if (computed) {
+          if (width == null || width <= 0) {
+            const parsedWidth = parseFloat(computed.width);
+            if (Number.isFinite(parsedWidth) && parsedWidth > 0) width = parsedWidth;
+          }
+          if (height == null || height <= 0) {
+            const parsedHeight = parseFloat(computed.height);
+            if (Number.isFinite(parsedHeight) && parsedHeight > 0) height = parsedHeight;
+          }
+        }
+      } catch (err) { /* ignore */ }
+    }
+    return {
+      width: Number.isFinite(width) && width > 0 ? width : null,
+      height: Number.isFinite(height) && height > 0 ? height : null
+    };
   }
 
   function extractLayoutOverride(raw) {
