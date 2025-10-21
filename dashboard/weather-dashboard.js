@@ -85,6 +85,11 @@
     pendingApply: false
   };
 
+  const tileBaseMeasurement = {
+    width: null,
+    height: null
+  };
+
   const TEMP_COLORS = [
     { max: -20, colors: ['#70a9ff', '#3c6aff'] },
     { max: -5, colors: ['#5a8fff', '#3360ff'] },
@@ -366,8 +371,10 @@
     }
 
     const measuredBase = measureDisplayTileBaseDimensions(displayTile, content);
-    const initialBaseWidth = sanitizeDimension(measuredBase.width, DEFAULT_BASE_WIDTH);
-    const initialBaseHeight = sanitizeDimension(measuredBase.height, DEFAULT_BASE_HEIGHT);
+    const initialMeasuredWidth = resolveMeasuredBaseDimension('width', measuredBase.width);
+    const initialMeasuredHeight = resolveMeasuredBaseDimension('height', measuredBase.height);
+    const initialBaseWidth = sanitizeDimension(initialMeasuredWidth, DEFAULT_BASE_WIDTH);
+    const initialBaseHeight = sanitizeDimension(initialMeasuredHeight, DEFAULT_BASE_HEIGHT);
 
     content.innerHTML = `
       <div class="wdash-root" style="--wdash-base-width:${initialBaseWidth}px;--wdash-base-height:${initialBaseHeight}px;">
@@ -541,9 +548,15 @@
       overrideSectionObjects[key] = sanitizeSectionObject(value);
     }
 
+    const previousDesktopBase = normalizeDimensionEntry(
+      layoutState?.baseDimensions?.desktop,
+      DEFAULT_BASE_DIMENSIONS.desktop
+    );
     const measuredBase = measureDisplayTileBaseDimensions();
-    const measuredBaseWidth = sanitizeDimension(measuredBase.width, DEFAULT_BASE_WIDTH);
-    const measuredBaseHeight = sanitizeDimension(measuredBase.height, DEFAULT_BASE_HEIGHT);
+    const measuredWidth = resolveMeasuredBaseDimension('width', measuredBase.width);
+    const measuredHeight = resolveMeasuredBaseDimension('height', measuredBase.height);
+    const measuredBaseWidth = sanitizeDimension(measuredWidth, previousDesktopBase.width);
+    const measuredBaseHeight = sanitizeDimension(measuredHeight, previousDesktopBase.height);
 
     const dimensionUnit = sanitizeLayoutDimensionUnit(
       overrideLayout
@@ -796,6 +809,7 @@
     }
     scaleObserver = new ResizeObserver(() => {
       applyLayoutOverrides(lastSuccessfulPayload?.metadata);
+      applyScale(root);
     });
     scaleObserver.observe(displayTile);
   }
@@ -3561,6 +3575,24 @@
       }
     }
     return fallback;
+  }
+
+  function resolveMeasuredBaseDimension(axis, measured) {
+    const key = axis === 'height' ? 'height' : 'width';
+    const previous = Number.isFinite(tileBaseMeasurement[key]) ? tileBaseMeasurement[key] : null;
+    const value = Number.isFinite(measured) && measured > 0 ? measured : null;
+
+    if (value == null) {
+      return previous;
+    }
+
+    const rounded = Math.round(value);
+    if (previous != null && Math.abs(previous - rounded) <= 1) {
+      return previous;
+    }
+
+    tileBaseMeasurement[key] = rounded;
+    return rounded;
   }
 
   function measureDisplayTileBaseDimensions(tile, content) {
