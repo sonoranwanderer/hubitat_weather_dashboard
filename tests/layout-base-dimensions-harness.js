@@ -7,6 +7,54 @@ const {
   createElement
 } = require('./support/fake-dom');
 
+function parseTrackPixels(value) {
+  return value
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(token => {
+      const match = token.match(/^(-?\d+(?:\.\d+)?)px$/);
+      if (!match) return NaN;
+      return Number(match[1]);
+    });
+}
+
+function parseGapValue(value) {
+  const tokens = value.trim().split(/\s+/).filter(Boolean);
+  if (!tokens.length) return 0;
+  const match = tokens[0].match(/^(-?\d+(?:\.\d+)?)px$/);
+  return match ? Number(match[1]) : 0;
+}
+
+function parseFrameGapVertical(value) {
+  const tokens = value.trim().split(/\s+/).filter(Boolean);
+  if (!tokens.length) return 0;
+  if (tokens.length === 1) return parseFloat(tokens[0]) * 2;
+  if (tokens.length === 2) return parseFloat(tokens[0]) * 2;
+  if (tokens.length === 3) {
+    const top = parseFloat(tokens[0]);
+    const bottom = parseFloat(tokens[2]);
+    return top + bottom;
+  }
+  const top = parseFloat(tokens[0]);
+  const bottom = parseFloat(tokens[2]);
+  return top + bottom;
+}
+
+function parseFrameGapHorizontal(value) {
+  const tokens = value.trim().split(/\s+/).filter(Boolean);
+  if (!tokens.length) return 0;
+  if (tokens.length === 1) return parseFloat(tokens[0]) * 2;
+  if (tokens.length === 2) return parseFloat(tokens[1]) * 2;
+  if (tokens.length === 3) {
+    const horizontal = parseFloat(tokens[1]);
+    return horizontal * 2;
+  }
+  const right = parseFloat(tokens[1]);
+  const left = parseFloat(tokens[3]);
+  return right + left;
+}
+
 function buildDashboardSkeleton(document) {
   const tile = createElement(document, 'div');
   tile.setAttribute('id', 'tile-0');
@@ -97,8 +145,30 @@ function setHostSize(skeleton, width, height) {
   });
 
   assert.strictEqual(layoutState.trackUnit, 'percent', 'track unit should update to percent');
-  assert.strictEqual(dashStyle.getPropertyValue('--wdash-grid-columns-desktop'), '60% 40%', 'columns should normalize to percentages');
-  assert.strictEqual(dashStyle.getPropertyValue('--wdash-grid-rows-desktop'), '40% 60%', 'rows should normalize to percentages');
+  const columnTracks = parseTrackPixels(dashStyle.getPropertyValue('--wdash-grid-columns-desktop'));
+  assert.strictEqual(columnTracks.length, 2, 'percent columns should resolve to two tracks');
+  assert(Math.abs(columnTracks[0] - 742.8) < 0.1, 'first column should scale to available width');
+  assert(Math.abs(columnTracks[1] - 495.2) < 0.1, 'second column should scale to available width');
+
+  const rowTracks = parseTrackPixels(dashStyle.getPropertyValue('--wdash-grid-rows-desktop'));
+  assert.strictEqual(rowTracks.length, 2, 'percent rows should resolve to two tracks');
+  assert(Math.abs(rowTracks[0] - 271.2) < 0.1, 'first row should scale to available height');
+  assert(Math.abs(rowTracks[1] - 406.8) < 0.1, 'second row should scale to available height');
+
+  const gridGap = parseGapValue(dashStyle.getPropertyValue('--wdash-grid-gap-desktop'));
+  const frameGap = dashStyle.getPropertyValue('--wdash-frame-gap-desktop');
+  const frameGapVertical = parseFrameGapVertical(frameGap);
+  const frameGapHorizontal = parseFrameGapHorizontal(frameGap);
+
+  const totalColumnSpan = columnTracks.reduce((sum, value) => sum + value, 0)
+    + gridGap * (columnTracks.length - 1)
+    + frameGapHorizontal;
+  assert(Math.abs(totalColumnSpan - 1280) < 0.5, 'columns plus gaps should match base width');
+
+  const totalRowSpan = rowTracks.reduce((sum, value) => sum + value, 0)
+    + gridGap * (rowTracks.length - 1)
+    + frameGapVertical;
+  assert(Math.abs(totalRowSpan - 720) < 0.5, 'rows plus gaps should match base height');
   assert.strictEqual(rootStyle.getPropertyValue('--wdash-base-width'), '1280px', 'percent override should keep measured width');
   assert.strictEqual(rootStyle.getPropertyValue('--wdash-base-height'), '720px', 'percent override should fall back to measured height');
 

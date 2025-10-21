@@ -47,7 +47,7 @@ The app publishes a consolidated JSON document to the dashboard device. The driv
 The app exposes an optional **Layout configuration JSON** textarea that lets you change the dashboard canvas size and grid without editing the JavaScript. The renderer measures the Hubitat dashboard tile that hosts `weather-dashboard.js` to seed the base canvas dimensions, so overrides are only needed when you want to force a different size or grid definition. Provide a JSON object with the following keys:
 
 * `baseWidth` / `baseHeight` – numbers that override the measured Hubitat tile dimensions. When omitted the measured width and height become the base canvas for all breakpoints.
-* `trackUnit` – optional string (`"px"` or `"percent"`). When set to `"percent"`, numeric row heights and column widths are interpreted as percentages of the active base dimensions instead of pixels.
+* `trackUnit` – optional string (`"px"` or `"percent"`). When set to `"percent"`, numeric row heights and column widths are interpreted as percentages of the active base dimensions instead of pixels. The renderer automatically reserves space for frame padding and grid gaps, so the supplied percentages are scaled to keep the layout inside the measured Hubitat tile.
 * `desktop`, `tablet`, `mobile` – objects that can override `columns`, `gap`, and `rows` for each breakpoint. Rows are arrays of objects with a `height` (pixels) and a `columns` array that names the cards to place in that row.
 
 Example:
@@ -67,7 +67,7 @@ Example:
 }
 ```
 
-To size tracks as percentages of the measured base dimensions, set `"trackUnit": "percent"` and continue supplying numeric values. For example, the snippet below splits the desktop grid into a 60/40 column ratio with two rows that fill 40% and 60% of the canvas height:
+To size tracks as percentages of the measured base dimensions, set `"trackUnit": "percent"` and continue supplying numeric values. The dashboard adjusts the resulting track pixels so the rows and columns plus their gutters exactly fit the tile, even when you change the gap or frame padding. For example, the snippet below splits the desktop grid into a 60/40 column ratio with two rows that fill 40% and 60% of the canvas height:
 
 ```json
 {

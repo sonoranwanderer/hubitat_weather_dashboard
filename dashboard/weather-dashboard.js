@@ -727,26 +727,21 @@
     const hasTabletOverride = Boolean(overrideLayout && hasOwn(overrideLayout, 'tablet'));
     const hasMobileOverride = Boolean(overrideLayout && hasOwn(overrideLayout, 'mobile'));
 
-    const desktopColumns = sanitizeColumns(desktopSection?.columns, DEFAULT_COLUMNS.desktop, trackUnit);
-    const tabletColumns = sanitizeColumns(
+    const desktopColumnsRaw = sanitizeColumns(desktopSection?.columns, DEFAULT_COLUMNS.desktop, trackUnit);
+    const tabletColumnsRaw = sanitizeColumns(
       tabletSection?.columns,
-      hasTabletOverride ? desktopColumns : hasDesktopOverride ? desktopColumns : DEFAULT_COLUMNS.tablet,
+      hasTabletOverride ? desktopColumnsRaw : hasDesktopOverride ? desktopColumnsRaw : DEFAULT_COLUMNS.tablet,
       trackUnit
     );
-    const mobileColumns = sanitizeColumns(
+    const mobileColumnsRaw = sanitizeColumns(
       mobileSection?.columns,
       hasMobileOverride
-        ? tabletColumns
+        ? tabletColumnsRaw
         : hasTabletOverride || hasDesktopOverride
-          ? tabletColumns
+          ? tabletColumnsRaw
           : DEFAULT_COLUMNS.mobile,
       trackUnit
     );
-    const columns = {
-      desktop: desktopColumns,
-      tablet: tabletColumns,
-      mobile: mobileColumns
-    };
 
     const desktopGap = sanitizeGap(desktopSection?.gap, DEFAULT_GAPS.desktop);
     const tabletGap = sanitizeGap(
@@ -785,15 +780,88 @@
     const baseWidth = desktopWidth;
     const baseHeight = desktopHeight;
 
+    let desktopColumns = desktopColumnsRaw;
+    let tabletColumns = tabletColumnsRaw;
+    let mobileColumns = mobileColumnsRaw;
+
+    let desktopRows = compiled.desktop.rows;
+    let tabletRows = compiled.tablet.rows;
+    let mobileRows = compiled.mobile.rows;
+
+    if (trackUnit === 'percent') {
+      const adjustedDesktopColumns = adjustPercentColumnTracks(
+        desktopColumns,
+        baseDimensions.desktop.width,
+        desktopGap,
+        desktopGap
+      );
+      if (adjustedDesktopColumns) desktopColumns = adjustedDesktopColumns;
+
+      const adjustedTabletColumns = adjustPercentColumnTracks(
+        tabletColumns,
+        baseDimensions.tablet.width,
+        tabletGap,
+        tabletGap
+      );
+      if (adjustedTabletColumns) tabletColumns = adjustedTabletColumns;
+
+      const adjustedMobileColumns = adjustPercentColumnTracks(
+        mobileColumns,
+        baseDimensions.mobile.width,
+        mobileGap,
+        mobileGap
+      );
+      if (adjustedMobileColumns) mobileColumns = adjustedMobileColumns;
+
+      const adjustedDesktopRows = adjustPercentRowTracks(
+        desktopRows,
+        compiled.desktop.rowCount,
+        baseDimensions.desktop.height,
+        desktopGap,
+        desktopGap
+      );
+      if (adjustedDesktopRows) desktopRows = adjustedDesktopRows;
+
+      const adjustedTabletRows = adjustPercentRowTracks(
+        tabletRows,
+        compiled.tablet.rowCount,
+        baseDimensions.tablet.height,
+        tabletGap,
+        tabletGap
+      );
+      if (adjustedTabletRows) tabletRows = adjustedTabletRows;
+
+      const adjustedMobileRows = adjustPercentRowTracks(
+        mobileRows,
+        compiled.mobile.rowCount,
+        baseDimensions.mobile.height,
+        mobileGap,
+        mobileGap
+      );
+      if (adjustedMobileRows) mobileRows = adjustedMobileRows;
+    }
+
+    const columns = {
+      desktop: desktopColumns,
+      tablet: tabletColumns,
+      mobile: mobileColumns
+    };
+
+    const finalTemplates = {
+      desktop: { ...compiled.desktop, rows: desktopRows },
+      tablet: { ...compiled.tablet, rows: tabletRows },
+      mobile: { ...compiled.mobile, rows: mobileRows }
+    };
+
     const signature = JSON.stringify({
       trackUnit,
       baseDimensions,
       columns,
       gaps,
       templates: {
-        desktop: { rows: compiled.desktop.rows, areas: compiled.desktop.areas },
-        tablet: { rows: compiled.tablet.rows, areas: compiled.tablet.areas },
-        mobile: { rows: compiled.mobile.rows, areas: compiled.mobile.areas }
+        desktop: { rows: finalTemplates.desktop.rows, areas: finalTemplates.desktop.areas },
+        tablet: { rows: finalTemplates.tablet.rows, areas: finalTemplates.tablet.areas },
+        mobile: { rows: finalTemplates.mobile.rows, areas: finalTemplates.mobile.areas }
       }
     });
 
@@ -806,7 +874,7 @@
       layoutState.baseDimensions = baseDimensions;
       layoutState.columns = columns;
       layoutState.gaps = gaps;
-      layoutState.templates = compiled;
+      layoutState.templates = finalTemplates;
       layoutState.trackUnit = trackUnit;
       layoutState.pendingApply = true;
     }
@@ -823,12 +891,12 @@
     dash.style.setProperty('--wdash-grid-columns-desktop', columns.desktop);
     dash.style.setProperty('--wdash-grid-columns-tablet', columns.tablet);
     dash.style.setProperty('--wdash-grid-columns-mobile', columns.mobile);
-    dash.style.setProperty('--wdash-grid-rows-desktop', compiled.desktop.rows);
-    dash.style.setProperty('--wdash-grid-rows-tablet', compiled.tablet.rows);
-    dash.style.setProperty('--wdash-grid-rows-mobile', compiled.mobile.rows);
-    dash.style.setProperty('--wdash-grid-areas-desktop', compiled.desktop.areas);
-    dash.style.setProperty('--wdash-grid-areas-tablet', compiled.tablet.areas);
-    dash.style.setProperty('--wdash-grid-areas-mobile', compiled.mobile.areas);
+    dash.style.setProperty('--wdash-grid-rows-desktop', finalTemplates.desktop.rows);
+    dash.style.setProperty('--wdash-grid-rows-tablet', finalTemplates.tablet.rows);
+    dash.style.setProperty('--wdash-grid-rows-mobile', finalTemplates.mobile.rows);
+    dash.style.setProperty('--wdash-grid-areas-desktop', finalTemplates.desktop.areas);
+    dash.style.setProperty('--wdash-grid-areas-tablet', finalTemplates.tablet.areas);
+    dash.style.setProperty('--wdash-grid-areas-mobile', finalTemplates.mobile.areas);
     dash.style.setProperty('--wdash-grid-gap-desktop', gaps.desktop);
     dash.style.setProperty('--wdash-grid-gap-tablet', gaps.tablet);
     dash.style.setProperty('--wdash-grid-gap-mobile', gaps.mobile);
@@ -842,7 +910,7 @@
       baseDimensions,
       columns,
       gaps,
-      templates: compiled
+      templates: finalTemplates
     });
 
     applyScale(root);
@@ -854,9 +922,9 @@
       layoutState.pendingApply = true;
     }
 
-    const hasLightningArea = templateHasArea(compiled.desktop, 'lightning')
-      || templateHasArea(compiled.tablet, 'lightning')
-      || templateHasArea(compiled.mobile, 'lightning');
+    const hasLightningArea = templateHasArea(finalTemplates.desktop, 'lightning')
+      || templateHasArea(finalTemplates.tablet, 'lightning')
+      || templateHasArea(finalTemplates.mobile, 'lightning');
     if (hasLightningArea) {
       dash.dataset.layoutHasLightning = 'true';
     } else if (dash.dataset.layoutHasLightning) {
@@ -3860,6 +3928,132 @@
       if (trimmed.length) return trimmed;
     }
     return fallback;
+  }
+
+  function adjustPercentRowTracks(rowsValue, rowCount, baseHeight, gapValue, frameGapValue) {
+    if (typeof rowsValue !== 'string' || !rowsValue.trim()) return null;
+    if (!Number.isFinite(baseHeight) || baseHeight <= 0) return null;
+    if (!Number.isFinite(rowCount) || rowCount <= 0) return null;
+
+    const percents = extractPercentTracks(rowsValue);
+    if (!percents || percents.length !== rowCount) return null;
+
+    const rowGap = parseGapAxisPixels(gapValue, 'row');
+    const verticalPadding = parsePaddingAxisTotal(frameGapValue, 'vertical');
+    if (rowGap == null || verticalPadding == null) return null;
+
+    const totalPercent = percents.reduce((sum, value) => sum + value, 0);
+    if (!Number.isFinite(totalPercent) || totalPercent <= 0) return null;
+
+    const available = baseHeight - verticalPadding - rowGap * Math.max(0, rowCount - 1);
+    if (!Number.isFinite(available) || available <= 0) return null;
+
+    return percents
+      .map(percent => formatPixelTrack((percent / totalPercent) * available))
+      .join(' ');
+  }
+
+  function adjustPercentColumnTracks(columnsValue, baseWidth, gapValue, frameGapValue) {
+    if (typeof columnsValue !== 'string' || !columnsValue.trim()) return null;
+    if (!Number.isFinite(baseWidth) || baseWidth <= 0) return null;
+
+    const percents = extractPercentTracks(columnsValue);
+    if (!percents || !percents.length) return null;
+
+    const columnGap = parseGapAxisPixels(gapValue, 'column');
+    const horizontalPadding = parsePaddingAxisTotal(frameGapValue, 'horizontal');
+    if (columnGap == null || horizontalPadding == null) return null;
+
+    const totalPercent = percents.reduce((sum, value) => sum + value, 0);
+    if (!Number.isFinite(totalPercent) || totalPercent <= 0) return null;
+
+    const columnCount = percents.length;
+    const available = baseWidth - horizontalPadding - columnGap * Math.max(0, columnCount - 1);
+    if (!Number.isFinite(available) || available <= 0) return null;
+
+    return percents
+      .map(percent => formatPixelTrack((percent / totalPercent) * available))
+      .join(' ');
+  }
+
+  function extractPercentTracks(value) {
+    if (typeof value !== 'string') return null;
+    const tokens = value
+      .trim()
+      .replace(/\s+/g, ' ')
+      .split(' ')
+      .filter(Boolean);
+    if (!tokens.length) return null;
+    const percents = tokens.map(token => {
+      const match = token.match(/^(-?\d+(?:\.\d+)?)%$/);
+      if (!match) return null;
+      const numeric = Number(match[1]);
+      return Number.isFinite(numeric) ? Math.max(0, numeric) : null;
+    });
+    if (percents.some(value => value == null)) return null;
+    return percents;
+  }
+
+  function parseGapAxisPixels(value, axis) {
+    if (typeof value !== 'string') return null;
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const tokens = trimmed.split(/\s+/);
+    if (!tokens.length) return null;
+    const index = axis === 'column' && tokens.length > 1 ? 1 : 0;
+    const token = tokens[index];
+    return parsePixelToken(token);
+  }
+
+  function parsePaddingAxisTotal(value, axis) {
+    if (typeof value !== 'string') return null;
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const tokens = trimmed.split(/\s+/);
+    if (!tokens.length) return null;
+    let components;
+    if (tokens.length === 1) {
+      const parsed = parsePixelToken(tokens[0]);
+      if (parsed == null) return null;
+      components = [parsed, parsed, parsed, parsed];
+    } else if (tokens.length === 2) {
+      const vertical = parsePixelToken(tokens[0]);
+      const horizontal = parsePixelToken(tokens[1]);
+      if (vertical == null || horizontal == null) return null;
+      components = [vertical, horizontal, vertical, horizontal];
+    } else if (tokens.length === 3) {
+      const top = parsePixelToken(tokens[0]);
+      const horizontal = parsePixelToken(tokens[1]);
+      const bottom = parsePixelToken(tokens[2]);
+      if (top == null || horizontal == null || bottom == null) return null;
+      components = [top, horizontal, bottom, horizontal];
+    } else {
+      const top = parsePixelToken(tokens[0]);
+      const right = parsePixelToken(tokens[1]);
+      const bottom = parsePixelToken(tokens[2]);
+      const left = parsePixelToken(tokens[3]);
+      if (top == null || right == null || bottom == null || left == null) return null;
+      components = [top, right, bottom, left];
+    }
+    if (axis === 'vertical') {
+      return components[0] + components[2];
+    }
+    return components[1] + components[3];
+  }
+
+  function parsePixelToken(token) {
+    if (typeof token !== 'string') return null;
+    const match = token.match(/^(-?\d+(?:\.\d+)?)px$/i);
+    if (!match) return null;
+    const numeric = Number(match[1]);
+    if (!Number.isFinite(numeric)) return null;
+    return Math.max(0, numeric);
+  }
+
+  function formatPixelTrack(value) {
+    if (!Number.isFinite(value) || value < 0) return '0px';
+    const rounded = Number(value.toFixed(4));
+    return `${rounded}px`;
   }
 
   function sanitizeDimension(value, fallback) {
