@@ -177,6 +177,10 @@
   };
 
   const AMBIENT_DEBUG_STORAGE_KEY = 'wdashAmbientDebug';
+  const AMBIENT_DEBUG_PLACEMENT_STORAGE_KEY = 'wdashAmbientDebugPlacement';
+  const AMBIENT_DEBUG_COLLAPSED_STORAGE_KEY = 'wdashAmbientDebugCollapsed';
+  const AMBIENT_DEBUG_PLACEMENTS = new Set(['bottom', 'right']);
+
   const ambientDebugState = {
     enabled: true,
     captureStacks: false,
@@ -187,7 +191,9 @@
     titleEl: null,
     logEl: null,
     container: null,
-    counter: 0
+    counter: 0,
+    placement: 'bottom',
+    collapsed: false
   };
 
   try {
@@ -200,6 +206,18 @@
           ambientDebugState.enabled = false;
         } else if (stored === '1' || stored === 'true') {
           ambientDebugState.enabled = true;
+        }
+
+        const storedPlacement = window.localStorage?.getItem(AMBIENT_DEBUG_PLACEMENT_STORAGE_KEY);
+        if (storedPlacement && AMBIENT_DEBUG_PLACEMENTS.has(storedPlacement)) {
+          ambientDebugState.placement = storedPlacement;
+        }
+
+        const storedCollapsed = window.localStorage?.getItem(AMBIENT_DEBUG_COLLAPSED_STORAGE_KEY);
+        if (storedCollapsed === '1' || storedCollapsed === 'true') {
+          ambientDebugState.collapsed = true;
+        } else if (storedCollapsed === '0' || storedCollapsed === 'false') {
+          ambientDebugState.collapsed = false;
         }
       }
     }
@@ -258,6 +276,21 @@
     return `[${time}] ${entry.reason || 'update'} ${sensorLabel} ${prevHum}→${hum} (Δ${delta})${meta}`;
   }
 
+  function applyAmbientDebugPlacement(panel) {
+    if (!panel) return;
+    panel.classList.toggle('is-placement-bottom', ambientDebugState.placement === 'bottom');
+    panel.classList.toggle('is-placement-right', ambientDebugState.placement === 'right');
+  }
+
+  function applyAmbientDebugCollapsed(panel) {
+    if (!panel) return;
+    panel.classList.toggle('is-collapsed', !!ambientDebugState.collapsed);
+    panel.setAttribute('aria-expanded', ambientDebugState.collapsed ? 'false' : 'true');
+    if (ambientDebugState.logEl) {
+      ambientDebugState.logEl.setAttribute('aria-hidden', ambientDebugState.collapsed ? 'true' : 'false');
+    }
+  }
+
   function ensureAmbientDebugPanel(container) {
     if (!ambientDebugState.enabled) return null;
     let host = null;
@@ -273,9 +306,44 @@
       }
       const panel = document.createElement('div');
       panel.className = 'wdash-ambient-debug is-empty';
+      panel.setAttribute('role', 'region');
+      panel.setAttribute('aria-label', 'Ambient humidity debug log');
       const title = document.createElement('div');
       title.className = 'wdash-ambient-debug__title';
       title.textContent = 'Ambient debug';
+
+      const controls = document.createElement('div');
+      controls.className = 'wdash-ambient-debug__controls';
+
+      const collapseBtn = document.createElement('button');
+      collapseBtn.type = 'button';
+      collapseBtn.className = 'wdash-ambient-debug__button wdash-ambient-debug__button--collapse';
+      collapseBtn.textContent = 'Hide log';
+      collapseBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        setAmbientDebugCollapsed(!ambientDebugState.collapsed, true);
+      });
+
+      const dockBtn = document.createElement('button');
+      dockBtn.type = 'button';
+      dockBtn.className = 'wdash-ambient-debug__button wdash-ambient-debug__button--dock';
+      dockBtn.textContent = 'Move panel';
+      dockBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        const placements = Array.from(AMBIENT_DEBUG_PLACEMENTS);
+        const currentIdx = placements.indexOf(ambientDebugState.placement);
+        const nextPlacement = placements[(currentIdx + 1) % placements.length];
+        setAmbientDebugPlacement(nextPlacement, true);
+      });
+
+      controls.appendChild(collapseBtn);
+      controls.appendChild(dockBtn);
+      title.appendChild(controls);
+
+      title.addEventListener('click', () => {
+        setAmbientDebugCollapsed(!ambientDebugState.collapsed, true);
+      });
+
       const log = document.createElement('pre');
       log.className = 'wdash-ambient-debug__log';
       log.textContent = 'Ambient debug waiting for updates…';
@@ -286,7 +354,13 @@
       ambientDebugState.titleEl = title;
       ambientDebugState.logEl = log;
       ambientDebugState.container = host;
+      applyAmbientDebugPlacement(panel);
+      applyAmbientDebugCollapsed(panel);
+      updateAmbientDebugControlLabels();
     }
+    applyAmbientDebugPlacement(ambientDebugState.panel);
+    applyAmbientDebugCollapsed(ambientDebugState.panel);
+    updateAmbientDebugControlLabels();
     return ambientDebugState.panel;
   }
 
@@ -329,6 +403,59 @@
     } catch (e) { /* ignore */ }
   }
 
+  function updateAmbientDebugControlLabels() {
+    if (!ambientDebugState.titleEl) return;
+    const collapseBtn = ambientDebugState.titleEl.querySelector('.wdash-ambient-debug__button--collapse');
+    if (collapseBtn) {
+      collapseBtn.textContent = ambientDebugState.collapsed ? 'Show log' : 'Hide log';
+      collapseBtn.setAttribute('aria-label', ambientDebugState.collapsed ? 'Show ambient debug log' : 'Hide ambient debug log');
+    }
+    ambientDebugState.titleEl.classList.toggle('is-collapsed', ambientDebugState.collapsed);
+    const dockBtn = ambientDebugState.titleEl.querySelector('.wdash-ambient-debug__button--dock');
+    if (dockBtn) {
+      dockBtn.textContent = ambientDebugState.placement === 'bottom' ? 'Dock right' : 'Dock bottom';
+      dockBtn.setAttribute('aria-label', ambientDebugState.placement === 'bottom'
+        ? 'Move ambient debug panel to the right edge'
+        : 'Move ambient debug panel to the bottom edge');
+    }
+  }
+
+  function setAmbientDebugPlacement(placement, fromUi = false) {
+    const normalized = typeof placement === 'string' ? placement.toLowerCase() : placement;
+    const desired = AMBIENT_DEBUG_PLACEMENTS.has(normalized) ? normalized : ambientDebugState.placement;
+    if (desired === ambientDebugState.placement) return ambientDebugState.placement;
+    ambientDebugState.placement = desired;
+    applyAmbientDebugPlacement(ambientDebugState.panel);
+    updateAmbientDebugControlLabels();
+    if (fromUi) {
+      try {
+        if (typeof window !== 'undefined' && window.localStorage) {
+          window.localStorage.setItem(AMBIENT_DEBUG_PLACEMENT_STORAGE_KEY, ambientDebugState.placement);
+        }
+      } catch (e) { /* ignore */ }
+    }
+    return ambientDebugState.placement;
+  }
+
+  function setAmbientDebugCollapsed(collapsed, fromUi = false) {
+    const desired = !!collapsed;
+    if (ambientDebugState.collapsed === desired) return ambientDebugState.collapsed;
+    ambientDebugState.collapsed = desired;
+    applyAmbientDebugCollapsed(ambientDebugState.panel);
+    if (!desired) {
+      renderAmbientDebugPanel();
+    }
+    updateAmbientDebugControlLabels();
+    if (fromUi) {
+      try {
+        if (typeof window !== 'undefined' && window.localStorage) {
+          window.localStorage.setItem(AMBIENT_DEBUG_COLLAPSED_STORAGE_KEY, desired ? '1' : '0');
+        }
+      } catch (e) { /* ignore */ }
+    }
+    return ambientDebugState.collapsed;
+  }
+
   function setAmbientDebugEnabled(enabled) {
     const desired = !!enabled;
     if (ambientDebugState.enabled === desired) return ambientDebugState.enabled;
@@ -353,6 +480,9 @@
       ambientDebugState.container = null;
     } else {
       renderAmbientDebugPanel(document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-ambient'));
+      applyAmbientDebugPlacement(ambientDebugState.panel);
+      applyAmbientDebugCollapsed(ambientDebugState.panel);
+      updateAmbientDebugControlLabels();
     }
     return ambientDebugState.enabled;
   }
@@ -364,6 +494,18 @@
     api.disable = () => setAmbientDebugEnabled(false);
     api.toggle = () => setAmbientDebugEnabled(!ambientDebugState.enabled);
     api.isEnabled = () => ambientDebugState.enabled;
+    api.setPlacement = (placement) => setAmbientDebugPlacement(placement, true);
+    api.getPlacement = () => ambientDebugState.placement;
+    api.setCollapsed = (flag) => setAmbientDebugCollapsed(flag, true);
+    api.isCollapsed = () => ambientDebugState.collapsed;
+    api.collapse = () => setAmbientDebugCollapsed(true, true);
+    api.expand = () => setAmbientDebugCollapsed(false, true);
+    api.cyclePlacement = () => {
+      const placements = Array.from(AMBIENT_DEBUG_PLACEMENTS);
+      const currentIdx = placements.indexOf(ambientDebugState.placement);
+      const nextPlacement = placements[(currentIdx + 1) % placements.length];
+      return setAmbientDebugPlacement(nextPlacement, true);
+    };
     api.clear = () => {
       ambientDebugState.events = [];
       renderAmbientDebugPanel();
@@ -4222,10 +4364,20 @@
 .wdash-ambient-rotation { font-size: 0.75rem; color: #8ea0c8; }
 .wdash-ambient-rotation:empty { display: none; }
 .wdash-ambient--empty .wdash-ambient-reading { opacity: 0.6; }
-.wdash-ambient-debug { position: absolute; left: 10px; right: 10px; bottom: 10px; z-index: 15; background: rgba(4,12,32,0.92); border: 1px solid rgba(86,130,255,0.45); border-radius: 8px; padding: 6px 8px; font-family: 'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.58rem; line-height: 1.35; color: #dbe6ff; box-shadow: 0 6px 18px rgba(0,0,0,0.45); max-height: 160px; overflow-y: auto; backdrop-filter: blur(4px); pointer-events: auto; }
+.wdash-ambient-debug { position: absolute; z-index: 15; background: rgba(4,12,32,0.92); border: 1px solid rgba(86,130,255,0.45); border-radius: 8px; padding: 6px 8px; font-family: 'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.58rem; line-height: 1.35; color: #dbe6ff; box-shadow: 0 6px 18px rgba(0,0,0,0.45); max-height: 160px; overflow: hidden; backdrop-filter: blur(4px); pointer-events: auto; display: flex; flex-direction: column; gap: 4px; }
+.wdash-ambient-debug.is-placement-bottom { left: 10px; right: 10px; bottom: 10px; top: auto; max-width: none; width: auto; }
+.wdash-ambient-debug.is-placement-right { top: 10px; bottom: 10px; right: 10px; left: auto; width: min(32%, 320px); max-width: calc(100% - 20px); max-height: calc(100% - 20px); }
 .wdash-ambient-debug.is-empty { opacity: 0.78; }
-.wdash-ambient-debug__title { font-size: 0.64rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #8dd0ff; margin-bottom: 4px; }
-.wdash-ambient-debug__log { margin: 0; white-space: pre-wrap; word-break: break-word; }
+.wdash-ambient-debug.is-collapsed { cursor: pointer; max-height: 36px; overflow: hidden; }
+.wdash-ambient-debug.is-collapsed .wdash-ambient-debug__log { display: none; }
+.wdash-ambient-debug__title { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 0.64rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #8dd0ff; }
+.wdash-ambient-debug__title.is-collapsed { color: #a2c8ff; }
+.wdash-ambient-debug__controls { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; }
+.wdash-ambient-debug__button { appearance: none; border: 1px solid rgba(141,208,255,0.5); background: rgba(18,36,72,0.6); color: #dbe6ff; font: inherit; font-size: 0.55rem; line-height: 1.1; padding: 2px 6px; border-radius: 4px; cursor: pointer; text-transform: none; letter-spacing: 0; transition: background 120ms ease, border-color 120ms ease; }
+.wdash-ambient-debug__button:hover { background: rgba(33,58,112,0.8); border-color: rgba(141,208,255,0.8); }
+.wdash-ambient-debug__button:active { background: rgba(14,28,60,0.9); }
+.wdash-ambient-debug__button:focus-visible { outline: 2px solid rgba(141,208,255,0.8); outline-offset: 2px; }
+.wdash-ambient-debug__log { margin: 0; white-space: pre-wrap; word-break: break-word; overflow-y: auto; flex: 1 1 auto; }
 .wdash-rain-main { display: grid; grid-template-columns: minmax(0, 0.85fr) 1fr 1fr; gap: 18px; align-items: stretch; flex: 1; height: 100%; }
 .wdash-rain-col { min-height: 0; }
 .wdash-rain-col--drop { display: flex; align-items: center; justify-content: center; }
