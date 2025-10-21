@@ -71,6 +71,7 @@
   const scaleCache = { scale: null, width: null, height: null };
   const SCALE_EPSILON = 0.002;
   const RENDER_EPSILON = 0.5;
+  const TILE_RESIZE_EPSILON = 1;
 
   const layoutState = {
     baseWidth: DEFAULT_BASE_WIDTH,
@@ -89,6 +90,11 @@
   };
 
   const tileBaseMeasurement = {
+    width: null,
+    height: null
+  };
+
+  const tileResizeObserverState = {
     width: null,
     height: null
   };
@@ -751,7 +757,9 @@
       templates: compiled
     });
 
-    invalidateScaleCache();
+    if (changed) {
+      invalidateScaleCache();
+    }
     applyScale(root);
 
     const gridEl = dash.querySelector('.wdash-grid');
@@ -821,10 +829,52 @@
     if (scaleObserver) {
       scaleObserver.disconnect();
     }
-    scaleObserver = new ResizeObserver(() => {
-      applyLayoutOverrides(lastSuccessfulPayload?.metadata);
-      invalidateScaleCache();
-      applyScale(root);
+    tileResizeObserverState.width = null;
+    tileResizeObserverState.height = null;
+    scaleObserver = new ResizeObserver(entries => {
+      let observedWidth = null;
+      let observedHeight = null;
+      if (Array.isArray(entries)) {
+        for (const entry of entries) {
+          if (!entry) continue;
+          const rect = entry.contentRect;
+          if (rect) {
+            if (observedWidth == null && Number.isFinite(rect.width) && rect.width > 0) {
+              observedWidth = Math.round(rect.width);
+            }
+            if (observedHeight == null && Number.isFinite(rect.height) && rect.height > 0) {
+              observedHeight = Math.round(rect.height);
+            }
+          }
+          if (entry.target === displayTile && observedWidth != null && observedHeight != null) {
+            break;
+          }
+        }
+      }
+
+      let sizeChanged = false;
+      if (Number.isFinite(observedWidth) && observedWidth > 0) {
+        const previousWidth = tileResizeObserverState.width;
+        if (!Number.isFinite(previousWidth) || Math.abs(previousWidth - observedWidth) > TILE_RESIZE_EPSILON) {
+          tileResizeObserverState.width = observedWidth;
+          tileBaseMeasurement.width = observedWidth;
+          sizeChanged = true;
+        }
+      }
+      if (Number.isFinite(observedHeight) && observedHeight > 0) {
+        const previousHeight = tileResizeObserverState.height;
+        if (!Number.isFinite(previousHeight) || Math.abs(previousHeight - observedHeight) > TILE_RESIZE_EPSILON) {
+          tileResizeObserverState.height = observedHeight;
+          tileBaseMeasurement.height = observedHeight;
+          sizeChanged = true;
+        }
+      }
+
+      if (sizeChanged) {
+        applyLayoutOverrides(lastSuccessfulPayload?.metadata);
+      } else {
+        applyScale(root);
+      }
     });
     scaleObserver.observe(displayTile);
   }
