@@ -438,6 +438,7 @@
   let ambientLastInitSensorKey = null;
   let ambientLastInitMarkupVersion = -1;
   let ambientMarkupVersion = 0;
+  let lastRenderedMarkup = null;
 
   const dataTileObservers = new Map();
   let domObserver = null;
@@ -636,6 +637,7 @@
     if (!payload) {
       grid.dataset.empty = 'true';
       grid.innerHTML = `<div class="wdash-empty">Waiting for weather data…</div>`;
+      lastRenderedMarkup = null;
       clearAmbientRotation();
       toggleSourceTileMask(false);
       stopHubClock();
@@ -649,8 +651,9 @@
     const newMarkup = buildMarkup(payload);
     // Only replace the grid contents when markup actually changes to avoid
     // spurious DOM rebuilds (which can make the ambient rings redraw)
-    if (grid.innerHTML !== newMarkup) {
+    if (newMarkup !== lastRenderedMarkup) {
       grid.innerHTML = newMarkup;
+      lastRenderedMarkup = newMarkup;
       ambientMarkupVersion += 1;
       ambientLastInitIndex = null;
       ambientLastInitSensorKey = null;
@@ -692,6 +695,10 @@
           ambientLastInitMarkupVersion = ambientMarkupVersion;
         }
       } catch (e) { /* ignore */ }
+    } else if (layoutState.pendingApply) {
+      // If markup is unchanged but a previous render deferred layout application,
+      // ensure the pending flag does not linger.
+      layoutState.pendingApply = false;
     }
     setupAmbientRotation(payload);
     setupAirQualityRotation(payload);
