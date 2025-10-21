@@ -24,6 +24,13 @@
   const DEFAULT_BASE_HEIGHT = 900;
   const BREAKPOINTS = ['desktop', 'tablet', 'mobile'];
   const LAYOUT_STYLE_ID = 'weather-dashboard-layout-style';
+  const DEFAULT_TRACK_UNIT = 'px';
+  const TILE_MEASURE_TOLERANCE = 1;
+
+  const tileMeasurementState = {
+    width: null,
+    height: null
+  };
 
   const SHARED_DESKTOP_LAYOUT = {
     columns: 'repeat(2, minmax(0, 1fr))',
@@ -50,7 +57,7 @@
     mobile: { width: DEFAULT_BASE_WIDTH, height: DEFAULT_BASE_HEIGHT }
   };
 
-  const DEFAULT_TEMPLATES = compileLayoutTemplates(DEFAULT_LAYOUT);
+  const DEFAULT_TEMPLATES = compileLayoutTemplates(DEFAULT_LAYOUT, { trackUnit: DEFAULT_TRACK_UNIT });
   const DEFAULT_NORMALIZED_AREAS = {
     desktop: normalizeTemplateAreas(DEFAULT_TEMPLATES.desktop.areas),
     tablet: normalizeTemplateAreas(DEFAULT_TEMPLATES.tablet.areas),
@@ -82,6 +89,7 @@
     gaps: { ...DEFAULT_GAPS },
     templates: DEFAULT_TEMPLATES,
     normalizedAreas: { ...DEFAULT_NORMALIZED_AREAS },
+    trackUnit: DEFAULT_TRACK_UNIT,
     signature: null,
     pendingApply: false
   };
@@ -564,6 +572,82 @@
     }
   }
 
+  function measureDisplayTileBaseDimensions() {
+    const root = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-root');
+    const displayTile = byId(DISPLAY_TILE_ID);
+    const content = displayTile ? findContentElement(displayTile) : null;
+    const host = root?.parentElement || root || content || displayTile;
+    if (!host) return null;
+    let rect = null;
+    if (typeof host.getBoundingClientRect === 'function') {
+      try {
+        rect = host.getBoundingClientRect();
+      } catch (err) {
+        rect = null;
+      }
+    }
+    const width = Number(rect?.width || host.clientWidth || 0);
+    const height = Number(rect?.height || host.clientHeight || 0);
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+      return null;
+    }
+    return { width, height };
+  }
+
+  function resolveMeasuredBaseDimensions(options = {}) {
+    const measurement = measureDisplayTileBaseDimensions();
+    const prevWidth = tileMeasurementState.width;
+    const prevHeight = tileMeasurementState.height;
+
+    let width = Number(measurement?.width);
+    let height = Number(measurement?.height);
+
+    const hasWidth = Number.isFinite(width) && width > 0;
+    const hasHeight = Number.isFinite(height) && height > 0;
+
+    if (hasWidth) {
+      width = Math.max(1, Math.round(width));
+      if (Number.isFinite(prevWidth) && Math.abs(prevWidth - width) <= TILE_MEASURE_TOLERANCE) {
+        width = prevWidth;
+      }
+    }
+
+    if (hasHeight) {
+      height = Math.max(1, Math.round(height));
+      if (Number.isFinite(prevHeight) && Math.abs(prevHeight - height) <= TILE_MEASURE_TOLERANCE) {
+        height = prevHeight;
+      }
+    }
+
+    const nextWidth = hasWidth ? width : prevWidth;
+    const nextHeight = hasHeight ? height : prevHeight;
+
+    const changed = (
+      (hasWidth && (!Number.isFinite(prevWidth) || nextWidth !== prevWidth))
+      || (hasHeight && (!Number.isFinite(prevHeight) || nextHeight !== prevHeight))
+    );
+
+    if (options.commit !== false) {
+      if (Number.isFinite(nextWidth)) {
+        tileMeasurementState.width = nextWidth;
+      }
+      if (Number.isFinite(nextHeight)) {
+        tileMeasurementState.height = nextHeight;
+      }
+    }
+
+    if (!Number.isFinite(nextWidth) || !Number.isFinite(nextHeight)) {
+      return { width: null, height: null, changed: false };
+    }
+
+    return { width: nextWidth, height: nextHeight, changed };
+  }
+
+  function resetTileMeasurement() {
+    tileMeasurementState.width = null;
+    tileMeasurementState.height = null;
+  }
+
   function applyLayoutOverrides(metadata) {
     const root = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-root');
     const dash = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash');
@@ -587,6 +671,18 @@
       overrideSectionValues[key] = value;
       overrideSectionObjects[key] = sanitizeSectionObject(value);
     }
+
+    const measurement = resolveMeasuredBaseDimensions();
+    const measuredWidth = sanitizeDimension(measurement.width, DEFAULT_BASE_WIDTH);
+    const measuredHeight = sanitizeDimension(measurement.height, DEFAULT_BASE_HEIGHT);
+
+    const trackUnit = normalizeTrackUnit(
+      overrideLayout?.trackUnit
+        ?? overrideLayout?.unit
+        ?? overrideLayout?.units
+        ?? overrideLayout?.dimensionUnit
+        ?? layoutState.trackUnit
+    );
 
     const layoutForCompile = {};
     let inheritedRows = null;
@@ -617,7 +713,7 @@
       inheritedRows = defaultRows;
       layoutForCompile[key] = defaultRows;
     }
-    const compiled = compileLayoutTemplates(layoutForCompile);
+    const compiled = compileLayoutTemplates(layoutForCompile, { trackUnit });
     const normalizedAreas = {
       desktop: normalizeTemplateAreas(compiled.desktop.areas),
       tablet: normalizeTemplateAreas(compiled.tablet.areas),
@@ -631,10 +727,11 @@
     const hasTabletOverride = Boolean(overrideLayout && hasOwn(overrideLayout, 'tablet'));
     const hasMobileOverride = Boolean(overrideLayout && hasOwn(overrideLayout, 'mobile'));
 
-    const desktopColumns = sanitizeColumns(desktopSection?.columns, DEFAULT_COLUMNS.desktop);
+    const desktopColumns = sanitizeColumns(desktopSection?.columns, DEFAULT_COLUMNS.desktop, trackUnit);
     const tabletColumns = sanitizeColumns(
       tabletSection?.columns,
-      hasTabletOverride ? desktopColumns : hasDesktopOverride ? desktopColumns : DEFAULT_COLUMNS.tablet
+      hasTabletOverride ? desktopColumns : hasDesktopOverride ? desktopColumns : DEFAULT_COLUMNS.tablet,
+      trackUnit
     );
     const mobileColumns = sanitizeColumns(
       mobileSection?.columns,
@@ -642,7 +739,8 @@
         ? tabletColumns
         : hasTabletOverride || hasDesktopOverride
           ? tabletColumns
-          : DEFAULT_COLUMNS.mobile
+          : DEFAULT_COLUMNS.mobile,
+      trackUnit
     );
     const columns = {
       desktop: desktopColumns,
@@ -669,8 +767,8 @@
       mobile: mobileGap
     };
 
-    const fallbackWidth = sanitizeDimension(overrideLayout?.baseWidth, DEFAULT_BASE_WIDTH);
-    const fallbackHeight = sanitizeDimension(overrideLayout?.baseHeight, DEFAULT_BASE_HEIGHT);
+    const fallbackWidth = sanitizeDimension(overrideLayout?.baseWidth, measuredWidth);
+    const fallbackHeight = sanitizeDimension(overrideLayout?.baseHeight, measuredHeight);
     const desktopWidth = sanitizeDimension(desktopSection?.baseWidth, fallbackWidth);
     const desktopHeight = sanitizeDimension(desktopSection?.baseHeight, fallbackHeight);
     const tabletWidth = sanitizeDimension(tabletSection?.baseWidth, desktopWidth);
@@ -688,6 +786,7 @@
     const baseHeight = desktopHeight;
 
     const signature = JSON.stringify({
+      trackUnit,
       baseDimensions,
       columns,
       gaps,
@@ -708,6 +807,7 @@
       layoutState.columns = columns;
       layoutState.gaps = gaps;
       layoutState.templates = compiled;
+      layoutState.trackUnit = trackUnit;
       layoutState.pendingApply = true;
     }
 
@@ -810,7 +910,14 @@
     if (scaleObserver) {
       scaleObserver.disconnect();
     }
-    scaleObserver = new ResizeObserver(() => applyScale(root));
+    scaleObserver = new ResizeObserver(() => {
+      const measurement = resolveMeasuredBaseDimensions();
+      if (measurement.changed) {
+        layoutState.pendingApply = true;
+        applyLayoutOverrides(lastSuccessfulPayload?.metadata);
+      }
+      applyScale(root);
+    });
     scaleObserver.observe(displayTile);
   }
 
@@ -3551,8 +3658,9 @@
     return match ? `#${match[1]}` : null;
   }
 
-  function compileLayoutTemplates(layoutConfig) {
+  function compileLayoutTemplates(layoutConfig, options = {}) {
     const breakpoints = ['desktop', 'tablet', 'mobile'];
+    const trackUnit = normalizeTrackUnit(options.trackUnit ?? layoutConfig?.trackUnit);
     const result = {};
     for (const key of breakpoints) {
       const section = layoutConfig && layoutConfig[key];
@@ -3561,7 +3669,7 @@
         : Array.isArray(section?.rows)
           ? section.rows
           : [];
-      result[key] = compileGridTemplate(rows);
+      result[key] = compileGridTemplate(rows, trackUnit);
     }
     return result;
   }
@@ -3661,7 +3769,20 @@
     return token;
   }
 
-  function compileGridTemplate(layout) {
+  function normalizeTrackUnit(value) {
+    if (typeof value !== 'string') return DEFAULT_TRACK_UNIT;
+    const token = value.trim().toLowerCase();
+    if (!token) return DEFAULT_TRACK_UNIT;
+    if (token === '%' || token === 'percent' || token === 'percentage' || token === 'percents') {
+      return 'percent';
+    }
+    if (token === 'px' || token === 'pixel' || token === 'pixels') {
+      return 'px';
+    }
+    return DEFAULT_TRACK_UNIT;
+  }
+
+  function compileGridTemplate(layout, trackUnit = DEFAULT_TRACK_UNIT) {
     if (!Array.isArray(layout)) {
       return { areas: '"."', rows: 'repeat(1, minmax(0, 1fr))', rowCount: 1 };
     }
@@ -3676,7 +3797,7 @@
             .filter(col => typeof col === 'string' && col.length)
         : [];
       if (!columns.length) continue;
-      const track = normalizeTrackSize(entry?.height ?? entry?.rowHeight ?? entry?.size);
+      const track = normalizeTrackSize(entry?.height ?? entry?.rowHeight ?? entry?.size, trackUnit);
       for (let i = 0; i < repeat; i += 1) {
         areaLines.push(`"${columns.join(' ')}"`);
         rowTracks.push(track);
@@ -3695,11 +3816,12 @@
     return { areas: areaLines.join('\n  '), rows: rowsValue, rowCount: safeRowCount };
   }
 
-  function normalizeTrackSize(value) {
+  function normalizeTrackSize(value, trackUnit = DEFAULT_TRACK_UNIT) {
     const defaultTrack = 'minmax(0, 1fr)';
     if (value == null) return defaultTrack;
     if (typeof value === 'number' && Number.isFinite(value)) {
-      return `${Math.max(0, value)}px`;
+      const safe = Math.max(0, value);
+      return trackUnit === 'percent' ? `${safe}%` : `${safe}px`;
     }
     if (typeof value === 'string') {
       const trimmed = value.trim();
@@ -3712,10 +3834,10 @@
     return defaultTrack;
   }
 
-  function sanitizeColumns(value, fallback) {
+  function sanitizeColumns(value, fallback, trackUnit = DEFAULT_TRACK_UNIT) {
     if (Array.isArray(value)) {
       const tracks = value
-        .map(item => normalizeTrackSize(item))
+        .map(item => normalizeTrackSize(item, trackUnit))
         .filter(Boolean);
       if (tracks.length) {
         return tracks.join(' ');
@@ -4730,7 +4852,12 @@
     target.__WDASH_TEST_HOOKS__ = target.__WDASH_TEST_HOOKS__ || {};
     Object.assign(target.__WDASH_TEST_HOOKS__, {
       updateTempWindCard,
-      tempWindState
+      tempWindState,
+      applyLayoutOverrides,
+      layoutState,
+      resolveMeasuredBaseDimensions,
+      measureDisplayTileBaseDimensions,
+      resetTileMeasurement
     });
   }
 })();
