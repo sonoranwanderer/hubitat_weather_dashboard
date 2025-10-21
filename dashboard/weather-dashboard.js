@@ -208,23 +208,6 @@
   const ambientLastDisplayedHumidity = { key: null, value: null };
   // track which ambient index we've initialized into the DOM to avoid re-init loops
   let ambientLastInitIndex = null;
-  let ambientLastInitSensorKey = null;
-
-  const CARD_RENDERERS = [
-    { key: 'tempWind', selector: '.wdash-card--temp-wind', build: data => buildTempWindCard(data) },
-    { key: 'ambient', selector: '.wdash-card--ambient', build: (data, opts) => buildAmbientSensorCard(data, opts?.ambientSeed) },
-    { key: 'lightning', selector: '.wdash-card--lightning', build: data => buildLightningCard(data) },
-    { key: 'pressure', selector: '.wdash-card--pressure', build: data => buildPressureCard(data) },
-    { key: 'rain', selector: '.wdash-card--rain', build: data => buildRainCard(data) },
-    { key: 'solar', selector: '.wdash-card--solar-moon', build: data => buildSolarSunCard(data) },
-    { key: 'air', selector: '.wdash-card--air', build: data => buildAirQualityCard(data) }
-  ];
-
-  const renderState = {
-    mounted: false,
-    markupByKey: new Map(),
-    order: CARD_RENDERERS.map(card => card.key)
-  };
 
   const dataTileObservers = new Map();
   let domObserver = null;
@@ -423,8 +406,6 @@
     if (!payload) {
       grid.dataset.empty = 'true';
       grid.innerHTML = `<div class="wdash-empty">Waiting for weather data…</div>`;
-      renderState.mounted = false;
-      renderState.markupByKey.clear();
       clearAmbientRotation();
       toggleSourceTileMask(false);
       stopHubClock();
@@ -435,43 +416,23 @@
     lastSuccessfulPayload = payload;
 
     grid.dataset.empty = 'false';
-    const ambientSeed = renderState.mounted ? null : { index: ambientRotation.index || 0 };
-    const cardMarkupList = buildCardMarkupList(payload, { ambientSeed });
-
-    let cardsChanged = false;
-
-    if (!renderState.mounted) {
-      grid.innerHTML = cardMarkupList.map(card => card.markup).join('');
-      renderState.mounted = true;
-      renderState.markupByKey.clear();
-      cardMarkupList.forEach(card => {
-        renderState.markupByKey.set(card.key, card.markup);
-      });
-      cardsChanged = true;
-    } else {
-      cardMarkupList.forEach(card => {
-        const previousMarkup = renderState.markupByKey.get(card.key) || null;
-        if (card.key === 'ambient') {
-          const ensured = ensureCardPresence(grid, card, cardMarkupList);
-          if (ensured) {
-            renderState.markupByKey.set(card.key, card.markup);
-          }
-          return;
-        }
-
-        if (previousMarkup !== card.markup) {
-          replaceCardMarkup(grid, card, cardMarkupList);
-          renderState.markupByKey.set(card.key, card.markup);
-          cardsChanged = true;
-        }
-      });
+    const ambientSeed = resolveAmbientSeedState(payload);
+    if (ambientSeed && Number.isInteger(ambientSeed.index)) {
+      ambientRotation.index = ambientSeed.index;
     }
-
-    if (cardsChanged) {
+    const newMarkup = buildMarkup(payload, { ambientSeed });
+    // Only replace the grid contents when markup actually changes to avoid
+    // spurious DOM rebuilds (which can make the ambient rings redraw)
+    if (grid.innerHTML !== newMarkup) {
+      grid.innerHTML = newMarkup;
       layoutState.pendingApply = true;
       applyLayoutOverrides(payload?.metadata);
-    } else if (layoutState.pendingApply) {
-      layoutState.pendingApply = false;
+      // initialize ambient humidity circle from any remembered last value so it
+      // doesn't animate from 0% when the card is first built or when switching sensors
+      try {
+        const ambientContainer = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-ambient');
+        if (ambientContainer) initAmbientLastHum(ambientContainer);
+      } catch (e) { /* ignore */ }
     }
     setupAmbientRotation(payload);
     setupAirQualityRotation(payload);
@@ -487,38 +448,6 @@
       window.addEventListener('resize', () => { applyAmbientRingSizing(); applyOutdoorRingSizing(); });
     }
     toggleSourceTileMask(true);
-  }
-
-  function resolveAmbientSeedOptions(sensors, seedOptions) {
-    const list = Array.isArray(sensors) ? sensors.filter(Boolean) : [];
-    const count = list.length;
-    const opts = seedOptions && typeof seedOptions === 'object' ? seedOptions : {};
-    let index = Number.isInteger(opts.index) ? opts.index : 0;
-    if (count > 0) {
-      if (index < 0) index = 0;
-      if (index >= count) index = count - 1;
-    } else {
-      index = 0;
-    }
-
-    const sensor = list[index] || null;
-    let sensorKey = typeof opts.sensorKey === 'string' ? opts.sensorKey : null;
-    if (!sensorKey && sensor) {
-      sensorKey = getAmbientSensorKey(sensor, index);
-    }
-    let seedKey = typeof opts.seedKey === 'string' ? opts.seedKey : null;
-    if (!seedKey) {
-      seedKey = sensorKey || (sensor && sensor.name != null ? getAmbientNameKey(sensor.name) : null) || `index:${index}`;
-    }
-
-    const humidity = Number.isFinite(opts.humidity) ? opts.humidity : null;
-
-    return {
-      index,
-      sensorKey,
-      seedKey,
-      humidity
-    };
   }
 
   function readPayloads() {
@@ -1025,58 +954,77 @@
     return Object.keys(result).length ? result : null;
   }
 
-  function buildCardMarkupList(data, options) {
-    const opts = options && typeof options === 'object' ? options : {};
-    return CARD_RENDERERS.map(card => ({
-      key: card.key,
-      selector: card.selector,
-      markup: card.build(data, opts)
-    }));
-  }
+  function resolveAmbientSeedState(data) {
+    const sensors = Array.isArray(data?.ambientSensors) ? data.ambientSensors.filter(Boolean) : [];
+    if (!sensors.length) return null;
 
-  function createElementFromMarkup(markup) {
-    if (typeof markup !== 'string' || !markup.trim().length) return null;
-    const template = document.createElement('div');
-    template.innerHTML = markup.trim();
-    return template.firstElementChild || null;
-  }
+    const normalizedSensors = sensors.map((sensor, index) => ({ sensor, index }));
+    const desiredKeys = [];
 
-  function ensureCardPresence(grid, card, cardMarkupList) {
-    if (!grid || !card) return null;
-    let existing = grid.querySelector(card.selector);
-    if (existing) return existing;
-
-    const element = createElementFromMarkup(card.markup);
-    if (!element) return null;
-
-    const insertionIndex = renderState.order.indexOf(card.key);
-    let anchor = null;
-    for (let idx = insertionIndex + 1; idx < renderState.order.length; idx += 1) {
-      const nextKey = renderState.order[idx];
-      const nextCard = cardMarkupList.find(item => item.key === nextKey);
-      if (!nextCard) continue;
-      const node = grid.querySelector(nextCard.selector);
-      if (node) {
-        anchor = node;
-        break;
+    const previousSensor = Array.isArray(ambientRotation.sensors)
+      ? ambientRotation.sensors[ambientRotation.index] || null
+      : null;
+    if (previousSensor) {
+      const prevKey = getAmbientSensorKey(previousSensor, ambientRotation.index);
+      if (prevKey) desiredKeys.push(prevKey);
+      if (previousSensor.name != null) {
+        const prevNameKey = getAmbientNameKey(previousSensor.name);
+        if (prevNameKey) desiredKeys.push(prevNameKey);
       }
     }
 
-    if (anchor) {
-      grid.insertBefore(element, anchor);
-    } else {
-      grid.appendChild(element);
+    if (ambientLastDisplayedHumidity.key) {
+      desiredKeys.push(ambientLastDisplayedHumidity.key);
     }
 
-    return element;
+    let index = Number.isInteger(ambientRotation.index) ? ambientRotation.index : 0;
+    if (index < 0) index = 0;
+    if (index >= normalizedSensors.length) index = normalizedSensors.length - 1;
+
+    if (desiredKeys.length) {
+      const keySet = new Set(desiredKeys.filter(Boolean).map(key => String(key).trim()).filter(Boolean));
+      const match = normalizedSensors.find(item => {
+        const key = getAmbientSensorKey(item.sensor, item.index);
+        if (key && keySet.has(key)) return true;
+        if (item.sensor && item.sensor.name != null) {
+          const nameKey = getAmbientNameKey(item.sensor.name);
+          if (nameKey && keySet.has(nameKey)) return true;
+        }
+        return false;
+      });
+      if (match) {
+        index = match.index;
+      }
+    }
+
+    const active = normalizedSensors[index] || normalizedSensors[0];
+    const sensorKey = getAmbientSensorKey(active.sensor, active.index);
+    let humidity = Number.isFinite(active.sensor?.humidity) ? active.sensor.humidity : null;
+    if (!Number.isFinite(humidity)) {
+      const cached = lookupAmbientCachedHumidity(active.sensor, sensorKey, active.sensor?.name);
+      if (Number.isFinite(cached)) humidity = cached;
+    }
+
+    return {
+      index: active.index,
+      sensorKey: sensorKey || null,
+      humidity: Number.isFinite(humidity) ? humidity : null
+    };
   }
 
-  function replaceCardMarkup(grid, card, cardMarkupList) {
-    const existing = ensureCardPresence(grid, card, cardMarkupList);
-    if (!existing) return;
-    const replacement = createElementFromMarkup(card.markup);
-    if (!replacement) return;
-    existing.replaceWith(replacement);
+  function buildMarkup(data, options = {}) {
+    const opts = options && typeof options === 'object' ? options : {};
+    return `
+      ${[
+        buildTempWindCard(data),
+        buildAmbientSensorCard(data, opts.ambientSeed),
+        buildLightningCard(data),
+        buildPressureCard(data),
+        buildRainCard(data),
+        buildSolarSunCard(data),
+        buildAirQualityCard(data)
+      ].join('')}
+    `;
   }
 
   function buildTempWindCard(data) {
@@ -1303,66 +1251,24 @@
   // after building the ambient card markup, if we have a remembered humidity for
   // the first sensor, store it into the DOM element's data attribute so subsequent
   // updateAmbientDisplay can animate from that value instead of from 0%.
-  function initAmbientLastHum(container, options) {
-    const opts = options && typeof options === 'object' ? options : {};
-    const index = Number.isInteger(opts.index) ? opts.index : null;
-    const sensorKeyOverride = typeof opts.sensorKey === 'string' ? opts.sensorKey.trim() : '';
-    const sensorNameKeyOverride = typeof opts.sensorNameKey === 'string' ? opts.sensorNameKey.trim() : '';
-    const headerKeyOverride = typeof opts.headerKey === 'string' ? opts.headerKey.trim() : '';
-    const seedKeyOverride = typeof opts.seedKey === 'string' ? opts.seedKey.trim() : '';
-
-    let containerKey = null;
-    let headerKey = null;
-
+  function initAmbientLastHum(container) {
     try {
-      if (!container) return;
-      const card = container.closest('.wdash-card--ambient');
-      const scope = card || container;
-
-      containerKey = seedKeyOverride
-        || sensorKeyOverride
-        || getAmbientKeyFromElement(container)
-        || getAmbientKeyFromElement(card);
-      if (!containerKey && sensorNameKeyOverride) containerKey = sensorNameKeyOverride;
-
-      const headerName = scope.querySelector('.wdash-ambient-name')?.textContent || '';
-      headerKey = headerKeyOverride || getAmbientNameKey(headerName);
-      if (!headerKey && sensorNameKeyOverride) headerKey = sensorNameKeyOverride;
-
       const circle = container.querySelector('.wdash-ambient-circle--humidity .wdash-ambient-fill');
       if (!circle) return;
-
-      const lookupKeys = [];
-      const addLookupKey = (key) => {
-        if (key && !lookupKeys.includes(key)) lookupKeys.push(key);
-      };
-      addLookupKey(seedKeyOverride);
-      addLookupKey(sensorKeyOverride);
-      addLookupKey(sensorNameKeyOverride);
-      addLookupKey(containerKey);
-      addLookupKey(headerKey);
-      if (circle.dataset && circle.dataset.sensorKey) {
-        addLookupKey(circle.dataset.sensorKey);
-      }
-
+      const card = container.closest('.wdash-card--ambient');
+      const scope = card || container;
+      const containerKey = getAmbientKeyFromElement(container) || getAmbientKeyFromElement(card);
+      const headerName = scope.querySelector('.wdash-ambient-name')?.textContent || '';
+      const headerKey = getAmbientNameKey(headerName);
       let last = null;
-      for (const key of lookupKeys) {
-        if (key && ambientLastHumidity.has(key)) {
-          const value = ambientLastHumidity.get(key);
-          if (Number.isFinite(value)) {
-            last = value;
-            break;
-          }
-        }
+      if (containerKey && ambientLastHumidity.has(containerKey)) {
+        last = ambientLastHumidity.get(containerKey);
+      } else if (headerKey && ambientLastHumidity.has(headerKey)) {
+        last = ambientLastHumidity.get(headerKey);
       }
-
       if (last == null && Number.isFinite(ambientLastDisplayedHumidity.value)) {
-        const lastKey = ambientLastDisplayedHumidity.key;
-        if (lookupKeys.includes(lastKey)) {
-          last = ambientLastDisplayedHumidity.value;
-        }
+        last = ambientLastDisplayedHumidity.value;
       }
-
       if (last != null) {
         const r = AMBIENT_RING.r;
         const circumference = Math.round(2 * Math.PI * r);
@@ -1370,36 +1276,22 @@
         const offset = Math.round(circumference - dash);
         circle.setAttribute('stroke-dashoffset', String(offset));
         circle.dataset.lastHum = String(last);
+        if (containerKey) {
+          circle.dataset.sensorKey = containerKey;
+        }
       }
-
-      if (containerKey) {
-        circle.dataset.sensorKey = containerKey;
-      } else {
-        delete circle.dataset.sensorKey;
-      }
-
-      const seedKey = seedKeyOverride || containerKey || sensorNameKeyOverride || headerKey || null;
-      if (seedKey) {
-        circle.dataset.seedKey = seedKey;
-      } else {
-        delete circle.dataset.seedKey;
-      }
-
-      if (index != null) {
-        circle.dataset.seedIndex = String(index);
-      } else {
-        delete circle.dataset.seedIndex;
-      }
-
     } catch (e) { /* ignore */ }
   }
 
   function buildAmbientSensorCard(data, seedOptions) {
     const sensors = Array.isArray(data.ambientSensors) ? data.ambientSensors.filter(Boolean) : [];
     const hasSensors = sensors.length > 0;
-    const seed = resolveAmbientSeedOptions(sensors, seedOptions);
-    const seedIndex = seed.index;
-    const sensor = sensors[seedIndex] || {};
+    const seed = seedOptions && typeof seedOptions === 'object' ? seedOptions : null;
+    let index = hasSensors ? 0 : -1;
+    if (hasSensors && seed && Number.isInteger(seed.index)) {
+      index = Math.max(0, Math.min(sensors.length - 1, seed.index));
+    }
+    const sensor = index >= 0 ? sensors[index] || {} : {};
     const tempUnit = data.ambientTemperatureUnit || '°F';
     const humidityUnit = data.ambientHumidityUnit || '%';
     const sensorName = typeof sensor.name === 'string' ? sensor.name.trim() : '';
@@ -1407,10 +1299,13 @@
       ? (sensorName.length ? sensorName : 'Ambient Sensor')
       : 'Ambient Sensors';
     const rotationText = hasSensors
-      ? (sensors.length > 1 ? `Sensor ${seedIndex + 1} of ${sensors.length}` : '')
+      ? (sensors.length > 1 ? `Sensor ${index + 1} of ${sensors.length}` : '')
       : 'No sensors configured';
     const tempDisplay = formatAmbientValue(sensor.temperatureF, tempUnit, 1);
-    const humidityDisplay = formatAmbientValue(sensor.humidity, humidityUnit, 0);
+    const humiditySource = Number.isFinite(sensor.humidity)
+      ? sensor.humidity
+      : (seed && Number.isFinite(seed.humidity) ? seed.humidity : null);
+    const humidityDisplay = formatAmbientValue(humiditySource, humidityUnit, 0);
     const batteryLevel = toNumber(sensor.battery);
     const batteryLabel = sensorName.length ? sensorName : 'Ambient sensor';
     const batterySlot = buildBatterySlot(batteryLevel, {
@@ -1422,24 +1317,16 @@
     const timerDisabledAttr = sensors.length > 1 ? '' : ' disabled';
     const timerLabel = sensors.length > 1 ? 'Pause ambient sensor rotation' : 'Ambient sensor rotation unavailable';
 
-    const sensorKey = seed.sensorKey || getAmbientSensorKey(sensor, seedIndex);
+    const sensorKey = getAmbientSensorKey(sensor, index >= 0 ? index : 0) || (seed && seed.sensorKey) || '';
     const keyAttr = sensorKey ? ` data-active-sensor-key="${escapeHtml(sensorKey)}"` : '';
 
     const humidityCircumference = Math.round(2 * Math.PI * AMBIENT_RING.r);
-    let humidityValue = Number.isFinite(seed.humidity)
-      ? clamp(seed.humidity, 0, 100)
-      : null;
-    if (humidityValue == null) {
-      const measuredHumidity = toNumber(sensor.humidity);
-      if (Number.isFinite(measuredHumidity)) {
-        humidityValue = clamp(measuredHumidity, 0, 100);
-      }
-    }
-    if (humidityValue == null) {
+    let humidityValue = null;
+    if (seed && Number.isFinite(seed.humidity)) {
+      humidityValue = clamp(seed.humidity, 0, 100);
+    } else {
       const cachedHumidity = lookupAmbientCachedHumidity(sensor, sensorKey, nameDisplay);
-      if (Number.isFinite(cachedHumidity)) {
-        humidityValue = clamp(cachedHumidity, 0, 100);
-      }
+      if (Number.isFinite(cachedHumidity)) humidityValue = clamp(cachedHumidity, 0, 100);
     }
     const humidityOffset = humidityValue != null
       ? Math.round(humidityCircumference - (humidityValue / 100) * humidityCircumference)
@@ -1448,10 +1335,6 @@
       ? ` data-last-hum="${humidityValue}"`
       : ' data-last-hum=""';
     const humiditySensorAttr = sensorKey ? ` data-sensor-key="${escapeHtml(sensorKey)}"` : '';
-    const humiditySeedAttr = hasSensors && seed.seedKey ? ` data-seed-key="${escapeHtml(seed.seedKey)}"` : '';
-    const humiditySeedIndexAttr = hasSensors && Number.isInteger(seed.index)
-      ? ` data-seed-index="${seed.index}"`
-      : '';
 
     return `
       <section class="wdash-card wdash-card--ambient${hasSensors ? '' : ' wdash-ambient--empty'}"${keyAttr}>
@@ -1483,7 +1366,7 @@
               <svg class="wdash-ambient-svg wdash-ambient-svg--humidity" viewBox="0 0 100 100" aria-hidden="true">
                 <circle class="wdash-ambient-inner-circle" cx="50" cy="50" r="${AMBIENT_RING.r - AMBIENT_RING.stroke/2 + 0.5}" fill="rgba(5,10,20,0.95)" />
                 <circle class="wdash-ambient-track" cx="50" cy="50" r="${AMBIENT_RING.r}" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="${AMBIENT_RING.stroke}" stroke-linecap="butt" />
-                <circle class="wdash-ambient-fill" cx="50" cy="50" r="${AMBIENT_RING.r}" fill="none" stroke="#5b2fe6" stroke-width="${AMBIENT_RING.stroke}" stroke-linecap="round" stroke-dasharray="${humidityCircumference}"${humidityDataAttr}${humiditySensorAttr}${humiditySeedAttr}${humiditySeedIndexAttr} stroke-dashoffset="${humidityOffset}" />
+                <circle class="wdash-ambient-fill" cx="50" cy="50" r="${AMBIENT_RING.r}" fill="none" stroke="#5b2fe6" stroke-width="${AMBIENT_RING.stroke}" stroke-linecap="round" stroke-dasharray="${humidityCircumference}"${humidityDataAttr}${humiditySensorAttr} stroke-dashoffset="${humidityOffset}" />
               </svg>
               <span class="wdash-ambient-reading wdash-ambient-reading--humidity">${escapeHtml(humidityDisplay)}</span>
               <span class="wdash-ambient-label">Humidity</span>
@@ -2762,27 +2645,21 @@
     ambientRotation.nextSwitchAt = now + delay;
     ambientRotation.timer = setTimeout(() => {
       ambientRotation.timer = null;
-      advanceAmbientSensor({
-        trigger: 'rotation-timer',
-        invokedBy: 'scheduleAmbientRotation',
-        timerDelay: delay
-      });
+      advanceAmbientSensor();
     }, delay);
 
     ensureAmbientCountdownTimer();
     updateAmbientTimerDisplay();
   }
 
-  function advanceAmbientSensor(options) {
+  function advanceAmbientSensor() {
     if (!ambientRotation.sensors.length) {
       stopAmbientRotationTimer();
       return;
     }
 
     ambientRotation.index = (ambientRotation.index + 1) % ambientRotation.sensors.length;
-    const reason = options?.reason || 'rotation-advance';
-    const trigger = options?.trigger || reason;
-    updateAmbientDisplay({ reason, trigger });
+    updateAmbientDisplay();
 
     if (!ambientRotation.paused && ambientRotation.sensors.length > 1) {
       scheduleAmbientRotation();
@@ -2893,19 +2770,12 @@
     }
 
     if (canAutoRotate && Number.isFinite(remaining) && remaining <= 0) {
-      advanceAmbientSensor({
-        trigger: 'setupAmbientRotation',
-        invokedBy: 'setupAmbientRotation-expired'
-      });
+      advanceAmbientSensor();
       updateAmbientTimerDisplay();
       return;
     }
 
-    const sensorsChanged = ambientRotation.sensors.length !== prevSensorCount;
-    updateAmbientDisplay({
-      reason: 'setupAmbientRotation',
-      trigger: 'payload-refresh'
-    });
+    updateAmbientDisplay();
 
     if (!hasMultipleSensors) {
       ambientRotation.index = 0;
@@ -2926,50 +2796,29 @@
     ambientRotation.paused = false;
   }
 
-  function updateAmbientDisplay(options) {
-    const opts = options && typeof options === 'object' ? options : {};
-    const reason = opts.reason || 'updateAmbientDisplay';
-    const trigger = opts.trigger || null;
+  function updateAmbientDisplay() {
     const container = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-ambient');
     if (!container) return;
 
-    const card = container.closest('.wdash-card--ambient');
-    const scope = card || container;
-    const sensor = ambientRotation.sensors[ambientRotation.index];
-    const sensorKey = sensor ? getAmbientSensorKey(sensor, ambientRotation.index) : null;
-    const sensorNameKey = sensor && sensor.name != null ? getAmbientNameKey(sensor.name) : null;
-    const headerNameBefore = (scope.querySelector('.wdash-ambient-name')?.textContent || '').trim();
-    const headerKeyBefore = headerNameBefore ? getAmbientNameKey(headerNameBefore) : null;
-    const guardSeedKey = sensorKey
-      || sensorNameKey
-      || headerKeyBefore
-      || (Number.isInteger(ambientRotation.index) ? `index:${ambientRotation.index}` : null);
-
-    assignAmbientKeyToElements(container, card, sensorKey);
-
-    // If the ambient index or active sensor signature changed since last init,
-    // (re)initialize the humidity circle from remembered values so the
-    // transition starts from the current visual state rather than empty.
+    // If the ambient index changed since last init, (re)initialize the
+    // humidity circle from remembered values so the transition starts from the
+    // current visual state rather than empty.
     try {
-      const needsSeed = ambientLastInitIndex !== ambientRotation.index
-        || ambientLastInitSensorKey !== guardSeedKey;
-      if (needsSeed) {
-        const previousIndex = ambientLastInitIndex;
-        initAmbientLastHum(container, {
-          index: ambientRotation.index,
-          sensorKey,
-          sensorNameKey,
-          headerKey: headerKeyBefore,
-          seedKey: guardSeedKey
-        });
+      if (ambientLastInitIndex !== ambientRotation.index) {
+        initAmbientLastHum(container);
         ambientLastInitIndex = ambientRotation.index;
-        ambientLastInitSensorKey = guardSeedKey;
       }
     } catch (e) { /* ignore */ }
 
     // keep SVG ring sizing in sync with container scale
     applyAmbientRingSizing();
     applyOutdoorRingSizing();
+
+    const sensor = ambientRotation.sensors[ambientRotation.index];
+    const card = container.closest('.wdash-card--ambient');
+    const scope = card || container;
+    const sensorKey = getAmbientSensorKey(sensor, ambientRotation.index);
+    assignAmbientKeyToElements(container, card, sensorKey);
 
     const tempEl = container.querySelector('.wdash-ambient-reading--temp');
     const humidityEl = container.querySelector('.wdash-ambient-reading--humidity');
@@ -3064,87 +2913,65 @@
         const fillFraction = hum / 100;
         const dash = Math.max(0, Math.min(1, fillFraction)) * circumference;
         const offset = Math.round(circumference - dash);
-        const headerName = (scope.querySelector('.wdash-ambient-name')?.textContent || '').trim();
-        const headerKey = headerName ? getAmbientNameKey(headerName) : null;
-        const sensorNameKey = sensor && sensor.name != null ? getAmbientNameKey(sensor.name) : null;
-        const dataset = humFill.dataset || {};
-        const datasetSensorKeyBefore = typeof dataset.sensorKey === 'string' ? dataset.sensorKey.trim() : '';
-        const datasetLastHumRaw = typeof dataset.lastHum === 'string' ? dataset.lastHum : null;
-        const datasetLastHumForParse = datasetLastHumRaw != null ? datasetLastHumRaw.trim() : '';
 
-        // Determine previous offset to animate from, but only when it belongs to the
-        // currently displayed sensor to avoid snapping back to stale values.
+        // Determine previous offset to animate from. Preference order:
+        // 1) explicit data-last-hum on the circle (set during build or previous update)
+        // 2) remembered in ambientLastHumidity map keyed by sensor id/name
+        // 3) fallback to current circle stroke-dashoffset (if present)
+        // 4) fallback to circumference (empty)
         let prevHum = NaN;
-        let prevHumSource = null;
         if (sensorKey && ambientLastHumidity.has(sensorKey)) {
           prevHum = ambientLastHumidity.get(sensorKey);
-          prevHumSource = `ambientLastHumidity(${sensorKey})`;
-        }
-        if (!Number.isFinite(prevHum) && sensorNameKey && ambientLastHumidity.has(sensorNameKey)) {
-          prevHum = ambientLastHumidity.get(sensorNameKey);
-          prevHumSource = `ambientLastHumidity(${sensorNameKey})`;
         }
         if (!Number.isFinite(prevHum)) {
-          const storedKey = datasetSensorKeyBefore;
-          if (datasetLastHumForParse.length) {
-            const parsed = Number(datasetLastHumForParse);
+          const headerName = (scope.querySelector('.wdash-ambient-name')?.textContent || '').trim();
+          if (humFill.dataset && humFill.dataset.lastHum) {
+            const parsed = Number(humFill.dataset.lastHum);
             if (Number.isFinite(parsed)) {
-              const matchesSensor = !storedKey || (sensorKey && storedKey === sensorKey) || (sensorNameKey && storedKey === sensorNameKey);
-              if (matchesSensor) {
-                prevHum = parsed;
-                prevHumSource = storedKey ? `dataset(${storedKey})` : 'dataset(lastHum)';
-              }
+              prevHum = parsed;
             }
           }
-          if (!Number.isFinite(prevHum) && storedKey) {
-            const matchesSensor = (sensorKey && storedKey === sensorKey) || (sensorNameKey && storedKey === sensorNameKey);
-            if (matchesSensor && ambientLastHumidity.has(storedKey)) {
+          if (!Number.isFinite(prevHum) && humFill.dataset && humFill.dataset.sensorKey) {
+            const storedKey = humFill.dataset.sensorKey.trim();
+            if (storedKey && ambientLastHumidity.has(storedKey)) {
               prevHum = ambientLastHumidity.get(storedKey);
-              prevHumSource = `ambientLastHumidity(${storedKey})`;
+            }
+          }
+          if (!Number.isFinite(prevHum) && sensor && sensor.name != null) {
+            const sensorNameKey = getAmbientNameKey(sensor.name);
+            if (sensorNameKey && ambientLastHumidity.has(sensorNameKey)) {
+              prevHum = ambientLastHumidity.get(sensorNameKey);
+            }
+          }
+          if (!Number.isFinite(prevHum) && headerName) {
+            const headerKey = getAmbientNameKey(headerName);
+            if (headerKey && ambientLastHumidity.has(headerKey)) {
+              prevHum = ambientLastHumidity.get(headerKey);
             }
           }
         }
-        if (!Number.isFinite(prevHum) && headerKey && ambientLastHumidity.has(headerKey)) {
-          prevHum = ambientLastHumidity.get(headerKey);
-          prevHumSource = `ambientLastHumidity(${headerKey})`;
-        }
-        if (!Number.isFinite(prevHum) && Number.isFinite(ambientLastDisplayedHumidity.value)) {
-          const lastKey = ambientLastDisplayedHumidity.key;
-          if ((sensorKey && lastKey === sensorKey) || (sensorNameKey && lastKey === sensorNameKey) || (headerKey && lastKey === headerKey)) {
-            prevHum = ambientLastDisplayedHumidity.value;
-            prevHumSource = `ambientLastDisplayedHumidity(${lastKey || 'global'})`;
-          }
-        }
-
         const prevFraction = Number.isFinite(prevHum) ? clamp(prevHum / 100, 0, 1) : null;
-        const prevOffset = prevFraction != null ? Math.round(circumference - (prevFraction * circumference)) : null;
+        const prevOffset = prevFraction != null ? Math.round(circumference - (prevFraction * circumference)) : circumference;
 
         humFill.setAttribute('stroke-dasharray', String(circumference));
-        const currentOffsetAttr = humFill.getAttribute('stroke-dashoffset');
-        const currentOffsetStr = currentOffsetAttr == null ? null : String(currentOffsetAttr);
-        const currentOffsetValue = currentOffsetStr != null && currentOffsetStr.trim().length ? Number(currentOffsetStr) : null;
-        const targetOffsetStr = String(offset);
-        const appliedChange = currentOffsetStr !== targetOffsetStr;
-        const valueChanged = Number.isFinite(prevHum) ? Math.abs(prevHum - hum) > 0.001 : null;
-        const shouldAnimate = Number.isFinite(prevHum) && prevOffset != null && valueChanged === true;
-        const animated = shouldAnimate && appliedChange;
-
-        if (animated) {
+        if (String(humFill.getAttribute('stroke-dashoffset')) !== String(offset)) {
           humFill.setAttribute('stroke-dashoffset', String(prevOffset));
-          const draw = () => {
-            try { humFill.setAttribute('stroke-dashoffset', targetOffsetStr); } catch (e) { /* ignore */ }
-          };
           if (typeof requestAnimationFrame === 'function') {
-            requestAnimationFrame(draw);
+            requestAnimationFrame(() => {
+              try { humFill.setAttribute('stroke-dashoffset', String(offset)); } catch (e) { /* ignore */ }
+            });
           } else {
-            setTimeout(draw, 16);
+            setTimeout(() => {
+              try { humFill.setAttribute('stroke-dashoffset', String(offset)); } catch (e) { /* ignore */ }
+            }, 16);
           }
-        } else if (appliedChange) {
-          humFill.setAttribute('stroke-dashoffset', targetOffsetStr);
         }
 
         // persist latest humidity for next refresh/sensor reselect
         try {
+          const headerName = (scope.querySelector('.wdash-ambient-name')?.textContent || '').trim();
+          const headerKey = getAmbientNameKey(headerName);
+          const sensorNameKey = sensor && sensor.name != null ? getAmbientNameKey(sensor.name) : null;
           if (sensorKey) ambientLastHumidity.set(sensorKey, hum);
           if (sensorNameKey) ambientLastHumidity.set(sensorNameKey, hum);
           if (headerKey) ambientLastHumidity.set(headerKey, hum);
@@ -3158,7 +2985,6 @@
 
         humFill.setAttribute('stroke', '#5b2fe6');
         humTrack.setAttribute('stroke', 'rgba(255,255,255,0.12)');
-
       }
     } catch (err) {
       console.warn('[WeatherDashboard] ambient ring draw failed', err);
@@ -3730,7 +3556,7 @@
 .wdash-card--temp-wind .wdash-gauge, .wdash-card--temp-wind .wdash-wind-compass { width: 100%; height: 100%; max-width: none; max-height: none; }
 .wdash-card--temp-wind .wdash-metric-row--gauge { max-width: 100%; }
 .wdash-card--temp-wind .wdash-temp-wind-main { padding-block: 2px; position: relative; z-index: 1; }
-.wdash-card--ambient { grid-area: ambient; gap: 12px; align-items: stretch; position: relative; }
+.wdash-card--ambient { grid-area: ambient; gap: 12px; align-items: stretch; }
 .wdash-card--lightning { grid-area: lightning; gap: 8px; align-items: stretch; min-width: 0; display: none; }
 .wdash[data-layout-has-lightning="true"] .wdash-card--lightning { display: flex; }
 .wdash-card-header--lightning { align-items: flex-start; }
