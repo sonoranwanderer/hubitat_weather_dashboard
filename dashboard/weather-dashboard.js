@@ -196,6 +196,8 @@
     collapsed: false
   };
 
+  const MAX_MARKUP_DIFF_CONTEXT = 64;
+
   try {
     if (typeof window !== 'undefined') {
       if (window.WDASH_AMBIENT_DEBUG === false) {
@@ -454,6 +456,73 @@
       } catch (e) { /* ignore */ }
     }
     return ambientDebugState.collapsed;
+  }
+
+  function summarizeMarkupDiff(previousMarkup, nextMarkup) {
+    if (typeof previousMarkup !== 'string' || typeof nextMarkup !== 'string') {
+      return null;
+    }
+    if (previousMarkup === nextMarkup) {
+      return null;
+    }
+
+    const maxContext = MAX_MARKUP_DIFF_CONTEXT;
+    const prevLength = previousMarkup.length;
+    const nextLength = nextMarkup.length;
+    const maxCompare = Math.min(prevLength, nextLength);
+    let startIndex = 0;
+    while (startIndex < maxCompare && previousMarkup.charCodeAt(startIndex) === nextMarkup.charCodeAt(startIndex)) {
+      startIndex += 1;
+    }
+
+    let prevEnd = prevLength - 1;
+    let nextEnd = nextLength - 1;
+    while (
+      prevEnd >= startIndex &&
+      nextEnd >= startIndex &&
+      previousMarkup.charCodeAt(prevEnd) === nextMarkup.charCodeAt(nextEnd)
+    ) {
+      prevEnd -= 1;
+      nextEnd -= 1;
+    }
+
+    const prevSnippetStart = Math.max(0, startIndex - maxContext);
+    const nextSnippetStart = prevSnippetStart;
+    const prevSnippetEnd = Math.min(prevLength, prevEnd + 1 + maxContext);
+    const nextSnippetEnd = Math.min(nextLength, nextEnd + 1 + maxContext);
+
+    return {
+      startIndex,
+      prevLength,
+      nextLength,
+      prevSnippet: previousMarkup.slice(prevSnippetStart, prevSnippetEnd),
+      nextSnippet: nextMarkup.slice(nextSnippetStart, nextSnippetEnd)
+    };
+  }
+
+  function inferMarkupDiffHint(diff) {
+    if (!diff) return null;
+    const combined = `${diff.prevSnippet || ''} ${diff.nextSnippet || ''}`.toLowerCase();
+    if (!combined.length) return null;
+    if (combined.includes('wdash-updated') || combined.includes('updated ')) {
+      return 'updated-label-change';
+    }
+    if (combined.includes('wdash-ambient-name')) {
+      return 'ambient-name-change';
+    }
+    if (combined.includes('wdash-ambient-reading--humidity')) {
+      return 'ambient-humidity-text-change';
+    }
+    if (combined.includes('wdash-ambient-battery')) {
+      return 'ambient-battery-change';
+    }
+    if (combined.includes('wdash-ambient-debug')) {
+      return 'ambient-debug-panel-change';
+    }
+    if (combined.includes('seedmarkupversion') || combined.includes('data-last-hum')) {
+      return 'ambient-seed-attribute-change';
+    }
+    return null;
   }
 
   function setAmbientDebugEnabled(enabled) {
@@ -791,6 +860,8 @@
 
     grid.dataset.empty = 'false';
     const newMarkup = buildMarkup(payload);
+    const markupDiff = summarizeMarkupDiff(lastRenderedMarkup, newMarkup);
+    const markupDiffHint = inferMarkupDiffHint(markupDiff);
     // Only replace the grid contents when markup actually changes to avoid
     // spurious DOM rebuilds (which can make the ambient rings redraw)
     if (newMarkup !== lastRenderedMarkup) {
@@ -829,9 +900,31 @@
               previousInitIndex: ambientLastInitIndex,
               markupVersion: ambientMarkupVersion,
               previousSeedKey: ambientLastInitSensorKey,
-              previousMarkupVersion: ambientLastInitMarkupVersion
+              previousMarkupVersion: ambientLastInitMarkupVersion,
+              markupDiff: markupDiff || null,
+              markupDiffHint: markupDiffHint || null
             }
           });
+          if (markupDiff) {
+            recordAmbientDebugEvent({
+              reason: 'renderFromData',
+              trigger: 'markup-change',
+              humidity: null,
+              prevHumidity: null,
+              prevSource: 'markup-change',
+              sensorKey: null,
+              headerKey: null,
+              valueChanged: false,
+              appliedChange: false,
+              animated: false,
+              extra: {
+                stage: 'markup-diff',
+                markupVersion: ambientMarkupVersion,
+                hint: markupDiffHint || null,
+                diff: markupDiff
+              }
+            }, ambientContainer);
+          }
           ambientLastInitIndex = initialIndex;
           ambientLastInitSensorKey = initialSeedKey;
           ambientLastInitMarkupVersion = ambientMarkupVersion;
