@@ -868,13 +868,8 @@
       grid.innerHTML = newMarkup;
       lastRenderedMarkup = newMarkup;
       ambientMarkupVersion += 1;
-      ambientLastInitIndex = null;
-      ambientLastInitSensorKey = null;
-      ambientLastInitMarkupVersion = -1;
       layoutState.pendingApply = true;
       applyLayoutOverrides(payload?.metadata);
-      // initialize ambient humidity circle from any remembered last value so it
-      // doesn't animate from 0% when the card is first built or when switching sensors
       try {
         const ambientContainer = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-ambient');
         if (ambientContainer) {
@@ -882,30 +877,18 @@
           const headerName = ambientCard?.querySelector('.wdash-ambient-name')?.textContent || '';
           const headerKey = headerName ? getAmbientNameKey(headerName) : null;
           const activeKey = getAmbientKeyFromElement(ambientContainer) || getAmbientKeyFromElement(ambientCard);
-          const initialIndex = Number.isInteger(ambientRotation.index) ? ambientRotation.index : 0;
-          const initialSeedKey = activeKey
-            || (ambientCard ? getAmbientKeyFromElement(ambientCard) : null)
-            || headerKey
-            || `index:${initialIndex}`;
-          initAmbientLastHum(ambientContainer, {
-            reason: 'initAmbientLastHum(renderFromData)',
-            trigger: 'markup-mount',
-            index: initialIndex,
-            sensorKey: activeKey,
-            headerKey,
-            markupVersion: ambientMarkupVersion,
-            extra: {
-              callSite: 'renderFromData',
-              markupChanged: true,
-              previousInitIndex: ambientLastInitIndex,
+          if (ambientDebugState.enabled && (markupDiff || ambientLastInitSensorKey != null)) {
+            const debugExtra = {
+              stage: 'markup-diff',
               markupVersion: ambientMarkupVersion,
-              previousSeedKey: ambientLastInitSensorKey,
-              previousMarkupVersion: ambientLastInitMarkupVersion,
-              markupDiff: markupDiff || null,
-              markupDiffHint: markupDiffHint || null
-            }
-          });
-          if (markupDiff) {
+              hint: markupDiffHint || null,
+              diff: markupDiff || null,
+              preservedSeedKey: ambientLastInitSensorKey || null,
+              preservedIndex: ambientLastInitIndex,
+              preservedHumidity: Number.isFinite(ambientLastDisplayedHumidity.value)
+                ? ambientLastDisplayedHumidity.value
+                : null
+            };
             recordAmbientDebugEvent({
               reason: 'renderFromData',
               trigger: 'markup-change',
@@ -917,17 +900,9 @@
               valueChanged: false,
               appliedChange: false,
               animated: false,
-              extra: {
-                stage: 'markup-diff',
-                markupVersion: ambientMarkupVersion,
-                hint: markupDiffHint || null,
-                diff: markupDiff
-              }
+              extra: debugExtra
             }, ambientContainer);
           }
-          ambientLastInitIndex = initialIndex;
-          ambientLastInitSensorKey = initialSeedKey;
-          ambientLastInitMarkupVersion = ambientMarkupVersion;
         }
       } catch (e) { /* ignore */ }
     } else if (layoutState.pendingApply) {
@@ -3468,8 +3443,7 @@
     // transition starts from the current visual state rather than empty.
     try {
       const needsSeed = ambientLastInitIndex !== ambientRotation.index
-        || ambientLastInitSensorKey !== guardSeedKey
-        || ambientLastInitMarkupVersion !== ambientMarkupVersion;
+        || ambientLastInitSensorKey !== guardSeedKey;
       if (needsSeed) {
         const previousIndex = ambientLastInitIndex;
         initAmbientLastHum(container, {
