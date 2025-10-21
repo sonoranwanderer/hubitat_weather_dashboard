@@ -176,6 +176,233 @@
     paused: false
   };
 
+  const AMBIENT_DEBUG_STORAGE_KEY = 'wdashAmbientDebug';
+  const ambientDebugState = {
+    enabled: true,
+    captureStacks: false,
+    events: [],
+    maxEvents: 60,
+    summaryLines: 8,
+    panel: null,
+    titleEl: null,
+    logEl: null,
+    container: null,
+    counter: 0
+  };
+
+  try {
+    if (typeof window !== 'undefined') {
+      if (window.WDASH_AMBIENT_DEBUG === false) {
+        ambientDebugState.enabled = false;
+      } else {
+        const stored = window.localStorage?.getItem(AMBIENT_DEBUG_STORAGE_KEY);
+        if (stored === '0' || stored === 'false') {
+          ambientDebugState.enabled = false;
+        } else if (stored === '1' || stored === 'true') {
+          ambientDebugState.enabled = true;
+        }
+      }
+    }
+  } catch (e) { /* ignore */ }
+
+  function formatAmbientDebugTime(date) {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '--:--:--.---';
+    const hh = String(date.getHours()).padStart(2, '0');
+    const mm = String(date.getMinutes()).padStart(2, '0');
+    const ss = String(date.getSeconds()).padStart(2, '0');
+    const ms = String(date.getMilliseconds()).padStart(3, '0');
+    return `${hh}:${mm}:${ss}.${ms}`;
+  }
+
+  function formatAmbientDebugLine(entry) {
+    const time = formatAmbientDebugTime(entry.time);
+    const sensorLabel = entry.sensorName || entry.sensorKey || (entry.headerKey ? `header:${entry.headerKey}` : 'no-sensor');
+    const prevHum = Number.isFinite(entry.prevHumidity) ? entry.prevHumidity.toFixed(1) : '--';
+    const hum = Number.isFinite(entry.humidity) ? entry.humidity.toFixed(1) : '--';
+    const delta = Number.isFinite(entry.prevHumidity) && Number.isFinite(entry.humidity)
+      ? (entry.humidity - entry.prevHumidity).toFixed(1)
+      : '--';
+    const notes = [];
+    if (entry.trigger) notes.push(`trigger=${entry.trigger}`);
+    if (entry.prevSource) notes.push(`prev=${entry.prevSource}`);
+    if (entry.appliedChange === false) notes.push('no-change');
+    if (entry.animated) notes.push('animated');
+    if (entry.valueChanged === false) notes.push('value-unchanged');
+    if (entry.extraInfo) notes.push(entry.extraInfo);
+    if (entry.extra && typeof entry.extra === 'object') {
+      const extraKeys = Object.keys(entry.extra).filter(k => entry.extra[k] != null && entry.extra[k] !== '');
+      extraKeys.forEach(key => {
+        const value = entry.extra[key];
+        if (Array.isArray(value)) {
+          notes.push(`${key}=[${value.join(',')}]`);
+        } else if (typeof value === 'object') {
+          try {
+            notes.push(`${key}=${JSON.stringify(value)}`);
+          } catch (e) {
+            notes.push(`${key}=${String(value)}`);
+          }
+        } else {
+          notes.push(`${key}=${value}`);
+        }
+      });
+    }
+    if (entry.offset != null && entry.prevOffset != null) {
+      notes.push(`offset ${entry.prevOffset}→${entry.offset}`);
+    } else if (entry.offset != null) {
+      notes.push(`offset=${entry.offset}`);
+    }
+    if (entry.datasetLastHum != null && entry.datasetSensorKey) {
+      notes.push(`dataset=${entry.datasetSensorKey}:${entry.datasetLastHum}`);
+    }
+    const meta = notes.length ? ` ${notes.join(' ')}` : '';
+    return `[${time}] ${entry.reason || 'update'} ${sensorLabel} ${prevHum}→${hum} (Δ${delta})${meta}`;
+  }
+
+  function ensureAmbientDebugPanel(container) {
+    if (!ambientDebugState.enabled) return null;
+    let host = null;
+    if (container && typeof container.closest === 'function') {
+      host = container.closest('.wdash-card--ambient') || container;
+    }
+    if (!host) host = ambientDebugState.container;
+    if (!host) return null;
+
+    if (!ambientDebugState.panel || !ambientDebugState.panel.isConnected || ambientDebugState.panel.parentElement !== host) {
+      if (ambientDebugState.panel && ambientDebugState.panel.parentElement) {
+        ambientDebugState.panel.parentElement.removeChild(ambientDebugState.panel);
+      }
+      const panel = document.createElement('div');
+      panel.className = 'wdash-ambient-debug is-empty';
+      const title = document.createElement('div');
+      title.className = 'wdash-ambient-debug__title';
+      title.textContent = 'Ambient debug';
+      const log = document.createElement('pre');
+      log.className = 'wdash-ambient-debug__log';
+      log.textContent = 'Ambient debug waiting for updates…';
+      panel.appendChild(title);
+      panel.appendChild(log);
+      host.appendChild(panel);
+      ambientDebugState.panel = panel;
+      ambientDebugState.titleEl = title;
+      ambientDebugState.logEl = log;
+      ambientDebugState.container = host;
+    }
+    return ambientDebugState.panel;
+  }
+
+  function renderAmbientDebugPanel(container) {
+    if (!ambientDebugState.enabled) return;
+    const panel = ensureAmbientDebugPanel(container);
+    if (!panel || !ambientDebugState.logEl) return;
+    if (!ambientDebugState.events.length) {
+      ambientDebugState.logEl.textContent = 'Ambient debug waiting for updates…';
+      panel.classList.add('is-empty');
+      return;
+    }
+    const lines = ambientDebugState.events
+      .slice(0, Math.max(1, ambientDebugState.summaryLines | 0))
+      .map(formatAmbientDebugLine)
+      .join('\n');
+    ambientDebugState.logEl.textContent = lines;
+    panel.classList.remove('is-empty');
+  }
+
+  function recordAmbientDebugEvent(details, container, stack) {
+    if (!ambientDebugState.enabled) return;
+    const entry = {
+      id: ++ambientDebugState.counter,
+      time: new Date(),
+      ...details
+    };
+    if (ambientDebugState.captureStacks) {
+      entry.stack = stack || (typeof Error !== 'undefined' ? new Error().stack : null);
+    }
+    ambientDebugState.events.unshift(entry);
+    if (ambientDebugState.events.length > ambientDebugState.maxEvents) {
+      ambientDebugState.events.length = ambientDebugState.maxEvents;
+    }
+    renderAmbientDebugPanel(container);
+    try {
+      if (typeof console !== 'undefined' && typeof console.debug === 'function') {
+        console.debug('[WeatherDashboard][AmbientDebug]', formatAmbientDebugLine(entry), entry);
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  function setAmbientDebugEnabled(enabled) {
+    const desired = !!enabled;
+    if (ambientDebugState.enabled === desired) return ambientDebugState.enabled;
+    ambientDebugState.enabled = desired;
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        if (desired) {
+          window.localStorage.setItem(AMBIENT_DEBUG_STORAGE_KEY, '1');
+        } else {
+          window.localStorage.setItem(AMBIENT_DEBUG_STORAGE_KEY, '0');
+        }
+      }
+    } catch (e) { /* ignore */ }
+    if (!desired) {
+      ambientDebugState.events = [];
+      if (ambientDebugState.panel && ambientDebugState.panel.parentElement) {
+        ambientDebugState.panel.parentElement.removeChild(ambientDebugState.panel);
+      }
+      ambientDebugState.panel = null;
+      ambientDebugState.titleEl = null;
+      ambientDebugState.logEl = null;
+      ambientDebugState.container = null;
+    } else {
+      renderAmbientDebugPanel(document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-ambient'));
+    }
+    return ambientDebugState.enabled;
+  }
+
+  function exposeAmbientDebugApi() {
+    if (typeof window === 'undefined') return;
+    const api = window.weatherDashboardAmbientDebug || {};
+    api.enable = () => setAmbientDebugEnabled(true);
+    api.disable = () => setAmbientDebugEnabled(false);
+    api.toggle = () => setAmbientDebugEnabled(!ambientDebugState.enabled);
+    api.isEnabled = () => ambientDebugState.enabled;
+    api.clear = () => {
+      ambientDebugState.events = [];
+      renderAmbientDebugPanel();
+      return ambientDebugState.events.length;
+    };
+    api.getEvents = () => ambientDebugState.events.map(entry => ({ ...entry }));
+    api.setMaxEvents = (count) => {
+      const value = Number(count);
+      if (Number.isFinite(value) && value > 0) {
+        ambientDebugState.maxEvents = Math.floor(value);
+        if (ambientDebugState.events.length > ambientDebugState.maxEvents) {
+          ambientDebugState.events.length = ambientDebugState.maxEvents;
+        }
+        renderAmbientDebugPanel();
+      }
+      return ambientDebugState.maxEvents;
+    };
+    api.setSummaryLines = (count) => {
+      const value = Number(count);
+      if (Number.isFinite(value) && value > 0) {
+        ambientDebugState.summaryLines = Math.floor(value);
+        renderAmbientDebugPanel();
+      }
+      return ambientDebugState.summaryLines;
+    };
+    api.setCaptureStacks = (flag) => {
+      ambientDebugState.captureStacks = !!flag;
+      return ambientDebugState.captureStacks;
+    };
+    api.log = (reason, extra = {}) => {
+      const details = { reason: reason || 'manual-log', ...extra };
+      recordAmbientDebugEvent(details, document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-ambient'));
+      return ambientDebugState.events[0];
+    };
+    window.weatherDashboardAmbientDebug = api;
+  }
+
+  exposeAmbientDebugApi();
+
   let airQualityRotation = {
     timer: null,
     sources: [], // ['outdoor', 'indoor']
@@ -1198,15 +1425,19 @@
       const headerName = scope.querySelector('.wdash-ambient-name')?.textContent || '';
       const headerKey = getAmbientNameKey(headerName);
       let last = null;
+      let source = null;
       if (containerKey && ambientLastHumidity.has(containerKey)) {
         last = ambientLastHumidity.get(containerKey);
+        source = `ambientLastHumidity(${containerKey})`;
       } else if (headerKey && ambientLastHumidity.has(headerKey)) {
         last = ambientLastHumidity.get(headerKey);
+        source = `ambientLastHumidity(${headerKey})`;
       }
       if (last == null && Number.isFinite(ambientLastDisplayedHumidity.value)) {
         const lastKey = ambientLastDisplayedHumidity.key;
         if ((containerKey && lastKey === containerKey) || (headerKey && lastKey === headerKey)) {
           last = ambientLastDisplayedHumidity.value;
+          source = `ambientLastDisplayedHumidity(${lastKey || 'global'})`;
         }
       }
       if (last != null) {
@@ -1219,6 +1450,34 @@
         if (containerKey) {
           circle.dataset.sensorKey = containerKey;
         }
+        recordAmbientDebugEvent({
+          reason: 'initAmbientLastHum',
+          trigger: 'sensor-index-change',
+          humidity: Number(last),
+          prevHumidity: Number(last),
+          prevSource: source || 'seed',
+          sensorKey: containerKey || null,
+          headerKey: headerKey || null,
+          valueChanged: false,
+          appliedChange: false,
+          animated: false,
+          offset,
+          extra: { stage: 'seed', containerKey, headerKey }
+        }, container);
+      } else {
+        recordAmbientDebugEvent({
+          reason: 'initAmbientLastHum',
+          trigger: 'sensor-index-change',
+          humidity: null,
+          prevHumidity: null,
+          prevSource: source || 'none',
+          sensorKey: containerKey || null,
+          headerKey: headerKey || null,
+          valueChanged: false,
+          appliedChange: false,
+          animated: false,
+          extra: { stage: 'seed-miss', containerKey, headerKey }
+        }, container);
       }
     } catch (e) { /* ignore */ }
   }
@@ -2572,21 +2831,35 @@
     ambientRotation.nextSwitchAt = now + delay;
     ambientRotation.timer = setTimeout(() => {
       ambientRotation.timer = null;
-      advanceAmbientSensor();
+      advanceAmbientSensor({
+        trigger: 'rotation-timer',
+        invokedBy: 'scheduleAmbientRotation',
+        timerDelay: delay
+      });
     }, delay);
 
     ensureAmbientCountdownTimer();
     updateAmbientTimerDisplay();
   }
 
-  function advanceAmbientSensor() {
+  function advanceAmbientSensor(options) {
     if (!ambientRotation.sensors.length) {
       stopAmbientRotationTimer();
       return;
     }
 
     ambientRotation.index = (ambientRotation.index + 1) % ambientRotation.sensors.length;
-    updateAmbientDisplay();
+    const reason = options?.reason || 'rotation-advance';
+    const trigger = options?.trigger || reason;
+    const extra = { sensorCount: ambientRotation.sensors.length };
+    if (options && typeof options === 'object') {
+      if ('invokedBy' in options) extra.invokedBy = options.invokedBy;
+      if ('timerDelay' in options) extra.timerDelay = options.timerDelay;
+      if (options.extra && typeof options.extra === 'object') {
+        extra.details = { ...options.extra };
+      }
+    }
+    updateAmbientDisplay({ reason, trigger, extra });
 
     if (!ambientRotation.paused && ambientRotation.sensors.length > 1) {
       scheduleAmbientRotation();
@@ -2697,12 +2970,34 @@
     }
 
     if (canAutoRotate && Number.isFinite(remaining) && remaining <= 0) {
-      advanceAmbientSensor();
+      advanceAmbientSensor({
+        trigger: 'setupAmbientRotation',
+        invokedBy: 'setupAmbientRotation-expired',
+        extra: {
+          previousInterval: prevInterval,
+          newInterval: ambientRotation.interval,
+          sensorCount: ambientRotation.sensors.length,
+          remaining
+        }
+      });
       updateAmbientTimerDisplay();
       return;
     }
 
-    updateAmbientDisplay();
+    const sensorsChanged = ambientRotation.sensors.length !== prevSensorCount;
+    updateAmbientDisplay({
+      reason: 'setupAmbientRotation',
+      trigger: 'payload-refresh',
+      extra: {
+        previousInterval: prevInterval,
+        newInterval: ambientRotation.interval,
+        sensorCount: ambientRotation.sensors.length,
+        sensorsChanged,
+        intervalChanged,
+        wasPaused: ambientRotation.paused,
+        remaining
+      }
+    });
 
     if (!hasMultipleSensors) {
       ambientRotation.index = 0;
@@ -2723,7 +3018,10 @@
     ambientRotation.paused = false;
   }
 
-  function updateAmbientDisplay() {
+  function updateAmbientDisplay(options) {
+    const opts = options && typeof options === 'object' ? options : {};
+    const reason = opts.reason || 'updateAmbientDisplay';
+    const trigger = opts.trigger || null;
     const container = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-ambient');
     if (!container) return;
 
@@ -2771,6 +3069,24 @@
         });
       }
       assignAmbientKeyToElements(container, card, null);
+      recordAmbientDebugEvent({
+        reason,
+        trigger,
+        humidity: null,
+        prevHumidity: null,
+        prevSource: 'no-sensor',
+        sensorKey: null,
+        headerKey: null,
+        valueChanged: false,
+        appliedChange: false,
+        animated: false,
+        extra: {
+          state: 'no-sensor',
+          sensorIndex: ambientRotation.index,
+          sensorCount: ambientRotation.sensors.length,
+          paused: ambientRotation.paused
+        }
+      }, container);
       return;
     }
 
@@ -2846,25 +3162,32 @@
         const headerName = (scope.querySelector('.wdash-ambient-name')?.textContent || '').trim();
         const headerKey = headerName ? getAmbientNameKey(headerName) : null;
         const sensorNameKey = sensor && sensor.name != null ? getAmbientNameKey(sensor.name) : null;
+        const dataset = humFill.dataset || {};
+        const datasetSensorKeyBefore = typeof dataset.sensorKey === 'string' ? dataset.sensorKey.trim() : '';
+        const datasetLastHumRaw = typeof dataset.lastHum === 'string' ? dataset.lastHum : null;
+        const datasetLastHumForParse = datasetLastHumRaw != null ? datasetLastHumRaw.trim() : '';
 
         // Determine previous offset to animate from, but only when it belongs to the
         // currently displayed sensor to avoid snapping back to stale values.
         let prevHum = NaN;
+        let prevHumSource = null;
         if (sensorKey && ambientLastHumidity.has(sensorKey)) {
           prevHum = ambientLastHumidity.get(sensorKey);
+          prevHumSource = `ambientLastHumidity(${sensorKey})`;
         }
         if (!Number.isFinite(prevHum) && sensorNameKey && ambientLastHumidity.has(sensorNameKey)) {
           prevHum = ambientLastHumidity.get(sensorNameKey);
+          prevHumSource = `ambientLastHumidity(${sensorNameKey})`;
         }
         if (!Number.isFinite(prevHum)) {
-          const dataset = humFill.dataset || {};
-          const storedKey = typeof dataset.sensorKey === 'string' ? dataset.sensorKey.trim() : '';
-          if (typeof dataset.lastHum === 'string') {
-            const parsed = Number(dataset.lastHum);
+          const storedKey = datasetSensorKeyBefore;
+          if (datasetLastHumForParse.length) {
+            const parsed = Number(datasetLastHumForParse);
             if (Number.isFinite(parsed)) {
               const matchesSensor = !storedKey || (sensorKey && storedKey === sensorKey) || (sensorNameKey && storedKey === sensorNameKey);
               if (matchesSensor) {
                 prevHum = parsed;
+                prevHumSource = storedKey ? `dataset(${storedKey})` : 'dataset(lastHum)';
               }
             }
           }
@@ -2872,16 +3195,19 @@
             const matchesSensor = (sensorKey && storedKey === sensorKey) || (sensorNameKey && storedKey === sensorNameKey);
             if (matchesSensor && ambientLastHumidity.has(storedKey)) {
               prevHum = ambientLastHumidity.get(storedKey);
+              prevHumSource = `ambientLastHumidity(${storedKey})`;
             }
           }
         }
         if (!Number.isFinite(prevHum) && headerKey && ambientLastHumidity.has(headerKey)) {
           prevHum = ambientLastHumidity.get(headerKey);
+          prevHumSource = `ambientLastHumidity(${headerKey})`;
         }
         if (!Number.isFinite(prevHum) && Number.isFinite(ambientLastDisplayedHumidity.value)) {
           const lastKey = ambientLastDisplayedHumidity.key;
           if ((sensorKey && lastKey === sensorKey) || (sensorNameKey && lastKey === sensorNameKey) || (headerKey && lastKey === headerKey)) {
             prevHum = ambientLastDisplayedHumidity.value;
+            prevHumSource = `ambientLastDisplayedHumidity(${lastKey || 'global'})`;
           }
         }
 
@@ -2891,22 +3217,24 @@
         humFill.setAttribute('stroke-dasharray', String(circumference));
         const currentOffsetAttr = humFill.getAttribute('stroke-dashoffset');
         const currentOffsetStr = currentOffsetAttr == null ? null : String(currentOffsetAttr);
+        const currentOffsetValue = currentOffsetStr != null && currentOffsetStr.trim().length ? Number(currentOffsetStr) : null;
         const targetOffsetStr = String(offset);
-        const shouldAnimate = Number.isFinite(prevHum) && prevOffset != null && Math.abs(prevHum - hum) > 0.001;
+        const appliedChange = currentOffsetStr !== targetOffsetStr;
+        const valueChanged = Number.isFinite(prevHum) ? Math.abs(prevHum - hum) > 0.001 : null;
+        const shouldAnimate = Number.isFinite(prevHum) && prevOffset != null && valueChanged === true;
+        const animated = shouldAnimate && appliedChange;
 
-        if (shouldAnimate) {
-          if (currentOffsetStr !== targetOffsetStr) {
-            humFill.setAttribute('stroke-dashoffset', String(prevOffset));
-            const draw = () => {
-              try { humFill.setAttribute('stroke-dashoffset', targetOffsetStr); } catch (e) { /* ignore */ }
-            };
-            if (typeof requestAnimationFrame === 'function') {
-              requestAnimationFrame(draw);
-            } else {
-              setTimeout(draw, 16);
-            }
+        if (animated) {
+          humFill.setAttribute('stroke-dashoffset', String(prevOffset));
+          const draw = () => {
+            try { humFill.setAttribute('stroke-dashoffset', targetOffsetStr); } catch (e) { /* ignore */ }
+          };
+          if (typeof requestAnimationFrame === 'function') {
+            requestAnimationFrame(draw);
+          } else {
+            setTimeout(draw, 16);
           }
-        } else if (currentOffsetStr !== targetOffsetStr) {
+        } else if (appliedChange) {
           humFill.setAttribute('stroke-dashoffset', targetOffsetStr);
         }
 
@@ -2925,6 +3253,45 @@
 
         humFill.setAttribute('stroke', '#5b2fe6');
         humTrack.setAttribute('stroke', 'rgba(255,255,255,0.12)');
+
+        const nextSwitchAt = Number.isFinite(ambientRotation.nextSwitchAt) ? ambientRotation.nextSwitchAt : null;
+        const remainingMs = nextSwitchAt != null ? nextSwitchAt - Date.now() : null;
+        const extraInfo = { sensorIndex: ambientRotation.index, paused: ambientRotation.paused };
+        if (ambientRotation.sensors.length) extraInfo.sensorCount = ambientRotation.sensors.length;
+        if (Number.isFinite(remainingMs)) extraInfo.remainingMs = remainingMs;
+        if (opts.extra && typeof opts.extra === 'object') {
+          Object.keys(opts.extra).forEach(key => {
+            const value = opts.extra[key];
+            if (value != null) extraInfo[key] = value;
+          });
+        }
+        extraInfo.cacheUpdates = [sensorKey, sensorNameKey, headerKey].filter(Boolean);
+        if (datasetSensorKeyBefore || (datasetLastHumRaw != null && datasetLastHumRaw.length)) {
+          extraInfo.datasetBefore = datasetSensorKeyBefore
+            ? `${datasetSensorKeyBefore}:${datasetLastHumRaw != null ? datasetLastHumRaw : ''}`
+            : datasetLastHumRaw;
+        }
+
+        recordAmbientDebugEvent({
+          reason,
+          trigger,
+          humidity: hum,
+          prevHumidity: Number.isFinite(prevHum) ? prevHum : null,
+          prevSource: prevHumSource,
+          sensorKey,
+          sensorName,
+          sensorNameKey,
+          headerKey,
+          animated,
+          appliedChange,
+          valueChanged,
+          offset,
+          prevOffset,
+          currentOffset: currentOffsetValue,
+          datasetLastHum: datasetLastHumRaw,
+          datasetSensorKey: datasetSensorKeyBefore || null,
+          extra: extraInfo
+        }, container);
       }
     } catch (err) {
       console.warn('[WeatherDashboard] ambient ring draw failed', err);
@@ -3496,7 +3863,7 @@
 .wdash-card--temp-wind .wdash-gauge, .wdash-card--temp-wind .wdash-wind-compass { width: 100%; height: 100%; max-width: none; max-height: none; }
 .wdash-card--temp-wind .wdash-metric-row--gauge { max-width: 100%; }
 .wdash-card--temp-wind .wdash-temp-wind-main { padding-block: 2px; position: relative; z-index: 1; }
-.wdash-card--ambient { grid-area: ambient; gap: 12px; align-items: stretch; }
+.wdash-card--ambient { grid-area: ambient; gap: 12px; align-items: stretch; position: relative; }
 .wdash-card--lightning { grid-area: lightning; gap: 8px; align-items: stretch; min-width: 0; display: none; }
 .wdash[data-layout-has-lightning="true"] .wdash-card--lightning { display: flex; }
 .wdash-card-header--lightning { align-items: flex-start; }
@@ -3614,6 +3981,10 @@
 .wdash-ambient-rotation { font-size: 0.75rem; color: #8ea0c8; }
 .wdash-ambient-rotation:empty { display: none; }
 .wdash-ambient--empty .wdash-ambient-reading { opacity: 0.6; }
+.wdash-ambient-debug { position: absolute; left: 10px; right: 10px; bottom: 10px; z-index: 15; background: rgba(4,12,32,0.92); border: 1px solid rgba(86,130,255,0.45); border-radius: 8px; padding: 6px 8px; font-family: 'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.58rem; line-height: 1.35; color: #dbe6ff; box-shadow: 0 6px 18px rgba(0,0,0,0.45); max-height: 160px; overflow-y: auto; backdrop-filter: blur(4px); pointer-events: auto; }
+.wdash-ambient-debug.is-empty { opacity: 0.78; }
+.wdash-ambient-debug__title { font-size: 0.64rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #8dd0ff; margin-bottom: 4px; }
+.wdash-ambient-debug__log { margin: 0; white-space: pre-wrap; word-break: break-word; }
 .wdash-rain-main { display: grid; grid-template-columns: minmax(0, 0.85fr) 1fr 1fr; gap: 18px; align-items: stretch; flex: 1; height: 100%; }
 .wdash-rain-col { min-height: 0; }
 .wdash-rain-col--drop { display: flex; align-items: center; justify-content: center; }
