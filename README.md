@@ -40,15 +40,14 @@ The app publishes a consolidated JSON document to the dashboard device. The driv
 * The JavaScript focuses purely on presentation—calculations live in the Hubitat app.
 * The JSON payload is designed to be compact but descriptive, minimizing the number of attributes required on the virtual device.
 * Derived metrics (wind averages, pressure tendency, outlook) are recalculated every minute or whenever the underlying weather attributes change.
+* A lightweight Node harness exercises the Temp & Wind card renderer without Hubitat. Run `node tests/temp-wind-card-harness.js` to verify the in-place update logic and guard against regressions in the gauge/compass behaviour.
 
 ## Runtime layout overrides
 
 The app exposes an optional **Layout configuration JSON** textarea that lets you change the dashboard canvas size and grid without editing the JavaScript. Provide a JSON object with the following keys:
 
-* `baseWidth` / `baseHeight` – optional pixel overrides for the logical canvas size. When omitted, the script matches the dimensions of the host dashboard tile automatically.
-* `dimensionUnits` – set to `"percent"` to express row heights and column widths as percentages of the base dimensions (defaults to pixels).
-* `columnWidths` – array that defines the global `grid-template-columns` tracks without writing CSS strings. Accepts numbers or strings, following the selected `dimensionUnits`.
-* `desktop`, `tablet`, `mobile` – objects that can override `columns`, `columnWidths`, `gap`, and `rows` for each breakpoint. Rows are arrays of objects with a `height` (pixels or percentages) and a `columns` array that names the cards to place in that row.
+* `baseWidth` / `baseHeight` – numbers (pixels) that define the logical canvas size the renderer scales from.
+* `desktop`, `tablet`, `mobile` – objects that can override `columns`, `gap`, and `rows` for each breakpoint. Rows are arrays of objects with a `height` (pixels) and a `columns` array that names the cards to place in that row.
 
 Example:
 
@@ -56,8 +55,8 @@ Example:
 {
   "baseWidth": 1200,
   "baseHeight": 900,
-  "columnWidths": [720, 480],
   "desktop": {
+    "columns": "repeat(2, minmax(0, 1fr))",
     "gap": "18px",
     "rows": [
       { "height": 450, "columns": ["temp-wind", "ambient"] },
@@ -68,21 +67,6 @@ Example:
 ```
 
 Values you omit fall back to the defaults compiled into `weather-dashboard.js`, so you only need to supply the parts you want to adjust.
-
-To work in percentages instead of pixels, provide `"dimensionUnits": "percent"`. Numeric `height` and `columnWidths` entries are then treated as percentages of the detected or overridden base dimensions:
-
-```json
-{
-  "dimensionUnits": "percent",
-  "columnWidths": [60, 40],
-  "desktop": {
-    "rows": [
-      { "height": 55, "columns": ["temp-wind", "ambient"] },
-      { "height": 45, "columns": ["air", "rain"] }
-    ]
-  }
-}
-```
 
 ### Controlling individual card heights and vertical placement
 

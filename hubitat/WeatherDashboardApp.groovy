@@ -129,9 +129,9 @@ def mainPage() {
 
         section("Layout overrides (optional)") {
             paragraph "Provide JSON to fine-tune the dashboard canvas size and grid rows/columns. Leave blank to use the built-in defaults."
-            paragraph "The renderer matches the dashboard tile size automatically, but you can override it with `baseWidth` and `baseHeight`, define global `columnWidths`, or change `dimensionUnits` to `\"percent\"` so row heights and column widths reference the base dimensions. Rows accept objects like `{ \"height\": 360, \"columns\": [\"temp-wind\", \"ambient\"] }`."
+            paragraph "Set `baseWidth` and `baseHeight` (in pixels) to control the canvas size. Rows accept objects like `{ \"height\": 360, \"columns\": [\"temp-wind\", \"ambient\"] }`."
             paragraph "Repeat a card name in consecutive rows to make it span multiple heights, and use `\".\"` as a placeholder when you want the other column to stay empty so the next card can start higher."
-            paragraph "Example:<br><code>{\n  \"dimensionUnits\": \"percent\",\n  \"columnWidths\": [60, 40],\n  \"desktop\": {\n    \"rows\": [\n      { \"height\": 55, \"columns\": [\"temp-wind\", \"ambient\"] },\n      { \"height\": 45, \"columns\": [\"air\", \"rain\"] }\n    ]\n  }\n}</code>"
+            paragraph "Example:<br><code>{\n  \"baseWidth\": 1200,\n  \"baseHeight\": 900,\n  \"desktop\": {\n    \"rows\": [\n      { \"height\": 220, \"columns\": [\"temp-wind\", \"ambient\"] },\n      { \"height\": 200, \"columns\": [\"temp-wind\", \".\"] },\n      { \"height\": 180, \"columns\": [\"air\", \"rain\"] }\n    ]\n  }\n}</code>"
             input name: "layoutOverrideJson", type: "textarea", title: "Layout configuration JSON", required: false
         }
 

@@ -7,6 +7,7 @@
 // console.
 
 (() => {
+  const IS_TEST_ENV = typeof window !== 'undefined' && window.__WDASH_TEST_MODE__ === true;
   const DISPLAY_TILE_ID = 'tile-0';
   const CSS_ID = 'weather-dashboard-css';
   const TEMP_RANGE = { min: -40, max: 120 };
@@ -68,10 +69,6 @@
 
   let currentBaseWidth = DEFAULT_BASE_WIDTH;
   let currentBaseHeight = DEFAULT_BASE_HEIGHT;
-  const scaleCache = { scale: null, width: null, height: null };
-  const SCALE_EPSILON = 0.002;
-  const RENDER_EPSILON = 0.5;
-  const TILE_RESIZE_EPSILON = 1;
 
   const layoutState = {
     baseWidth: DEFAULT_BASE_WIDTH,
@@ -88,22 +85,6 @@
     signature: null,
     pendingApply: false
   };
-
-  const tileBaseMeasurement = {
-    width: null,
-    height: null
-  };
-
-  const tileResizeObserverState = {
-    width: null,
-    height: null
-  };
-
-  function invalidateScaleCache() {
-    scaleCache.scale = null;
-    scaleCache.width = null;
-    scaleCache.height = null;
-  }
 
   const TEMP_COLORS = [
     { max: -20, colors: ['#70a9ff', '#3c6aff'] },
@@ -229,6 +210,22 @@
   // track which ambient index we've initialized into the DOM to avoid re-init loops
   let ambientLastInitIndex = null;
 
+  const CARD_RENDERERS = [
+    { key: 'tempWind', selector: '.wdash-card--temp-wind', build: data => buildTempWindCard(data) },
+    { key: 'ambient', selector: '.wdash-card--ambient', build: (data, opts) => buildAmbientSensorCard(data, opts?.ambientSeed) },
+    { key: 'lightning', selector: '.wdash-card--lightning', build: data => buildLightningCard(data) },
+    { key: 'pressure', selector: '.wdash-card--pressure', build: data => buildPressureCard(data) },
+    { key: 'rain', selector: '.wdash-card--rain', build: data => buildRainCard(data) },
+    { key: 'solar', selector: '.wdash-card--solar-moon', build: data => buildSolarSunCard(data) },
+    { key: 'air', selector: '.wdash-card--air', build: data => buildAirQualityCard(data) }
+  ];
+
+  const renderState = {
+    mounted: false,
+    markupByKey: new Map(),
+    order: CARD_RENDERERS.map(card => card.key)
+  };
+
   const dataTileObservers = new Map();
   let domObserver = null;
   let scaleObserver = null;
@@ -238,6 +235,7 @@
   let tempWindGaugeResizeHandler = null;
   let tempWindGaugeHosts = [];
   const tempWindGaugeLastSizes = new WeakMap();
+  const tempWindState = { data: null };
   let rainDropObserver = null;
   let rainDropResizeHandler = null;
   let rainDropRaf = null;
@@ -250,8 +248,10 @@
   let pressureMode = 'relative';
   let lastSuccessfulPayload = null;
 
-  patchDashboardGlitches();
-  whenDomReady(init);
+    if (!IS_TEST_ENV) {
+      patchDashboardGlitches();
+      whenDomReady(init);
+    }
 
   function whenDomReady(callback) {
     if (document.readyState === 'loading') {
@@ -385,14 +385,8 @@
       return;
     }
 
-    const measuredBase = measureDisplayTileBaseDimensions(displayTile, content);
-    const initialMeasuredWidth = resolveMeasuredBaseDimension('width', measuredBase.width);
-    const initialMeasuredHeight = resolveMeasuredBaseDimension('height', measuredBase.height);
-    const initialBaseWidth = sanitizeDimension(initialMeasuredWidth, DEFAULT_BASE_WIDTH);
-    const initialBaseHeight = sanitizeDimension(initialMeasuredHeight, DEFAULT_BASE_HEIGHT);
-
     content.innerHTML = `
-      <div class="wdash-root" style="--wdash-base-width:${initialBaseWidth}px;--wdash-base-height:${initialBaseHeight}px;">
+      <div class="wdash-root" style="--wdash-base-width:${DEFAULT_BASE_WIDTH}px;--wdash-base-height:${DEFAULT_BASE_HEIGHT}px;">
         <div class="wdash-frame">
           <div class="wdash" role="presentation">
             <div class="wdash-grid" data-empty="true"></div>
@@ -432,6 +426,9 @@
     if (!payload) {
       grid.dataset.empty = 'true';
       grid.innerHTML = `<div class="wdash-empty">Waiting for weather data…</div>`;
+      renderState.mounted = false;
+      renderState.markupByKey.clear();
+      tempWindState.data = null;
       clearAmbientRotation();
       toggleSourceTileMask(false);
       stopHubClock();
@@ -446,20 +443,49 @@
     if (ambientSeed && Number.isInteger(ambientSeed.index)) {
       ambientRotation.index = ambientSeed.index;
     }
-    const newMarkup = buildMarkup(payload, { ambientSeed });
-    // Only replace the grid contents when markup actually changes to avoid
-    // spurious DOM rebuilds (which can make the ambient rings redraw)
-    if (grid.innerHTML !== newMarkup) {
-      grid.innerHTML = newMarkup;
-      layoutState.pendingApply = true;
-      applyLayoutOverrides(payload?.metadata);
-      // initialize ambient humidity circle from any remembered last value so it
-      // doesn't animate from 0% when the card is first built or when switching sensors
+    const cardMarkupList = buildCardMarkupList(payload, { ambientSeed });
+    let cardsChanged = false;
+
+    if (!renderState.mounted) {
+      grid.innerHTML = cardMarkupList.map(card => card.markup).join('');
+      renderState.mounted = true;
+      renderState.markupByKey.clear();
+      cardMarkupList.forEach(card => {
+        renderState.markupByKey.set(card.key, card.markup);
+      });
+      cardsChanged = true;
       try {
         const ambientContainer = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-ambient');
         if (ambientContainer) initAmbientLastHum(ambientContainer);
       } catch (e) { /* ignore */ }
+    } else {
+      cardMarkupList.forEach(card => {
+        const previousMarkup = renderState.markupByKey.get(card.key) || null;
+        if (card.key === 'ambient' || card.key === 'tempWind') {
+          const ensured = ensureCardPresence(grid, card, cardMarkupList);
+          if (ensured) {
+            renderState.markupByKey.set(card.key, card.markup);
+          }
+          return;
+        }
+
+        if (previousMarkup !== card.markup) {
+          replaceCardMarkup(grid, card, cardMarkupList);
+          renderState.markupByKey.set(card.key, card.markup);
+          cardsChanged = true;
+        }
+      });
     }
+
+    if (cardsChanged) {
+      layoutState.pendingApply = true;
+      applyLayoutOverrides(payload?.metadata);
+    } else if (layoutState.pendingApply) {
+      layoutState.pendingApply = false;
+    }
+
+    tempWindState.data = payload;
+    updateTempWindCard();
     setupAmbientRotation(payload);
     setupAirQualityRotation(payload);
     setupInteractiveComponents(grid);
@@ -546,8 +572,7 @@
       return;
     }
 
-    const layoutMetadata = metadata !== undefined ? metadata : lastSuccessfulPayload?.metadata;
-    const rawLayout = layoutMetadata ? (layoutMetadata.layout != null ? layoutMetadata.layout : layoutMetadata.layoutOverride) : null;
+    const rawLayout = metadata ? (metadata.layout != null ? metadata.layout : metadata.layoutOverride) : null;
     const override = rawLayout ? extractLayoutOverride(rawLayout) : null;
     const overrideLayout = isPlainObject(override) ? override : null;
     const hasOwn = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
@@ -562,28 +587,6 @@
       overrideSectionValues[key] = value;
       overrideSectionObjects[key] = sanitizeSectionObject(value);
     }
-
-    const previousDesktopBase = normalizeDimensionEntry(
-      layoutState?.baseDimensions?.desktop,
-      DEFAULT_BASE_DIMENSIONS.desktop
-    );
-    const measuredBase = measureDisplayTileBaseDimensions();
-    const measuredWidth = resolveMeasuredBaseDimension('width', measuredBase.width);
-    const measuredHeight = resolveMeasuredBaseDimension('height', measuredBase.height);
-    const measuredBaseWidth = sanitizeDimension(measuredWidth, previousDesktopBase.width);
-    const measuredBaseHeight = sanitizeDimension(measuredHeight, previousDesktopBase.height);
-
-    const dimensionUnit = sanitizeLayoutDimensionUnit(
-      overrideLayout
-        ? hasOwn(overrideLayout, 'dimensionUnits')
-          ? overrideLayout.dimensionUnits
-          : hasOwn(overrideLayout, 'units')
-            ? overrideLayout.units
-            : hasOwn(overrideLayout, 'unit')
-              ? overrideLayout.unit
-              : null
-        : null
-    );
 
     const layoutForCompile = {};
     let inheritedRows = null;
@@ -614,7 +617,7 @@
       inheritedRows = defaultRows;
       layoutForCompile[key] = defaultRows;
     }
-    const compiled = compileLayoutTemplates(layoutForCompile, { dimensionUnit });
+    const compiled = compileLayoutTemplates(layoutForCompile);
     const normalizedAreas = {
       desktop: normalizeTemplateAreas(compiled.desktop.areas),
       tablet: normalizeTemplateAreas(compiled.tablet.areas),
@@ -628,33 +631,18 @@
     const hasTabletOverride = Boolean(overrideLayout && hasOwn(overrideLayout, 'tablet'));
     const hasMobileOverride = Boolean(overrideLayout && hasOwn(overrideLayout, 'mobile'));
 
-    const globalColumnValue = resolveColumnValue(overrideLayout);
-    const desktopColumnValue = resolveColumnValue(desktopSection);
-    const tabletColumnValue = resolveColumnValue(tabletSection);
-    const mobileColumnValue = resolveColumnValue(mobileSection);
-    const hasGlobalColumnOverride = globalColumnValue !== undefined;
-    const columnOptions = { dimensionUnit };
-
-    const desktopColumns = sanitizeColumns(
-      desktopColumnValue !== undefined ? desktopColumnValue : globalColumnValue,
-      DEFAULT_COLUMNS.desktop,
-      columnOptions
-    );
-    const tabletFallback = (hasTabletOverride || hasDesktopOverride || hasGlobalColumnOverride)
-      ? desktopColumns
-      : DEFAULT_COLUMNS.tablet;
+    const desktopColumns = sanitizeColumns(desktopSection?.columns, DEFAULT_COLUMNS.desktop);
     const tabletColumns = sanitizeColumns(
-      tabletColumnValue !== undefined ? tabletColumnValue : globalColumnValue,
-      tabletFallback,
-      columnOptions
+      tabletSection?.columns,
+      hasTabletOverride ? desktopColumns : hasDesktopOverride ? desktopColumns : DEFAULT_COLUMNS.tablet
     );
-    const mobileFallback = (hasMobileOverride || hasTabletOverride || hasDesktopOverride || hasGlobalColumnOverride)
-      ? tabletColumns
-      : DEFAULT_COLUMNS.mobile;
     const mobileColumns = sanitizeColumns(
-      mobileColumnValue !== undefined ? mobileColumnValue : globalColumnValue,
-      mobileFallback,
-      columnOptions
+      mobileSection?.columns,
+      hasMobileOverride
+        ? tabletColumns
+        : hasTabletOverride || hasDesktopOverride
+          ? tabletColumns
+          : DEFAULT_COLUMNS.mobile
     );
     const columns = {
       desktop: desktopColumns,
@@ -681,8 +669,8 @@
       mobile: mobileGap
     };
 
-    const fallbackWidth = sanitizeDimension(overrideLayout?.baseWidth, measuredBaseWidth);
-    const fallbackHeight = sanitizeDimension(overrideLayout?.baseHeight, measuredBaseHeight);
+    const fallbackWidth = sanitizeDimension(overrideLayout?.baseWidth, DEFAULT_BASE_WIDTH);
+    const fallbackHeight = sanitizeDimension(overrideLayout?.baseHeight, DEFAULT_BASE_HEIGHT);
     const desktopWidth = sanitizeDimension(desktopSection?.baseWidth, fallbackWidth);
     const desktopHeight = sanitizeDimension(desktopSection?.baseHeight, fallbackHeight);
     const tabletWidth = sanitizeDimension(tabletSection?.baseWidth, desktopWidth);
@@ -757,9 +745,6 @@
       templates: compiled
     });
 
-    if (changed) {
-      invalidateScaleCache();
-    }
     applyScale(root);
 
     const gridEl = dash.querySelector('.wdash-grid');
@@ -815,13 +800,9 @@
   function setupScaling(displayTile, content) {
     const root = content.querySelector('.wdash-root');
     if (!root) return;
-    invalidateScaleCache();
     applyScale(root);
     if (!scaleResizeHandler) {
-      scaleResizeHandler = () => {
-        invalidateScaleCache();
-        applyScale();
-      };
+      scaleResizeHandler = () => applyScale();
       window.addEventListener('resize', scaleResizeHandler);
     }
     setupBreakpointListeners();
@@ -829,63 +810,14 @@
     if (scaleObserver) {
       scaleObserver.disconnect();
     }
-    tileResizeObserverState.width = null;
-    tileResizeObserverState.height = null;
-    scaleObserver = new ResizeObserver(entries => {
-      let observedWidth = null;
-      let observedHeight = null;
-      if (Array.isArray(entries)) {
-        for (const entry of entries) {
-          if (!entry) continue;
-          const rect = entry.contentRect;
-          if (rect) {
-            if (observedWidth == null && Number.isFinite(rect.width) && rect.width > 0) {
-              observedWidth = Math.round(rect.width);
-            }
-            if (observedHeight == null && Number.isFinite(rect.height) && rect.height > 0) {
-              observedHeight = Math.round(rect.height);
-            }
-          }
-          if (entry.target === displayTile && observedWidth != null && observedHeight != null) {
-            break;
-          }
-        }
-      }
-
-      let sizeChanged = false;
-      if (Number.isFinite(observedWidth) && observedWidth > 0) {
-        const previousWidth = tileResizeObserverState.width;
-        if (!Number.isFinite(previousWidth) || Math.abs(previousWidth - observedWidth) > TILE_RESIZE_EPSILON) {
-          tileResizeObserverState.width = observedWidth;
-          tileBaseMeasurement.width = observedWidth;
-          sizeChanged = true;
-        }
-      }
-      if (Number.isFinite(observedHeight) && observedHeight > 0) {
-        const previousHeight = tileResizeObserverState.height;
-        if (!Number.isFinite(previousHeight) || Math.abs(previousHeight - observedHeight) > TILE_RESIZE_EPSILON) {
-          tileResizeObserverState.height = observedHeight;
-          tileBaseMeasurement.height = observedHeight;
-          sizeChanged = true;
-        }
-      }
-
-      if (sizeChanged) {
-        applyLayoutOverrides(lastSuccessfulPayload?.metadata);
-      } else {
-        applyScale(root);
-      }
-    });
+    scaleObserver = new ResizeObserver(() => applyScale(root));
     scaleObserver.observe(displayTile);
   }
 
   function setupBreakpointListeners() {
     if (breakpointListenersRegistered) return;
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
-    const handler = () => {
-      invalidateScaleCache();
-      applyScale();
-    };
+    const handler = () => applyScale();
     const queries = ['(max-width: 720px)', '(max-width: 1100px)'];
     let attached = false;
     for (const query of queries) {
@@ -980,21 +912,6 @@
     const scale = Math.max(0.1, Math.min(rawScale, 1));
     const renderWidth = baseWidth * scale;
     const renderHeight = baseHeight * scale;
-    const prevScale = scaleCache.scale;
-    const prevWidth = scaleCache.width;
-    const prevHeight = scaleCache.height;
-    const scaleChanged = !Number.isFinite(prevScale) || Math.abs(prevScale - scale) > SCALE_EPSILON;
-    const widthChanged = !Number.isFinite(prevWidth) || Math.abs(prevWidth - renderWidth) > RENDER_EPSILON;
-    const heightChanged = !Number.isFinite(prevHeight) || Math.abs(prevHeight - renderHeight) > RENDER_EPSILON;
-
-    if (!scaleChanged && !widthChanged && !heightChanged) {
-      return;
-    }
-
-    scaleCache.scale = scale;
-    scaleCache.width = renderWidth;
-    scaleCache.height = renderHeight;
-
     root.style.setProperty('--wdash-scale', `${scale}`);
     root.style.setProperty('--wdash-render-width', `${renderWidth}px`);
     root.style.setProperty('--wdash-render-height', `${renderHeight}px`);
@@ -1147,20 +1064,59 @@
     };
   }
 
-  function buildMarkup(data, options = {}) {
-    const opts = options && typeof options === 'object' ? options : {};
-    return `
-      ${[
-        buildTempWindCard(data),
-        buildAmbientSensorCard(data, opts.ambientSeed),
-        buildLightningCard(data),
-        buildPressureCard(data),
-        buildRainCard(data),
-        buildSolarSunCard(data),
-        buildAirQualityCard(data)
-      ].join('')}
-    `;
-  }
+    function buildCardMarkupList(data, options) {
+      const opts = options && typeof options === 'object' ? options : {};
+      return CARD_RENDERERS.map(card => ({
+        key: card.key,
+        selector: card.selector,
+        markup: card.build(data, opts)
+      }));
+    }
+
+    function createElementFromMarkup(markup) {
+      if (typeof markup !== 'string' || !markup.trim().length) return null;
+      const template = document.createElement('div');
+      template.innerHTML = markup.trim();
+      return template.firstElementChild || null;
+    }
+
+    function ensureCardPresence(grid, card, cardMarkupList) {
+      if (!grid || !card) return null;
+      let existing = grid.querySelector(card.selector);
+      if (existing) return existing;
+
+      const element = createElementFromMarkup(card.markup);
+      if (!element) return null;
+
+      const insertionIndex = renderState.order.indexOf(card.key);
+      let anchor = null;
+      for (let idx = insertionIndex + 1; idx < renderState.order.length; idx += 1) {
+        const nextKey = renderState.order[idx];
+        const nextCard = cardMarkupList.find(item => item.key === nextKey);
+        if (!nextCard) continue;
+        const node = grid.querySelector(nextCard.selector);
+        if (node) {
+          anchor = node;
+          break;
+        }
+      }
+
+      if (anchor) {
+        grid.insertBefore(element, anchor);
+      } else {
+        grid.appendChild(element);
+      }
+
+      return element;
+    }
+
+    function replaceCardMarkup(grid, card, cardMarkupList) {
+      const existing = ensureCardPresence(grid, card, cardMarkupList);
+      if (!existing) return;
+      const replacement = createElementFromMarkup(card.markup);
+      if (!replacement) return;
+      existing.replaceWith(replacement);
+    }
 
   function buildTempWindCard(data) {
     const outdoor = data.outdoor || {};
@@ -2691,6 +2647,171 @@
     tempWindGaugeLastSizes.set(host, normalized);
   }
 
+  function updateTempWindCard() {
+    const card = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-card--temp-wind');
+    if (!card) return;
+
+    const data = tempWindState.data;
+    const outdoor = data?.outdoor || {};
+    const wind = data?.wind || {};
+    const avg = wind.average || {};
+
+    const temp = toNumber(outdoor.temperatureF);
+    const high = toNumber(outdoor.dailyHighF);
+    const low = toNumber(outdoor.dailyLowF);
+    const feels = toNumber(outdoor.feelsLikeF);
+    const dew = toNumber(outdoor.dewPointF);
+    const humidity = toNumber(outdoor.humidity);
+    const trend = toNumber(outdoor.trendFPerHour);
+    const batteryLevel = toNumber(outdoor.battery);
+
+    const speed = toNumber(wind.speedMph);
+    const gust = toNumber(wind.gustMph);
+    const dirDegrees = toNumber(wind.directionDegrees);
+    const dirText = wind.directionCardinal || null;
+    const avgSpeed = toNumber(avg.speedMph);
+    const avgDir = toNumber(avg.directionDegrees);
+    const avgDirText = avg.directionCardinal || (Number.isFinite(avgDir) ? degreesToCardinal(avgDir) : null);
+    const windowMins = wind.averageMinutes || avg.minutes || 10;
+    const dailyMaxGust = toNumber(wind.dailyMaxGustMph);
+
+    const bearingLabel = dirText || (Number.isFinite(dirDegrees) ? degreesToCardinal(dirDegrees) : '--');
+    const headingText = Number.isFinite(dirDegrees) ? formatDegrees(dirDegrees) : '--°';
+    const gustText = Number.isFinite(gust) ? `${formatNumber(gust, 1)} mph` : '--';
+    const avgSpeedText = Number.isFinite(avgSpeed) ? `${formatNumber(avgSpeed, 1)} mph` : '--';
+    const avgCombinedText = `${avgDirText || '--'} ${avgSpeedText}`.trim();
+    const dailyMaxGustText = Number.isFinite(dailyMaxGust) ? `${formatNumber(dailyMaxGust, 1)} mph` : '--';
+
+    const tempColor = colorForTemp(temp);
+    const gaugeIndicatorValue = gaugeIndicator(temp);
+    const gauge = card.querySelector('.wdash-gauge');
+    if (gauge && gauge.style) {
+      gauge.style.setProperty('--gauge-indicator', gaugeIndicatorValue);
+      if (Array.isArray(tempColor.colors)) {
+        if (tempColor.colors[0]) gauge.style.setProperty('--gauge-color-a', tempColor.colors[0]);
+        if (tempColor.colors[1]) gauge.style.setProperty('--gauge-color-b', tempColor.colors[1]);
+      }
+      if (tempColor.mid) gauge.style.setProperty('--gauge-color-mid', tempColor.mid);
+      if (tempColor.progress != null) {
+        gauge.style.setProperty('--gauge-band-progress', String(tempColor.progress));
+      }
+    }
+
+    setTextContent(card.querySelector('.wdash-gauge-value'), formatTemperature(temp));
+    setTextContent(card.querySelector('.wdash-temp-extrema--high .wdash-temp-extrema-value'), formatTemperature(high));
+    setTextContent(card.querySelector('.wdash-temp-extrema--low .wdash-temp-extrema-value'), formatTemperature(low));
+
+    const detailValues = [
+      formatTemperature(feels),
+      formatTemperature(dew),
+      formatPercent(humidity, 0),
+      formatSigned(trend, 1, '°/hr'),
+      avgCombinedText,
+      dailyMaxGustText
+    ];
+    const detailNodes = card.querySelectorAll('.wdash-temp-wind-details .wdash-metric-value');
+    detailNodes.forEach((node, index) => {
+      setTextContent(node, detailValues[index] != null ? detailValues[index] : '--');
+    });
+
+    const generatedAt = data?.metadata?.generatedAt;
+    const stationReportedAt = data?.metadata?.weatherStationTime || generatedAt;
+    const stationLabel = stationReportedAt ? formatHubClock(stationReportedAt, { includeSeconds: false }) : null;
+    const updatedLabel = stationLabel ? `Updated ${stationLabel}` : '';
+    setTextContent(card.querySelector('.wdash-updated-line--primary'), updatedLabel);
+
+    const battery = card.querySelector('.wdash-temp-wind-battery');
+    if (battery) {
+      updateBatterySlot(battery, batteryLevel, {
+        orientation: 'landscape',
+        label: 'Outdoor sensor',
+        titlePrefix: 'Outdoor sensor battery'
+      });
+    }
+
+    const compass = card.querySelector('.wdash-wind-compass');
+    const normalizedBearing = bearingLabel || '--';
+    const ariaHeading = headingText || '--°';
+    if (compass) {
+      compass.setAttribute('aria-label', `Wind direction ${normalizedBearing} ${ariaHeading}`.trim());
+    }
+    setTextContent(card.querySelector('.wdash-wind-bearing'), normalizedBearing);
+    const headingEl = card.querySelector('.wdash-wind-heading');
+    if (headingEl) {
+      const text = headingText ? ` ${headingText}` : ' --°';
+      if (headingEl.textContent !== text) headingEl.textContent = text;
+    }
+    setTextContent(card.querySelector('.wdash-wind-speed-value'), Number.isFinite(speed) ? formatNumber(speed, 1) : '--');
+    setTextContent(card.querySelector('.wdash-wind-gust-value'), gustText);
+
+    if (compass) {
+      const currentArrow = compass.querySelector('.wdash-compass-arrow--current');
+      if (currentArrow && currentArrow.style) {
+        const normalized = normalizeDegrees(dirDegrees);
+        currentArrow.style.transform = `rotate(${normalized}deg)`;
+      }
+      const avgArrow = Number.isFinite(avgDir) ? ensureCompassAverageArrow(compass) : compass.querySelector('.wdash-compass-arrow--avg');
+      if (avgArrow && avgArrow.style) {
+        if (Number.isFinite(avgDir)) {
+          avgArrow.style.display = '';
+          avgArrow.style.transform = `rotate(${normalizeDegrees(avgDir)}deg)`;
+        } else {
+          avgArrow.style.display = 'none';
+        }
+      } else if (!Number.isFinite(avgDir)) {
+        const existingAvg = compass.querySelector('.wdash-compass-arrow--avg');
+        if (existingAvg && existingAvg.style) existingAvg.style.display = 'none';
+      }
+    }
+
+    const detailsHeader = card.querySelector('.wdash-temp-wind-details');
+    if (detailsHeader) {
+      if (Number.isFinite(windowMins)) {
+        detailsHeader.dataset.window = String(windowMins);
+      } else if (detailsHeader.dataset) {
+        delete detailsHeader.dataset.window;
+      }
+    }
+  }
+
+  function ensureCompassAverageArrow(compass) {
+    if (!compass) return null;
+    let avgArrow = compass.querySelector('.wdash-compass-arrow--avg');
+    if (avgArrow) return avgArrow;
+    const svg = compass.querySelector('svg');
+    if (!svg) return null;
+    const currentArrow = svg.querySelector('.wdash-compass-arrow--current');
+    if (!currentArrow) return null;
+    const clone = currentArrow.cloneNode(true);
+    clone.classList.remove('wdash-compass-arrow--current');
+    clone.classList.add('wdash-compass-arrow--avg');
+    const path = clone.querySelector('.wdash-compass-current');
+    if (path) {
+      path.classList.remove('wdash-compass-current');
+      path.classList.add('wdash-compass-avg');
+      path.setAttribute('fill', 'none');
+      path.setAttribute('stroke', 'rgba(208,213,220,0.95)');
+      path.setAttribute('stroke-width', '1.0');
+    }
+    svg.appendChild(clone);
+    return clone;
+  }
+
+  function normalizeDegrees(value) {
+    if (!Number.isFinite(value)) return 0;
+    let normalized = value % 360;
+    if (normalized < 0) normalized += 360;
+    return normalized;
+  }
+
+  function setTextContent(element, value) {
+    if (!element) return;
+    const text = value == null ? '' : String(value);
+    if (element.textContent !== text) {
+      element.textContent = text;
+    }
+  }
+
   function setupPressureToggle(container) {
     const card = container.querySelector('.wdash-card--pressure');
     if (!card) return;
@@ -3430,7 +3551,7 @@
     return match ? `#${match[1]}` : null;
   }
 
-  function compileLayoutTemplates(layoutConfig, options = {}) {
+  function compileLayoutTemplates(layoutConfig) {
     const breakpoints = ['desktop', 'tablet', 'mobile'];
     const result = {};
     for (const key of breakpoints) {
@@ -3440,7 +3561,7 @@
         : Array.isArray(section?.rows)
           ? section.rows
           : [];
-      result[key] = compileGridTemplate(rows, options);
+      result[key] = compileGridTemplate(rows);
     }
     return result;
   }
@@ -3540,7 +3661,7 @@
     return token;
   }
 
-  function compileGridTemplate(layout, options = {}) {
+  function compileGridTemplate(layout) {
     if (!Array.isArray(layout)) {
       return { areas: '"."', rows: 'repeat(1, minmax(0, 1fr))', rowCount: 1 };
     }
@@ -3555,7 +3676,7 @@
             .filter(col => typeof col === 'string' && col.length)
         : [];
       if (!columns.length) continue;
-      const track = normalizeTrackSize(entry?.height ?? entry?.rowHeight ?? entry?.size, options);
+      const track = normalizeTrackSize(entry?.height ?? entry?.rowHeight ?? entry?.size);
       for (let i = 0; i < repeat; i += 1) {
         areaLines.push(`"${columns.join(' ')}"`);
         rowTracks.push(track);
@@ -3574,14 +3695,11 @@
     return { areas: areaLines.join('\n  '), rows: rowsValue, rowCount: safeRowCount };
   }
 
-  function normalizeTrackSize(value, options = {}) {
+  function normalizeTrackSize(value) {
     const defaultTrack = 'minmax(0, 1fr)';
-    const unitMode = options && options.dimensionUnit === 'percent' ? 'percent' : 'px';
     if (value == null) return defaultTrack;
     if (typeof value === 'number' && Number.isFinite(value)) {
-      const clamped = Math.max(0, value);
-      const unit = unitMode === 'percent' ? '%' : 'px';
-      return `${clamped}${unit}`;
+      return `${Math.max(0, value)}px`;
     }
     if (typeof value === 'string') {
       const trimmed = value.trim();
@@ -3594,17 +3712,14 @@
     return defaultTrack;
   }
 
-  function sanitizeColumns(value, fallback, options = {}) {
+  function sanitizeColumns(value, fallback) {
     if (Array.isArray(value)) {
       const tracks = value
-        .map(item => normalizeTrackSize(item, options))
+        .map(item => normalizeTrackSize(item))
         .filter(Boolean);
       if (tracks.length) {
         return tracks.join(' ');
       }
-    }
-    if (typeof value === 'number' && Number.isFinite(value)) {
-      return normalizeTrackSize(value, options);
     }
     if (typeof value === 'string') {
       const trimmed = value.trim();
@@ -3625,25 +3740,6 @@
     return fallback;
   }
 
-  function sanitizeLayoutDimensionUnit(value) {
-    if (typeof value !== 'string') return 'px';
-    const normalized = value.trim().toLowerCase();
-    if (normalized === 'percent' || normalized === 'percentage' || normalized === '%') return 'percent';
-    if (normalized === 'px' || normalized === 'pixel' || normalized === 'pixels') return 'px';
-    return 'px';
-  }
-
-  function resolveColumnValue(section) {
-    if (!section || typeof section !== 'object') return undefined;
-    if (Object.prototype.hasOwnProperty.call(section, 'columns')) {
-      return section.columns;
-    }
-    if (Object.prototype.hasOwnProperty.call(section, 'columnWidths')) {
-      return section.columnWidths;
-    }
-    return undefined;
-  }
-
   function sanitizeDimension(value, fallback) {
     if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
       return value;
@@ -3658,85 +3754,6 @@
       }
     }
     return fallback;
-  }
-
-  function resolveMeasuredBaseDimension(axis, measured) {
-    const key = axis === 'height' ? 'height' : 'width';
-    const previous = Number.isFinite(tileBaseMeasurement[key]) ? tileBaseMeasurement[key] : null;
-    const value = Number.isFinite(measured) && measured > 0 ? measured : null;
-
-    if (value == null) {
-      return previous;
-    }
-
-    const rounded = Math.round(value);
-    if (previous != null && Math.abs(previous - rounded) <= 1) {
-      return previous;
-    }
-
-    tileBaseMeasurement[key] = rounded;
-    return rounded;
-  }
-
-  function measureDisplayTileBaseDimensions(tile, content) {
-    const targets = [];
-    if (content) targets.push(content);
-    if (tile) targets.push(tile);
-    if (!targets.length) {
-      const host = byId(DISPLAY_TILE_ID);
-      if (host) {
-        const hostContent = findContentElement(host);
-        if (hostContent && hostContent !== host) targets.push(hostContent);
-        targets.push(host);
-      }
-    }
-    let width = null;
-    let height = null;
-    for (const target of targets) {
-      if (!target) continue;
-      const size = measureNodeSize(target);
-      if (!width && size.width) width = size.width;
-      if (!height && size.height) height = size.height;
-      if (width && height) break;
-    }
-    return {
-      width: Number.isFinite(width) && width > 0 ? Math.round(width) : null,
-      height: Number.isFinite(height) && height > 0 ? Math.round(height) : null
-    };
-  }
-
-  function measureNodeSize(node) {
-    if (!node) return { width: null, height: null };
-    let width = null;
-    let height = null;
-    if (typeof node.getBoundingClientRect === 'function') {
-      const rect = node.getBoundingClientRect();
-      if (rect) {
-        if (Number.isFinite(rect.width) && rect.width > 0) width = rect.width;
-        if (Number.isFinite(rect.height) && rect.height > 0) height = rect.height;
-      }
-    }
-    if ((width == null || width <= 0 || height == null || height <= 0)
-      && typeof window !== 'undefined'
-      && typeof window.getComputedStyle === 'function') {
-      try {
-        const computed = window.getComputedStyle(node);
-        if (computed) {
-          if (width == null || width <= 0) {
-            const parsedWidth = parseFloat(computed.width);
-            if (Number.isFinite(parsedWidth) && parsedWidth > 0) width = parsedWidth;
-          }
-          if (height == null || height <= 0) {
-            const parsedHeight = parseFloat(computed.height);
-            if (Number.isFinite(parsedHeight) && parsedHeight > 0) height = parsedHeight;
-          }
-        }
-      } catch (err) { /* ignore */ }
-    }
-    return {
-      width: Number.isFinite(width) && width > 0 ? width : null,
-      height: Number.isFinite(height) && height > 0 ? height : null
-    };
   }
 
   function extractLayoutOverride(raw) {
@@ -4706,5 +4723,14 @@
       clearTimeout(frame);
       frame = setTimeout(() => fn(...args), delay);
     };
+  }
+
+  if (IS_TEST_ENV) {
+    const target = typeof window !== 'undefined' ? window : globalThis;
+    target.__WDASH_TEST_HOOKS__ = target.__WDASH_TEST_HOOKS__ || {};
+    Object.assign(target.__WDASH_TEST_HOOKS__, {
+      updateTempWindCard,
+      tempWindState
+    });
   }
 })();
