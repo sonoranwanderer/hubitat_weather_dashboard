@@ -859,7 +859,8 @@
     lastSuccessfulPayload = payload;
 
     grid.dataset.empty = 'false';
-    const newMarkup = buildMarkup(payload);
+    const ambientSeed = resolveAmbientSeedState(payload);
+    const newMarkup = buildMarkup(payload, { ambientSeed });
     const markupDiff = summarizeMarkupDiff(lastRenderedMarkup, newMarkup);
     const markupDiffHint = inferMarkupDiffHint(markupDiff);
     // Only replace the grid contents when markup actually changes to avoid
@@ -924,6 +925,122 @@
       window.addEventListener('resize', () => { applyAmbientRingSizing(); applyOutdoorRingSizing(); });
     }
     toggleSourceTileMask(true);
+  }
+
+  function resolveAmbientSeedState(data) {
+    const sensors = Array.isArray(data?.ambientSensors) ? data.ambientSensors.filter(Boolean) : [];
+    if (!sensors.length) return null;
+
+    const normalized = sensors.map((sensor, index) => ({
+      sensor,
+      index,
+      sensorKey: getAmbientSensorKey(sensor, index),
+      nameKey: sensor && sensor.name != null ? getAmbientNameKey(sensor.name) : null
+    }));
+
+    const preferredKeys = [];
+    if (ambientLastInitSensorKey) preferredKeys.push(ambientLastInitSensorKey);
+    if (ambientLastDisplayedHumidity.key) preferredKeys.push(ambientLastDisplayedHumidity.key);
+
+    if (Array.isArray(ambientRotation.sensors) && ambientRotation.sensors.length) {
+      const rotationIndex = Number.isInteger(ambientRotation.index) ? ambientRotation.index : null;
+      if (rotationIndex != null) {
+        preferredKeys.push(`index:${rotationIndex}`);
+        const rotationSensor = ambientRotation.sensors[rotationIndex];
+        if (rotationSensor) {
+          const rotationKey = getAmbientSensorKey(rotationSensor, rotationIndex);
+          if (rotationKey) preferredKeys.push(rotationKey);
+          if (rotationSensor.name != null) {
+            const rotationNameKey = getAmbientNameKey(rotationSensor.name);
+            if (rotationNameKey) preferredKeys.push(rotationNameKey);
+          }
+        }
+      }
+    }
+
+    const seen = new Set();
+    const dedupedKeys = [];
+    for (const key of preferredKeys) {
+      if (!key) continue;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      dedupedKeys.push(key);
+    }
+
+    const matchByKey = key => normalized.find(item => {
+      if (!item) return false;
+      if (item.sensorKey && item.sensorKey === key) return true;
+      if (item.nameKey && item.nameKey === key) return true;
+      return `index:${item.index}` === key;
+    });
+
+    for (const key of dedupedKeys) {
+      const match = matchByKey(key);
+      if (match) {
+        return {
+          index: match.index,
+          sensorKey: match.sensorKey || match.nameKey || key,
+          humidity: normalizeHumidityValue(match.sensor?.humidity),
+          seedKey: match.sensorKey || match.nameKey || key
+        };
+      }
+    }
+
+    const rotationIndex = Number.isInteger(ambientRotation.index) ? ambientRotation.index : null;
+    if (rotationIndex != null && rotationIndex >= 0 && rotationIndex < normalized.length) {
+      const match = normalized[rotationIndex];
+      return {
+        index: match.index,
+        sensorKey: match.sensorKey || match.nameKey || `index:${match.index}`,
+        humidity: normalizeHumidityValue(match.sensor?.humidity),
+        seedKey: match.sensorKey || match.nameKey || `index:${match.index}`
+      };
+    }
+
+    const fallback = normalized[0];
+    return {
+      index: fallback.index,
+      sensorKey: fallback.sensorKey || fallback.nameKey || `index:${fallback.index}`,
+      humidity: normalizeHumidityValue(fallback.sensor?.humidity),
+      seedKey: fallback.sensorKey || fallback.nameKey || `index:${fallback.index}`
+    };
+  }
+
+  function normalizeHumidityValue(value) {
+    const num = toNumber(value);
+    return Number.isFinite(num) ? num : null;
+  }
+
+  function resolveAmbientSeedOptions(sensors, seedOptions) {
+    const list = Array.isArray(sensors) ? sensors.filter(Boolean) : [];
+    const count = list.length;
+    const opts = seedOptions && typeof seedOptions === 'object' ? seedOptions : {};
+    let index = Number.isInteger(opts.index) ? opts.index : 0;
+    if (count > 0) {
+      if (index < 0) index = 0;
+      if (index >= count) index = count - 1;
+    } else {
+      index = 0;
+    }
+
+    const sensor = list[index] || null;
+    let sensorKey = typeof opts.sensorKey === 'string' ? opts.sensorKey : null;
+    if (!sensorKey && sensor) {
+      sensorKey = getAmbientSensorKey(sensor, index);
+    }
+    let seedKey = typeof opts.seedKey === 'string' ? opts.seedKey : null;
+    if (!seedKey) {
+      seedKey = sensorKey || (sensor && sensor.name != null ? getAmbientNameKey(sensor.name) : null) || `index:${index}`;
+    }
+
+    const humidity = Number.isFinite(opts.humidity) ? opts.humidity : null;
+
+    return {
+      index,
+      sensorKey,
+      seedKey,
+      humidity
+    };
   }
 
   function readPayloads() {
@@ -1430,11 +1547,13 @@
     return Object.keys(result).length ? result : null;
   }
 
-  function buildMarkup(data) {
+  function buildMarkup(data, options) {
+    const opts = options && typeof options === 'object' ? options : {};
+    const ambientSeed = opts.ambientSeed || null;
     return `
       ${[
         buildTempWindCard(data),
-        buildAmbientSensorCard(data),
+        buildAmbientSensorCard(data, ambientSeed),
         buildLightningCard(data),
         buildPressureCard(data),
         buildRainCard(data),
@@ -1881,10 +2000,12 @@
     }
   }
 
-  function buildAmbientSensorCard(data) {
+  function buildAmbientSensorCard(data, seedOptions) {
     const sensors = Array.isArray(data.ambientSensors) ? data.ambientSensors.filter(Boolean) : [];
     const hasSensors = sensors.length > 0;
-    const sensor = sensors[0] || {};
+    const seed = resolveAmbientSeedOptions(sensors, seedOptions);
+    const seedIndex = seed.index;
+    const sensor = sensors[seedIndex] || {};
     const tempUnit = data.ambientTemperatureUnit || '°F';
     const humidityUnit = data.ambientHumidityUnit || '%';
     const sensorName = typeof sensor.name === 'string' ? sensor.name.trim() : '';
@@ -1892,7 +2013,7 @@
       ? (sensorName.length ? sensorName : 'Ambient Sensor')
       : 'Ambient Sensors';
     const rotationText = hasSensors
-      ? (sensors.length > 1 ? `Sensor 1 of ${sensors.length}` : '')
+      ? (sensors.length > 1 ? `Sensor ${seedIndex + 1} of ${sensors.length}` : '')
       : 'No sensors configured';
     const tempDisplay = formatAmbientValue(sensor.temperatureF, tempUnit, 1);
     const humidityDisplay = formatAmbientValue(sensor.humidity, humidityUnit, 0);
@@ -1907,12 +2028,25 @@
     const timerDisabledAttr = sensors.length > 1 ? '' : ' disabled';
     const timerLabel = sensors.length > 1 ? 'Pause ambient sensor rotation' : 'Ambient sensor rotation unavailable';
 
-    const sensorKey = getAmbientSensorKey(sensor, 0);
+    const sensorKey = seed.sensorKey || getAmbientSensorKey(sensor, seedIndex);
     const keyAttr = sensorKey ? ` data-active-sensor-key="${escapeHtml(sensorKey)}"` : '';
 
     const humidityCircumference = Math.round(2 * Math.PI * AMBIENT_RING.r);
-    const cachedHumidity = lookupAmbientCachedHumidity(sensor, sensorKey, nameDisplay);
-    const humidityValue = Number.isFinite(cachedHumidity) ? clamp(cachedHumidity, 0, 100) : null;
+    let humidityValue = Number.isFinite(seed.humidity)
+      ? clamp(seed.humidity, 0, 100)
+      : null;
+    if (humidityValue == null) {
+      const measuredHumidity = toNumber(sensor.humidity);
+      if (Number.isFinite(measuredHumidity)) {
+        humidityValue = clamp(measuredHumidity, 0, 100);
+      }
+    }
+    if (humidityValue == null) {
+      const cachedHumidity = lookupAmbientCachedHumidity(sensor, sensorKey, nameDisplay);
+      if (Number.isFinite(cachedHumidity)) {
+        humidityValue = clamp(cachedHumidity, 0, 100);
+      }
+    }
     const humidityOffset = humidityValue != null
       ? Math.round(humidityCircumference - (humidityValue / 100) * humidityCircumference)
       : humidityCircumference;
@@ -1920,6 +2054,10 @@
       ? ` data-last-hum="${humidityValue}"`
       : ' data-last-hum=""';
     const humiditySensorAttr = sensorKey ? ` data-sensor-key="${escapeHtml(sensorKey)}"` : '';
+    const humiditySeedAttr = hasSensors && seed.seedKey ? ` data-seed-key="${escapeHtml(seed.seedKey)}"` : '';
+    const humiditySeedIndexAttr = hasSensors && Number.isInteger(seed.index)
+      ? ` data-seed-index="${seed.index}"`
+      : '';
 
     return `
       <section class="wdash-card wdash-card--ambient${hasSensors ? '' : ' wdash-ambient--empty'}"${keyAttr}>
@@ -1951,7 +2089,7 @@
               <svg class="wdash-ambient-svg wdash-ambient-svg--humidity" viewBox="0 0 100 100" aria-hidden="true">
                 <circle class="wdash-ambient-inner-circle" cx="50" cy="50" r="${AMBIENT_RING.r - AMBIENT_RING.stroke/2 + 0.5}" fill="rgba(5,10,20,0.95)" />
                 <circle class="wdash-ambient-track" cx="50" cy="50" r="${AMBIENT_RING.r}" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="${AMBIENT_RING.stroke}" stroke-linecap="butt" />
-                <circle class="wdash-ambient-fill" cx="50" cy="50" r="${AMBIENT_RING.r}" fill="none" stroke="#5b2fe6" stroke-width="${AMBIENT_RING.stroke}" stroke-linecap="round" stroke-dasharray="${humidityCircumference}"${humidityDataAttr}${humiditySensorAttr} stroke-dashoffset="${humidityOffset}" />
+                <circle class="wdash-ambient-fill" cx="50" cy="50" r="${AMBIENT_RING.r}" fill="none" stroke="#5b2fe6" stroke-width="${AMBIENT_RING.stroke}" stroke-linecap="round" stroke-dasharray="${humidityCircumference}"${humidityDataAttr}${humiditySensorAttr}${humiditySeedAttr}${humiditySeedIndexAttr} stroke-dashoffset="${humidityOffset}" />
               </svg>
               <span class="wdash-ambient-reading wdash-ambient-reading--humidity">${escapeHtml(humidityDisplay)}</span>
               <span class="wdash-ambient-label">Humidity</span>
