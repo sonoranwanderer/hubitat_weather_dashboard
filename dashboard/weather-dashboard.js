@@ -68,6 +68,9 @@
 
   let currentBaseWidth = DEFAULT_BASE_WIDTH;
   let currentBaseHeight = DEFAULT_BASE_HEIGHT;
+  const scaleCache = { scale: null, width: null, height: null };
+  const SCALE_EPSILON = 0.002;
+  const RENDER_EPSILON = 0.5;
 
   const layoutState = {
     baseWidth: DEFAULT_BASE_WIDTH,
@@ -89,6 +92,12 @@
     width: null,
     height: null
   };
+
+  function invalidateScaleCache() {
+    scaleCache.scale = null;
+    scaleCache.width = null;
+    scaleCache.height = null;
+  }
 
   const TEMP_COLORS = [
     { max: -20, colors: ['#70a9ff', '#3c6aff'] },
@@ -742,6 +751,7 @@
       templates: compiled
     });
 
+    invalidateScaleCache();
     applyScale(root);
 
     const gridEl = dash.querySelector('.wdash-grid');
@@ -797,9 +807,13 @@
   function setupScaling(displayTile, content) {
     const root = content.querySelector('.wdash-root');
     if (!root) return;
+    invalidateScaleCache();
     applyScale(root);
     if (!scaleResizeHandler) {
-      scaleResizeHandler = () => applyScale();
+      scaleResizeHandler = () => {
+        invalidateScaleCache();
+        applyScale();
+      };
       window.addEventListener('resize', scaleResizeHandler);
     }
     setupBreakpointListeners();
@@ -809,6 +823,7 @@
     }
     scaleObserver = new ResizeObserver(() => {
       applyLayoutOverrides(lastSuccessfulPayload?.metadata);
+      invalidateScaleCache();
       applyScale(root);
     });
     scaleObserver.observe(displayTile);
@@ -817,7 +832,10 @@
   function setupBreakpointListeners() {
     if (breakpointListenersRegistered) return;
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
-    const handler = () => applyScale();
+    const handler = () => {
+      invalidateScaleCache();
+      applyScale();
+    };
     const queries = ['(max-width: 720px)', '(max-width: 1100px)'];
     let attached = false;
     for (const query of queries) {
@@ -912,6 +930,21 @@
     const scale = Math.max(0.1, Math.min(rawScale, 1));
     const renderWidth = baseWidth * scale;
     const renderHeight = baseHeight * scale;
+    const prevScale = scaleCache.scale;
+    const prevWidth = scaleCache.width;
+    const prevHeight = scaleCache.height;
+    const scaleChanged = !Number.isFinite(prevScale) || Math.abs(prevScale - scale) > SCALE_EPSILON;
+    const widthChanged = !Number.isFinite(prevWidth) || Math.abs(prevWidth - renderWidth) > RENDER_EPSILON;
+    const heightChanged = !Number.isFinite(prevHeight) || Math.abs(prevHeight - renderHeight) > RENDER_EPSILON;
+
+    if (!scaleChanged && !widthChanged && !heightChanged) {
+      return;
+    }
+
+    scaleCache.scale = scale;
+    scaleCache.width = renderWidth;
+    scaleCache.height = renderHeight;
+
     root.style.setProperty('--wdash-scale', `${scale}`);
     root.style.setProperty('--wdash-render-width', `${renderWidth}px`);
     root.style.setProperty('--wdash-render-height', `${renderHeight}px`);
