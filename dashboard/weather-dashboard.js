@@ -176,444 +176,6 @@
     paused: false
   };
 
-  const AMBIENT_DEBUG_STORAGE_KEY = 'wdashAmbientDebug';
-  const AMBIENT_DEBUG_PLACEMENT_STORAGE_KEY = 'wdashAmbientDebugPlacement';
-  const AMBIENT_DEBUG_COLLAPSED_STORAGE_KEY = 'wdashAmbientDebugCollapsed';
-  const AMBIENT_DEBUG_PLACEMENTS = new Set(['bottom', 'right']);
-
-  const ambientDebugState = {
-    enabled: true,
-    captureStacks: false,
-    events: [],
-    maxEvents: 60,
-    summaryLines: 8,
-    panel: null,
-    titleEl: null,
-    logEl: null,
-    container: null,
-    counter: 0,
-    placement: 'bottom',
-    collapsed: false
-  };
-
-  const MAX_MARKUP_DIFF_CONTEXT = 64;
-
-  try {
-    if (typeof window !== 'undefined') {
-      if (window.WDASH_AMBIENT_DEBUG === false) {
-        ambientDebugState.enabled = false;
-      } else {
-        const stored = window.localStorage?.getItem(AMBIENT_DEBUG_STORAGE_KEY);
-        if (stored === '0' || stored === 'false') {
-          ambientDebugState.enabled = false;
-        } else if (stored === '1' || stored === 'true') {
-          ambientDebugState.enabled = true;
-        }
-
-        const storedPlacement = window.localStorage?.getItem(AMBIENT_DEBUG_PLACEMENT_STORAGE_KEY);
-        if (storedPlacement && AMBIENT_DEBUG_PLACEMENTS.has(storedPlacement)) {
-          ambientDebugState.placement = storedPlacement;
-        }
-
-        const storedCollapsed = window.localStorage?.getItem(AMBIENT_DEBUG_COLLAPSED_STORAGE_KEY);
-        if (storedCollapsed === '1' || storedCollapsed === 'true') {
-          ambientDebugState.collapsed = true;
-        } else if (storedCollapsed === '0' || storedCollapsed === 'false') {
-          ambientDebugState.collapsed = false;
-        }
-      }
-    }
-  } catch (e) { /* ignore */ }
-
-  function formatAmbientDebugTime(date) {
-    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '--:--:--.---';
-    const hh = String(date.getHours()).padStart(2, '0');
-    const mm = String(date.getMinutes()).padStart(2, '0');
-    const ss = String(date.getSeconds()).padStart(2, '0');
-    const ms = String(date.getMilliseconds()).padStart(3, '0');
-    return `${hh}:${mm}:${ss}.${ms}`;
-  }
-
-  function formatAmbientDebugLine(entry) {
-    const time = formatAmbientDebugTime(entry.time);
-    const sensorLabel = entry.sensorName || entry.sensorKey || (entry.headerKey ? `header:${entry.headerKey}` : 'no-sensor');
-    const prevHum = Number.isFinite(entry.prevHumidity) ? entry.prevHumidity.toFixed(1) : '--';
-    const hum = Number.isFinite(entry.humidity) ? entry.humidity.toFixed(1) : '--';
-    const delta = Number.isFinite(entry.prevHumidity) && Number.isFinite(entry.humidity)
-      ? (entry.humidity - entry.prevHumidity).toFixed(1)
-      : '--';
-    const notes = [];
-    if (entry.trigger) notes.push(`trigger=${entry.trigger}`);
-    if (entry.prevSource) notes.push(`prev=${entry.prevSource}`);
-    if (entry.appliedChange === false) notes.push('no-change');
-    if (entry.animated) notes.push('animated');
-    if (entry.valueChanged === false) notes.push('value-unchanged');
-    if (entry.extraInfo) notes.push(entry.extraInfo);
-    if (entry.extra && typeof entry.extra === 'object') {
-      const extraKeys = Object.keys(entry.extra).filter(k => entry.extra[k] != null && entry.extra[k] !== '');
-      extraKeys.forEach(key => {
-        const value = entry.extra[key];
-        if (Array.isArray(value)) {
-          notes.push(`${key}=[${value.join(',')}]`);
-        } else if (typeof value === 'object') {
-          try {
-            notes.push(`${key}=${JSON.stringify(value)}`);
-          } catch (e) {
-            notes.push(`${key}=${String(value)}`);
-          }
-        } else {
-          notes.push(`${key}=${value}`);
-        }
-      });
-    }
-    if (entry.offset != null && entry.prevOffset != null) {
-      notes.push(`offset ${entry.prevOffset}→${entry.offset}`);
-    } else if (entry.offset != null) {
-      notes.push(`offset=${entry.offset}`);
-    }
-    if (entry.datasetLastHum != null && entry.datasetSensorKey) {
-      notes.push(`dataset=${entry.datasetSensorKey}:${entry.datasetLastHum}`);
-    }
-    const meta = notes.length ? ` ${notes.join(' ')}` : '';
-    return `[${time}] ${entry.reason || 'update'} ${sensorLabel} ${prevHum}→${hum} (Δ${delta})${meta}`;
-  }
-
-  function applyAmbientDebugPlacement(panel) {
-    if (!panel) return;
-    panel.classList.toggle('is-placement-bottom', ambientDebugState.placement === 'bottom');
-    panel.classList.toggle('is-placement-right', ambientDebugState.placement === 'right');
-  }
-
-  function applyAmbientDebugCollapsed(panel) {
-    if (!panel) return;
-    panel.classList.toggle('is-collapsed', !!ambientDebugState.collapsed);
-    panel.setAttribute('aria-expanded', ambientDebugState.collapsed ? 'false' : 'true');
-    if (ambientDebugState.logEl) {
-      ambientDebugState.logEl.setAttribute('aria-hidden', ambientDebugState.collapsed ? 'true' : 'false');
-    }
-  }
-
-  function ensureAmbientDebugPanel(container) {
-    if (!ambientDebugState.enabled) return null;
-    let host = null;
-    if (container && typeof container.closest === 'function') {
-      host = container.closest('.wdash-card--ambient') || container;
-    }
-    if (!host) host = ambientDebugState.container;
-    if (!host) return null;
-
-    if (!ambientDebugState.panel || !ambientDebugState.panel.isConnected || ambientDebugState.panel.parentElement !== host) {
-      if (ambientDebugState.panel && ambientDebugState.panel.parentElement) {
-        ambientDebugState.panel.parentElement.removeChild(ambientDebugState.panel);
-      }
-      const panel = document.createElement('div');
-      panel.className = 'wdash-ambient-debug is-empty';
-      panel.setAttribute('role', 'region');
-      panel.setAttribute('aria-label', 'Ambient humidity debug log');
-      const title = document.createElement('div');
-      title.className = 'wdash-ambient-debug__title';
-      title.textContent = 'Ambient debug';
-
-      const controls = document.createElement('div');
-      controls.className = 'wdash-ambient-debug__controls';
-
-      const collapseBtn = document.createElement('button');
-      collapseBtn.type = 'button';
-      collapseBtn.className = 'wdash-ambient-debug__button wdash-ambient-debug__button--collapse';
-      collapseBtn.textContent = 'Hide log';
-      collapseBtn.addEventListener('click', (event) => {
-        event.stopPropagation();
-        setAmbientDebugCollapsed(!ambientDebugState.collapsed, true);
-      });
-
-      const dockBtn = document.createElement('button');
-      dockBtn.type = 'button';
-      dockBtn.className = 'wdash-ambient-debug__button wdash-ambient-debug__button--dock';
-      dockBtn.textContent = 'Move panel';
-      dockBtn.addEventListener('click', (event) => {
-        event.stopPropagation();
-        const placements = Array.from(AMBIENT_DEBUG_PLACEMENTS);
-        const currentIdx = placements.indexOf(ambientDebugState.placement);
-        const nextPlacement = placements[(currentIdx + 1) % placements.length];
-        setAmbientDebugPlacement(nextPlacement, true);
-      });
-
-      controls.appendChild(collapseBtn);
-      controls.appendChild(dockBtn);
-      title.appendChild(controls);
-
-      title.addEventListener('click', () => {
-        setAmbientDebugCollapsed(!ambientDebugState.collapsed, true);
-      });
-
-      const log = document.createElement('pre');
-      log.className = 'wdash-ambient-debug__log';
-      log.textContent = 'Ambient debug waiting for updates…';
-      panel.appendChild(title);
-      panel.appendChild(log);
-      host.appendChild(panel);
-      ambientDebugState.panel = panel;
-      ambientDebugState.titleEl = title;
-      ambientDebugState.logEl = log;
-      ambientDebugState.container = host;
-      applyAmbientDebugPlacement(panel);
-      applyAmbientDebugCollapsed(panel);
-      updateAmbientDebugControlLabels();
-    }
-    applyAmbientDebugPlacement(ambientDebugState.panel);
-    applyAmbientDebugCollapsed(ambientDebugState.panel);
-    updateAmbientDebugControlLabels();
-    return ambientDebugState.panel;
-  }
-
-  function renderAmbientDebugPanel(container) {
-    if (!ambientDebugState.enabled) return;
-    const panel = ensureAmbientDebugPanel(container);
-    if (!panel || !ambientDebugState.logEl) return;
-    if (!ambientDebugState.events.length) {
-      ambientDebugState.logEl.textContent = 'Ambient debug waiting for updates…';
-      panel.classList.add('is-empty');
-      return;
-    }
-    const lines = ambientDebugState.events
-      .slice(0, Math.max(1, ambientDebugState.summaryLines | 0))
-      .map(formatAmbientDebugLine)
-      .join('\n');
-    ambientDebugState.logEl.textContent = lines;
-    panel.classList.remove('is-empty');
-  }
-
-  function recordAmbientDebugEvent(details, container, stack) {
-    if (!ambientDebugState.enabled) return;
-    const entry = {
-      id: ++ambientDebugState.counter,
-      time: new Date(),
-      ...details
-    };
-    if (ambientDebugState.captureStacks) {
-      entry.stack = stack || (typeof Error !== 'undefined' ? new Error().stack : null);
-    }
-    ambientDebugState.events.unshift(entry);
-    if (ambientDebugState.events.length > ambientDebugState.maxEvents) {
-      ambientDebugState.events.length = ambientDebugState.maxEvents;
-    }
-    renderAmbientDebugPanel(container);
-    try {
-      if (typeof console !== 'undefined' && typeof console.debug === 'function') {
-        console.debug('[WeatherDashboard][AmbientDebug]', formatAmbientDebugLine(entry), entry);
-      }
-    } catch (e) { /* ignore */ }
-  }
-
-  function updateAmbientDebugControlLabels() {
-    if (!ambientDebugState.titleEl) return;
-    const collapseBtn = ambientDebugState.titleEl.querySelector('.wdash-ambient-debug__button--collapse');
-    if (collapseBtn) {
-      collapseBtn.textContent = ambientDebugState.collapsed ? 'Show log' : 'Hide log';
-      collapseBtn.setAttribute('aria-label', ambientDebugState.collapsed ? 'Show ambient debug log' : 'Hide ambient debug log');
-    }
-    ambientDebugState.titleEl.classList.toggle('is-collapsed', ambientDebugState.collapsed);
-    const dockBtn = ambientDebugState.titleEl.querySelector('.wdash-ambient-debug__button--dock');
-    if (dockBtn) {
-      dockBtn.textContent = ambientDebugState.placement === 'bottom' ? 'Dock right' : 'Dock bottom';
-      dockBtn.setAttribute('aria-label', ambientDebugState.placement === 'bottom'
-        ? 'Move ambient debug panel to the right edge'
-        : 'Move ambient debug panel to the bottom edge');
-    }
-  }
-
-  function setAmbientDebugPlacement(placement, fromUi = false) {
-    const normalized = typeof placement === 'string' ? placement.toLowerCase() : placement;
-    const desired = AMBIENT_DEBUG_PLACEMENTS.has(normalized) ? normalized : ambientDebugState.placement;
-    if (desired === ambientDebugState.placement) return ambientDebugState.placement;
-    ambientDebugState.placement = desired;
-    applyAmbientDebugPlacement(ambientDebugState.panel);
-    updateAmbientDebugControlLabels();
-    if (fromUi) {
-      try {
-        if (typeof window !== 'undefined' && window.localStorage) {
-          window.localStorage.setItem(AMBIENT_DEBUG_PLACEMENT_STORAGE_KEY, ambientDebugState.placement);
-        }
-      } catch (e) { /* ignore */ }
-    }
-    return ambientDebugState.placement;
-  }
-
-  function setAmbientDebugCollapsed(collapsed, fromUi = false) {
-    const desired = !!collapsed;
-    if (ambientDebugState.collapsed === desired) return ambientDebugState.collapsed;
-    ambientDebugState.collapsed = desired;
-    applyAmbientDebugCollapsed(ambientDebugState.panel);
-    if (!desired) {
-      renderAmbientDebugPanel();
-    }
-    updateAmbientDebugControlLabels();
-    if (fromUi) {
-      try {
-        if (typeof window !== 'undefined' && window.localStorage) {
-          window.localStorage.setItem(AMBIENT_DEBUG_COLLAPSED_STORAGE_KEY, desired ? '1' : '0');
-        }
-      } catch (e) { /* ignore */ }
-    }
-    return ambientDebugState.collapsed;
-  }
-
-  function summarizeMarkupDiff(previousMarkup, nextMarkup) {
-    if (typeof previousMarkup !== 'string' || typeof nextMarkup !== 'string') {
-      return null;
-    }
-    if (previousMarkup === nextMarkup) {
-      return null;
-    }
-
-    const maxContext = MAX_MARKUP_DIFF_CONTEXT;
-    const prevLength = previousMarkup.length;
-    const nextLength = nextMarkup.length;
-    const maxCompare = Math.min(prevLength, nextLength);
-    let startIndex = 0;
-    while (startIndex < maxCompare && previousMarkup.charCodeAt(startIndex) === nextMarkup.charCodeAt(startIndex)) {
-      startIndex += 1;
-    }
-
-    let prevEnd = prevLength - 1;
-    let nextEnd = nextLength - 1;
-    while (
-      prevEnd >= startIndex &&
-      nextEnd >= startIndex &&
-      previousMarkup.charCodeAt(prevEnd) === nextMarkup.charCodeAt(nextEnd)
-    ) {
-      prevEnd -= 1;
-      nextEnd -= 1;
-    }
-
-    const prevSnippetStart = Math.max(0, startIndex - maxContext);
-    const nextSnippetStart = prevSnippetStart;
-    const prevSnippetEnd = Math.min(prevLength, prevEnd + 1 + maxContext);
-    const nextSnippetEnd = Math.min(nextLength, nextEnd + 1 + maxContext);
-
-    return {
-      startIndex,
-      prevLength,
-      nextLength,
-      prevSnippet: previousMarkup.slice(prevSnippetStart, prevSnippetEnd),
-      nextSnippet: nextMarkup.slice(nextSnippetStart, nextSnippetEnd)
-    };
-  }
-
-  function inferMarkupDiffHint(diff) {
-    if (!diff) return null;
-    const combined = `${diff.prevSnippet || ''} ${diff.nextSnippet || ''}`.toLowerCase();
-    if (!combined.length) return null;
-    if (combined.includes('wdash-updated') || combined.includes('updated ')) {
-      return 'updated-label-change';
-    }
-    if (combined.includes('wdash-ambient-name')) {
-      return 'ambient-name-change';
-    }
-    if (combined.includes('wdash-ambient-reading--humidity')) {
-      return 'ambient-humidity-text-change';
-    }
-    if (combined.includes('wdash-ambient-battery')) {
-      return 'ambient-battery-change';
-    }
-    if (combined.includes('wdash-ambient-debug')) {
-      return 'ambient-debug-panel-change';
-    }
-    if (combined.includes('seedmarkupversion') || combined.includes('data-last-hum')) {
-      return 'ambient-seed-attribute-change';
-    }
-    return null;
-  }
-
-  function setAmbientDebugEnabled(enabled) {
-    const desired = !!enabled;
-    if (ambientDebugState.enabled === desired) return ambientDebugState.enabled;
-    ambientDebugState.enabled = desired;
-    try {
-      if (typeof window !== 'undefined' && window.localStorage) {
-        if (desired) {
-          window.localStorage.setItem(AMBIENT_DEBUG_STORAGE_KEY, '1');
-        } else {
-          window.localStorage.setItem(AMBIENT_DEBUG_STORAGE_KEY, '0');
-        }
-      }
-    } catch (e) { /* ignore */ }
-    if (!desired) {
-      ambientDebugState.events = [];
-      if (ambientDebugState.panel && ambientDebugState.panel.parentElement) {
-        ambientDebugState.panel.parentElement.removeChild(ambientDebugState.panel);
-      }
-      ambientDebugState.panel = null;
-      ambientDebugState.titleEl = null;
-      ambientDebugState.logEl = null;
-      ambientDebugState.container = null;
-    } else {
-      renderAmbientDebugPanel(document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-ambient'));
-      applyAmbientDebugPlacement(ambientDebugState.panel);
-      applyAmbientDebugCollapsed(ambientDebugState.panel);
-      updateAmbientDebugControlLabels();
-    }
-    return ambientDebugState.enabled;
-  }
-
-  function exposeAmbientDebugApi() {
-    if (typeof window === 'undefined') return;
-    const api = window.weatherDashboardAmbientDebug || {};
-    api.enable = () => setAmbientDebugEnabled(true);
-    api.disable = () => setAmbientDebugEnabled(false);
-    api.toggle = () => setAmbientDebugEnabled(!ambientDebugState.enabled);
-    api.isEnabled = () => ambientDebugState.enabled;
-    api.setPlacement = (placement) => setAmbientDebugPlacement(placement, true);
-    api.getPlacement = () => ambientDebugState.placement;
-    api.setCollapsed = (flag) => setAmbientDebugCollapsed(flag, true);
-    api.isCollapsed = () => ambientDebugState.collapsed;
-    api.collapse = () => setAmbientDebugCollapsed(true, true);
-    api.expand = () => setAmbientDebugCollapsed(false, true);
-    api.cyclePlacement = () => {
-      const placements = Array.from(AMBIENT_DEBUG_PLACEMENTS);
-      const currentIdx = placements.indexOf(ambientDebugState.placement);
-      const nextPlacement = placements[(currentIdx + 1) % placements.length];
-      return setAmbientDebugPlacement(nextPlacement, true);
-    };
-    api.clear = () => {
-      ambientDebugState.events = [];
-      renderAmbientDebugPanel();
-      return ambientDebugState.events.length;
-    };
-    api.getEvents = () => ambientDebugState.events.map(entry => ({ ...entry }));
-    api.setMaxEvents = (count) => {
-      const value = Number(count);
-      if (Number.isFinite(value) && value > 0) {
-        ambientDebugState.maxEvents = Math.floor(value);
-        if (ambientDebugState.events.length > ambientDebugState.maxEvents) {
-          ambientDebugState.events.length = ambientDebugState.maxEvents;
-        }
-        renderAmbientDebugPanel();
-      }
-      return ambientDebugState.maxEvents;
-    };
-    api.setSummaryLines = (count) => {
-      const value = Number(count);
-      if (Number.isFinite(value) && value > 0) {
-        ambientDebugState.summaryLines = Math.floor(value);
-        renderAmbientDebugPanel();
-      }
-      return ambientDebugState.summaryLines;
-    };
-    api.setCaptureStacks = (flag) => {
-      ambientDebugState.captureStacks = !!flag;
-      return ambientDebugState.captureStacks;
-    };
-    api.log = (reason, extra = {}) => {
-      const details = { reason: reason || 'manual-log', ...extra };
-      recordAmbientDebugEvent(details, document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-ambient'));
-      return ambientDebugState.events[0];
-    };
-    window.weatherDashboardAmbientDebug = api;
-  }
-
-  exposeAmbientDebugApi();
-
   let airQualityRotation = {
     timer: null,
     sources: [], // ['outdoor', 'indoor']
@@ -861,8 +423,6 @@
     grid.dataset.empty = 'false';
     const ambientSeed = resolveAmbientSeedState(payload);
     const newMarkup = buildMarkup(payload, { ambientSeed });
-    const markupDiff = summarizeMarkupDiff(lastRenderedMarkup, newMarkup);
-    const markupDiffHint = inferMarkupDiffHint(markupDiff);
     // Only replace the grid contents when markup actually changes to avoid
     // spurious DOM rebuilds (which can make the ambient rings redraw)
     if (newMarkup !== lastRenderedMarkup) {
@@ -871,41 +431,6 @@
       ambientMarkupVersion += 1;
       layoutState.pendingApply = true;
       applyLayoutOverrides(payload?.metadata);
-      try {
-        const ambientContainer = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-ambient');
-        if (ambientContainer) {
-          const ambientCard = ambientContainer.closest('.wdash-card--ambient');
-          const headerName = ambientCard?.querySelector('.wdash-ambient-name')?.textContent || '';
-          const headerKey = headerName ? getAmbientNameKey(headerName) : null;
-          const activeKey = getAmbientKeyFromElement(ambientContainer) || getAmbientKeyFromElement(ambientCard);
-          if (ambientDebugState.enabled && (markupDiff || ambientLastInitSensorKey != null)) {
-            const debugExtra = {
-              stage: 'markup-diff',
-              markupVersion: ambientMarkupVersion,
-              hint: markupDiffHint || null,
-              diff: markupDiff || null,
-              preservedSeedKey: ambientLastInitSensorKey || null,
-              preservedIndex: ambientLastInitIndex,
-              preservedHumidity: Number.isFinite(ambientLastDisplayedHumidity.value)
-                ? ambientLastDisplayedHumidity.value
-                : null
-            };
-            recordAmbientDebugEvent({
-              reason: 'renderFromData',
-              trigger: 'markup-change',
-              humidity: null,
-              prevHumidity: null,
-              prevSource: 'markup-change',
-              sensorKey: null,
-              headerKey: null,
-              valueChanged: false,
-              appliedChange: false,
-              animated: false,
-              extra: debugExtra
-            }, ambientContainer);
-          }
-        }
-      } catch (e) { /* ignore */ }
     } else if (layoutState.pendingApply) {
       // If markup is unchanged but a previous render deferred layout application,
       // ensure the pending flag does not linger.
@@ -1789,23 +1314,12 @@
   // updateAmbientDisplay can animate from that value instead of from 0%.
   function initAmbientLastHum(container, options) {
     const opts = options && typeof options === 'object' ? options : {};
-    const reason = opts.reason || 'initAmbientLastHum';
-    const trigger = opts.trigger || 'sensor-index-change';
-    const extraBase = opts.extra && typeof opts.extra === 'object' ? { ...opts.extra } : {};
     const index = Number.isInteger(opts.index) ? opts.index : null;
     const markupVersion = Number.isInteger(opts.markupVersion) ? opts.markupVersion : null;
     const sensorKeyOverride = typeof opts.sensorKey === 'string' ? opts.sensorKey.trim() : '';
     const sensorNameKeyOverride = typeof opts.sensorNameKey === 'string' ? opts.sensorNameKey.trim() : '';
     const headerKeyOverride = typeof opts.headerKey === 'string' ? opts.headerKey.trim() : '';
     const seedKeyOverride = typeof opts.seedKey === 'string' ? opts.seedKey.trim() : '';
-
-    const extraContext = { ...extraBase };
-    if (index != null) extraContext.sensorIndex = index;
-    if (markupVersion != null) extraContext.markupVersion = markupVersion;
-    if (seedKeyOverride) extraContext.seedKey = seedKeyOverride;
-    if (sensorKeyOverride) extraContext.sensorKeyOverride = sensorKeyOverride;
-    if (sensorNameKeyOverride) extraContext.sensorNameKeyOverride = sensorNameKeyOverride;
-    if (headerKeyOverride) extraContext.headerKeyOverride = headerKeyOverride;
 
     let containerKey = null;
     let headerKey = null;
@@ -1814,48 +1328,22 @@
       if (!container) return;
       const card = container.closest('.wdash-card--ambient');
       const scope = card || container;
+
       containerKey = seedKeyOverride
         || sensorKeyOverride
         || getAmbientKeyFromElement(container)
         || getAmbientKeyFromElement(card);
       if (!containerKey && sensorNameKeyOverride) containerKey = sensorNameKeyOverride;
+
       const headerName = scope.querySelector('.wdash-ambient-name')?.textContent || '';
       headerKey = headerKeyOverride || getAmbientNameKey(headerName);
       if (!headerKey && sensorNameKeyOverride) headerKey = sensorNameKeyOverride;
 
       const circle = container.querySelector('.wdash-ambient-circle--humidity .wdash-ambient-fill');
-      if (!circle) {
-        const extra = { ...extraContext, stage: 'no-circle', containerKey, headerKey };
-        recordAmbientDebugEvent({
-          reason,
-          trigger,
-          humidity: null,
-          prevHumidity: null,
-          prevSource: 'no-circle',
-          sensorKey: containerKey || null,
-          headerKey: headerKey || null,
-          valueChanged: false,
-          appliedChange: false,
-          animated: false,
-          extra
-        }, container);
-        return;
-      }
+      if (!circle) return;
 
-      const datasetSnapshotBefore = circle.dataset
-        ? {
-            sensorKey: circle.dataset.sensorKey || '',
-            lastHum: circle.dataset.lastHum || '',
-            seedKey: circle.dataset.seedKey || '',
-            seedIndex: circle.dataset.seedIndex || '',
-            seedMarkupVersion: circle.dataset.seedMarkupVersion || ''
-          }
-        : null;
-
-      let last = null;
-      let source = null;
       const lookupKeys = [];
-      const addLookupKey = key => {
+      const addLookupKey = (key) => {
         if (key && !lookupKeys.includes(key)) lookupKeys.push(key);
       };
       addLookupKey(seedKeyOverride);
@@ -1863,24 +1351,25 @@
       addLookupKey(sensorNameKeyOverride);
       addLookupKey(containerKey);
       addLookupKey(headerKey);
-      if (datasetSnapshotBefore && datasetSnapshotBefore.sensorKey) {
-        addLookupKey(datasetSnapshotBefore.sensorKey);
+      if (circle.dataset && circle.dataset.sensorKey) {
+        addLookupKey(circle.dataset.sensorKey);
       }
+
+      let last = null;
       for (const key of lookupKeys) {
         if (key && ambientLastHumidity.has(key)) {
           const value = ambientLastHumidity.get(key);
           if (Number.isFinite(value)) {
             last = value;
-            source = `ambientLastHumidity(${key})`;
             break;
           }
         }
       }
+
       if (last == null && Number.isFinite(ambientLastDisplayedHumidity.value)) {
         const lastKey = ambientLastDisplayedHumidity.key;
         if (lookupKeys.includes(lastKey)) {
           last = ambientLastDisplayedHumidity.value;
-          source = `ambientLastDisplayedHumidity(${lastKey || 'global'})`;
         }
       }
 
@@ -1891,113 +1380,33 @@
         const offset = Math.round(circumference - dash);
         circle.setAttribute('stroke-dashoffset', String(offset));
         circle.dataset.lastHum = String(last);
-        if (containerKey) {
-          circle.dataset.sensorKey = containerKey;
-        }
-        const seedKey = seedKeyOverride || containerKey || sensorNameKeyOverride || headerKey || null;
-        if (seedKey) {
-          circle.dataset.seedKey = seedKey;
-        } else {
-          delete circle.dataset.seedKey;
-        }
-        if (index != null) {
-          circle.dataset.seedIndex = String(index);
-        } else {
-          delete circle.dataset.seedIndex;
-        }
-        if (markupVersion != null) {
-          circle.dataset.seedMarkupVersion = String(markupVersion);
-        } else {
-          delete circle.dataset.seedMarkupVersion;
-        }
-        const datasetSnapshotAfter = circle.dataset
-          ? {
-              sensorKey: circle.dataset.sensorKey || '',
-              lastHum: circle.dataset.lastHum || '',
-              seedKey: circle.dataset.seedKey || '',
-              seedIndex: circle.dataset.seedIndex || '',
-              seedMarkupVersion: circle.dataset.seedMarkupVersion || ''
-            }
-          : null;
-        const extra = { ...extraContext, stage: 'seed', containerKey, headerKey };
-        if (seedKey && !extra.seedKey) extra.seedKey = seedKey;
-        if (datasetSnapshotBefore) extra.datasetBefore = datasetSnapshotBefore;
-        if (datasetSnapshotAfter) extra.datasetAfter = datasetSnapshotAfter;
-        recordAmbientDebugEvent({
-          reason,
-          trigger,
-          humidity: Number(last),
-          prevHumidity: Number(last),
-          prevSource: source || 'seed',
-          sensorKey: containerKey || null,
-          headerKey: headerKey || null,
-          valueChanged: false,
-          appliedChange: false,
-          animated: false,
-          offset,
-          extra
-        }, container);
-      } else {
-        const seedKey = seedKeyOverride || containerKey || sensorNameKeyOverride || headerKey || null;
-        if (seedKey) {
-          circle.dataset.seedKey = seedKey;
-        } else {
-          delete circle.dataset.seedKey;
-        }
-        if (index != null) {
-          circle.dataset.seedIndex = String(index);
-        } else {
-          delete circle.dataset.seedIndex;
-        }
-        if (markupVersion != null) {
-          circle.dataset.seedMarkupVersion = String(markupVersion);
-        } else {
-          delete circle.dataset.seedMarkupVersion;
-        }
-        const datasetSnapshotAfter = circle.dataset
-          ? {
-              sensorKey: circle.dataset.sensorKey || '',
-              lastHum: circle.dataset.lastHum || '',
-              seedKey: circle.dataset.seedKey || '',
-              seedIndex: circle.dataset.seedIndex || '',
-              seedMarkupVersion: circle.dataset.seedMarkupVersion || ''
-            }
-          : null;
-        const extra = { ...extraContext, stage: 'seed-miss', containerKey, headerKey };
-        if (seedKey && !extra.seedKey) extra.seedKey = seedKey;
-        if (datasetSnapshotBefore) extra.datasetBefore = datasetSnapshotBefore;
-        if (datasetSnapshotAfter) extra.datasetAfter = datasetSnapshotAfter;
-        recordAmbientDebugEvent({
-          reason,
-          trigger,
-          humidity: null,
-          prevHumidity: null,
-          prevSource: source || 'none',
-          sensorKey: containerKey || null,
-          headerKey: headerKey || null,
-          valueChanged: false,
-          appliedChange: false,
-          animated: false,
-          extra
-        }, container);
       }
-    } catch (e) {
-      const extra = { ...extraContext, stage: 'error', containerKey, headerKey };
-      if (e && e.message) extra.error = e.message;
-      recordAmbientDebugEvent({
-        reason,
-        trigger,
-        humidity: null,
-        prevHumidity: null,
-        prevSource: 'error',
-        sensorKey: containerKey || null,
-        headerKey: headerKey || null,
-        valueChanged: false,
-        appliedChange: false,
-        animated: false,
-        extra
-      }, container);
-    }
+
+      if (containerKey) {
+        circle.dataset.sensorKey = containerKey;
+      } else {
+        delete circle.dataset.sensorKey;
+      }
+
+      const seedKey = seedKeyOverride || containerKey || sensorNameKeyOverride || headerKey || null;
+      if (seedKey) {
+        circle.dataset.seedKey = seedKey;
+      } else {
+        delete circle.dataset.seedKey;
+      }
+
+      if (index != null) {
+        circle.dataset.seedIndex = String(index);
+      } else {
+        delete circle.dataset.seedIndex;
+      }
+
+      if (markupVersion != null) {
+        circle.dataset.seedMarkupVersion = String(markupVersion);
+      } else {
+        delete circle.dataset.seedMarkupVersion;
+      }
+    } catch (e) { /* ignore */ }
   }
 
   function buildAmbientSensorCard(data, seedOptions) {
@@ -3388,15 +2797,7 @@
     ambientRotation.index = (ambientRotation.index + 1) % ambientRotation.sensors.length;
     const reason = options?.reason || 'rotation-advance';
     const trigger = options?.trigger || reason;
-    const extra = { sensorCount: ambientRotation.sensors.length };
-    if (options && typeof options === 'object') {
-      if ('invokedBy' in options) extra.invokedBy = options.invokedBy;
-      if ('timerDelay' in options) extra.timerDelay = options.timerDelay;
-      if (options.extra && typeof options.extra === 'object') {
-        extra.details = { ...options.extra };
-      }
-    }
-    updateAmbientDisplay({ reason, trigger, extra });
+    updateAmbientDisplay({ reason, trigger });
 
     if (!ambientRotation.paused && ambientRotation.sensors.length > 1) {
       scheduleAmbientRotation();
@@ -3509,13 +2910,7 @@
     if (canAutoRotate && Number.isFinite(remaining) && remaining <= 0) {
       advanceAmbientSensor({
         trigger: 'setupAmbientRotation',
-        invokedBy: 'setupAmbientRotation-expired',
-        extra: {
-          previousInterval: prevInterval,
-          newInterval: ambientRotation.interval,
-          sensorCount: ambientRotation.sensors.length,
-          remaining
-        }
+        invokedBy: 'setupAmbientRotation-expired'
       });
       updateAmbientTimerDisplay();
       return;
@@ -3524,16 +2919,7 @@
     const sensorsChanged = ambientRotation.sensors.length !== prevSensorCount;
     updateAmbientDisplay({
       reason: 'setupAmbientRotation',
-      trigger: 'payload-refresh',
-      extra: {
-        previousInterval: prevInterval,
-        newInterval: ambientRotation.interval,
-        sensorCount: ambientRotation.sensors.length,
-        sensorsChanged,
-        intervalChanged,
-        wasPaused: ambientRotation.paused,
-        remaining
-      }
+      trigger: 'payload-refresh'
     });
 
     if (!hasMultipleSensors) {
@@ -3585,50 +2971,16 @@
       if (needsSeed) {
         const previousIndex = ambientLastInitIndex;
         initAmbientLastHum(container, {
-          reason: 'initAmbientLastHum(updateAmbientDisplay)',
-          trigger: trigger || reason,
           index: ambientRotation.index,
           sensorKey,
           sensorNameKey,
           headerKey: headerKeyBefore,
           seedKey: guardSeedKey,
-          markupVersion: ambientMarkupVersion,
-          extra: {
-            callSite: 'updateAmbientDisplay',
-            previousInitIndex: previousIndex,
-            nextInitIndex: ambientRotation.index,
-            sensorKey,
-            sensorNameKey,
-            headerKey: headerKeyBefore,
-            previousSeedKey: ambientLastInitSensorKey,
-            nextSeedKey: guardSeedKey,
-            previousMarkupVersion: ambientLastInitMarkupVersion,
-            markupVersion: ambientMarkupVersion
-          }
+          markupVersion: ambientMarkupVersion
         });
         ambientLastInitIndex = ambientRotation.index;
         ambientLastInitSensorKey = guardSeedKey;
         ambientLastInitMarkupVersion = ambientMarkupVersion;
-      } else if (ambientDebugState.enabled) {
-        recordAmbientDebugEvent({
-          reason: 'initAmbientLastHum(skip)',
-          trigger: trigger || reason,
-          humidity: null,
-          prevHumidity: null,
-          prevSource: 'skip-same-sensor',
-          sensorKey: guardSeedKey || null,
-          headerKey: headerKeyBefore || null,
-          valueChanged: false,
-          appliedChange: false,
-          animated: false,
-          extra: {
-            callSite: 'updateAmbientDisplay',
-            stage: 'seed-skip',
-            sensorIndex: ambientRotation.index,
-            seedKey: guardSeedKey,
-            markupVersion: ambientMarkupVersion
-          }
-        }, container);
       }
     } catch (e) { /* ignore */ }
 
@@ -3657,24 +3009,6 @@
         });
       }
       assignAmbientKeyToElements(container, card, null);
-      recordAmbientDebugEvent({
-        reason,
-        trigger,
-        humidity: null,
-        prevHumidity: null,
-        prevSource: 'no-sensor',
-        sensorKey: null,
-        headerKey: null,
-        valueChanged: false,
-        appliedChange: false,
-        animated: false,
-        extra: {
-          state: 'no-sensor',
-          sensorIndex: ambientRotation.index,
-          sensorCount: ambientRotation.sensors.length,
-          paused: ambientRotation.paused
-        }
-      }, container);
       return;
     }
 
@@ -3842,44 +3176,6 @@
         humFill.setAttribute('stroke', '#5b2fe6');
         humTrack.setAttribute('stroke', 'rgba(255,255,255,0.12)');
 
-        const nextSwitchAt = Number.isFinite(ambientRotation.nextSwitchAt) ? ambientRotation.nextSwitchAt : null;
-        const remainingMs = nextSwitchAt != null ? nextSwitchAt - Date.now() : null;
-        const extraInfo = { sensorIndex: ambientRotation.index, paused: ambientRotation.paused };
-        if (ambientRotation.sensors.length) extraInfo.sensorCount = ambientRotation.sensors.length;
-        if (Number.isFinite(remainingMs)) extraInfo.remainingMs = remainingMs;
-        if (opts.extra && typeof opts.extra === 'object') {
-          Object.keys(opts.extra).forEach(key => {
-            const value = opts.extra[key];
-            if (value != null) extraInfo[key] = value;
-          });
-        }
-        extraInfo.cacheUpdates = [sensorKey, sensorNameKey, headerKey].filter(Boolean);
-        if (datasetSensorKeyBefore || (datasetLastHumRaw != null && datasetLastHumRaw.length)) {
-          extraInfo.datasetBefore = datasetSensorKeyBefore
-            ? `${datasetSensorKeyBefore}:${datasetLastHumRaw != null ? datasetLastHumRaw : ''}`
-            : datasetLastHumRaw;
-        }
-
-        recordAmbientDebugEvent({
-          reason,
-          trigger,
-          humidity: hum,
-          prevHumidity: Number.isFinite(prevHum) ? prevHum : null,
-          prevSource: prevHumSource,
-          sensorKey,
-          sensorName,
-          sensorNameKey,
-          headerKey,
-          animated,
-          appliedChange,
-          valueChanged,
-          offset,
-          prevOffset,
-          currentOffset: currentOffsetValue,
-          datasetLastHum: datasetLastHumRaw,
-          datasetSensorKey: datasetSensorKeyBefore || null,
-          extra: extraInfo
-        }, container);
       }
     } catch (err) {
       console.warn('[WeatherDashboard] ambient ring draw failed', err);
@@ -4569,20 +3865,6 @@
 .wdash-ambient-rotation { font-size: 0.75rem; color: #8ea0c8; }
 .wdash-ambient-rotation:empty { display: none; }
 .wdash-ambient--empty .wdash-ambient-reading { opacity: 0.6; }
-.wdash-ambient-debug { position: absolute; z-index: 15; background: rgba(4,12,32,0.92); border: 1px solid rgba(86,130,255,0.45); border-radius: 8px; padding: 6px 8px; font-family: 'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.58rem; line-height: 1.35; color: #dbe6ff; box-shadow: 0 6px 18px rgba(0,0,0,0.45); max-height: 160px; overflow: hidden; backdrop-filter: blur(4px); pointer-events: auto; display: flex; flex-direction: column; gap: 4px; }
-.wdash-ambient-debug.is-placement-bottom { left: 10px; right: 10px; bottom: 10px; top: auto; max-width: none; width: auto; }
-.wdash-ambient-debug.is-placement-right { top: 10px; bottom: 10px; right: 10px; left: auto; width: min(32%, 320px); max-width: calc(100% - 20px); max-height: calc(100% - 20px); }
-.wdash-ambient-debug.is-empty { opacity: 0.78; }
-.wdash-ambient-debug.is-collapsed { cursor: pointer; max-height: 36px; overflow: hidden; }
-.wdash-ambient-debug.is-collapsed .wdash-ambient-debug__log { display: none; }
-.wdash-ambient-debug__title { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 0.64rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #8dd0ff; }
-.wdash-ambient-debug__title.is-collapsed { color: #a2c8ff; }
-.wdash-ambient-debug__controls { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; }
-.wdash-ambient-debug__button { appearance: none; border: 1px solid rgba(141,208,255,0.5); background: rgba(18,36,72,0.6); color: #dbe6ff; font: inherit; font-size: 0.55rem; line-height: 1.1; padding: 2px 6px; border-radius: 4px; cursor: pointer; text-transform: none; letter-spacing: 0; transition: background 120ms ease, border-color 120ms ease; }
-.wdash-ambient-debug__button:hover { background: rgba(33,58,112,0.8); border-color: rgba(141,208,255,0.8); }
-.wdash-ambient-debug__button:active { background: rgba(14,28,60,0.9); }
-.wdash-ambient-debug__button:focus-visible { outline: 2px solid rgba(141,208,255,0.8); outline-offset: 2px; }
-.wdash-ambient-debug__log { margin: 0; white-space: pre-wrap; word-break: break-word; overflow-y: auto; flex: 1 1 auto; }
 .wdash-rain-main { display: grid; grid-template-columns: minmax(0, 0.85fr) 1fr 1fr; gap: 18px; align-items: stretch; flex: 1; height: 100%; }
 .wdash-rain-col { min-height: 0; }
 .wdash-rain-col--drop { display: flex; align-items: center; justify-content: center; }
