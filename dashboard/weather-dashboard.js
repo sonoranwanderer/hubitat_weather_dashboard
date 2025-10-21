@@ -209,9 +209,22 @@
   // track which ambient index we've initialized into the DOM to avoid re-init loops
   let ambientLastInitIndex = null;
   let ambientLastInitSensorKey = null;
-  let ambientLastInitMarkupVersion = -1;
-  let ambientMarkupVersion = 0;
-  let lastRenderedMarkup = null;
+
+  const CARD_RENDERERS = [
+    { key: 'tempWind', selector: '.wdash-card--temp-wind', build: data => buildTempWindCard(data) },
+    { key: 'ambient', selector: '.wdash-card--ambient', build: (data, opts) => buildAmbientSensorCard(data, opts?.ambientSeed) },
+    { key: 'lightning', selector: '.wdash-card--lightning', build: data => buildLightningCard(data) },
+    { key: 'pressure', selector: '.wdash-card--pressure', build: data => buildPressureCard(data) },
+    { key: 'rain', selector: '.wdash-card--rain', build: data => buildRainCard(data) },
+    { key: 'solar', selector: '.wdash-card--solar-moon', build: data => buildSolarSunCard(data) },
+    { key: 'air', selector: '.wdash-card--air', build: data => buildAirQualityCard(data) }
+  ];
+
+  const renderState = {
+    mounted: false,
+    markupByKey: new Map(),
+    order: CARD_RENDERERS.map(card => card.key)
+  };
 
   const dataTileObservers = new Map();
   let domObserver = null;
@@ -410,7 +423,8 @@
     if (!payload) {
       grid.dataset.empty = 'true';
       grid.innerHTML = `<div class="wdash-empty">Waiting for weather data…</div>`;
-      lastRenderedMarkup = null;
+      renderState.mounted = false;
+      renderState.markupByKey.clear();
       clearAmbientRotation();
       toggleSourceTileMask(false);
       stopHubClock();
@@ -421,19 +435,42 @@
     lastSuccessfulPayload = payload;
 
     grid.dataset.empty = 'false';
-    const ambientSeed = resolveAmbientSeedState(payload);
-    const newMarkup = buildMarkup(payload, { ambientSeed });
-    // Only replace the grid contents when markup actually changes to avoid
-    // spurious DOM rebuilds (which can make the ambient rings redraw)
-    if (newMarkup !== lastRenderedMarkup) {
-      grid.innerHTML = newMarkup;
-      lastRenderedMarkup = newMarkup;
-      ambientMarkupVersion += 1;
+    const ambientSeed = renderState.mounted ? null : { index: ambientRotation.index || 0 };
+    const cardMarkupList = buildCardMarkupList(payload, { ambientSeed });
+
+    let cardsChanged = false;
+
+    if (!renderState.mounted) {
+      grid.innerHTML = cardMarkupList.map(card => card.markup).join('');
+      renderState.mounted = true;
+      renderState.markupByKey.clear();
+      cardMarkupList.forEach(card => {
+        renderState.markupByKey.set(card.key, card.markup);
+      });
+      cardsChanged = true;
+    } else {
+      cardMarkupList.forEach(card => {
+        const previousMarkup = renderState.markupByKey.get(card.key) || null;
+        if (card.key === 'ambient') {
+          const ensured = ensureCardPresence(grid, card, cardMarkupList);
+          if (ensured) {
+            renderState.markupByKey.set(card.key, card.markup);
+          }
+          return;
+        }
+
+        if (previousMarkup !== card.markup) {
+          replaceCardMarkup(grid, card, cardMarkupList);
+          renderState.markupByKey.set(card.key, card.markup);
+          cardsChanged = true;
+        }
+      });
+    }
+
+    if (cardsChanged) {
       layoutState.pendingApply = true;
       applyLayoutOverrides(payload?.metadata);
     } else if (layoutState.pendingApply) {
-      // If markup is unchanged but a previous render deferred layout application,
-      // ensure the pending flag does not linger.
       layoutState.pendingApply = false;
     }
     setupAmbientRotation(payload);
@@ -450,90 +487,6 @@
       window.addEventListener('resize', () => { applyAmbientRingSizing(); applyOutdoorRingSizing(); });
     }
     toggleSourceTileMask(true);
-  }
-
-  function resolveAmbientSeedState(data) {
-    const sensors = Array.isArray(data?.ambientSensors) ? data.ambientSensors.filter(Boolean) : [];
-    if (!sensors.length) return null;
-
-    const normalized = sensors.map((sensor, index) => ({
-      sensor,
-      index,
-      sensorKey: getAmbientSensorKey(sensor, index),
-      nameKey: sensor && sensor.name != null ? getAmbientNameKey(sensor.name) : null
-    }));
-
-    const preferredKeys = [];
-    if (ambientLastInitSensorKey) preferredKeys.push(ambientLastInitSensorKey);
-    if (ambientLastDisplayedHumidity.key) preferredKeys.push(ambientLastDisplayedHumidity.key);
-
-    if (Array.isArray(ambientRotation.sensors) && ambientRotation.sensors.length) {
-      const rotationIndex = Number.isInteger(ambientRotation.index) ? ambientRotation.index : null;
-      if (rotationIndex != null) {
-        preferredKeys.push(`index:${rotationIndex}`);
-        const rotationSensor = ambientRotation.sensors[rotationIndex];
-        if (rotationSensor) {
-          const rotationKey = getAmbientSensorKey(rotationSensor, rotationIndex);
-          if (rotationKey) preferredKeys.push(rotationKey);
-          if (rotationSensor.name != null) {
-            const rotationNameKey = getAmbientNameKey(rotationSensor.name);
-            if (rotationNameKey) preferredKeys.push(rotationNameKey);
-          }
-        }
-      }
-    }
-
-    const seen = new Set();
-    const dedupedKeys = [];
-    for (const key of preferredKeys) {
-      if (!key) continue;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      dedupedKeys.push(key);
-    }
-
-    const matchByKey = key => normalized.find(item => {
-      if (!item) return false;
-      if (item.sensorKey && item.sensorKey === key) return true;
-      if (item.nameKey && item.nameKey === key) return true;
-      return `index:${item.index}` === key;
-    });
-
-    for (const key of dedupedKeys) {
-      const match = matchByKey(key);
-      if (match) {
-        return {
-          index: match.index,
-          sensorKey: match.sensorKey || match.nameKey || key,
-          humidity: normalizeHumidityValue(match.sensor?.humidity),
-          seedKey: match.sensorKey || match.nameKey || key
-        };
-      }
-    }
-
-    const rotationIndex = Number.isInteger(ambientRotation.index) ? ambientRotation.index : null;
-    if (rotationIndex != null && rotationIndex >= 0 && rotationIndex < normalized.length) {
-      const match = normalized[rotationIndex];
-      return {
-        index: match.index,
-        sensorKey: match.sensorKey || match.nameKey || `index:${match.index}`,
-        humidity: normalizeHumidityValue(match.sensor?.humidity),
-        seedKey: match.sensorKey || match.nameKey || `index:${match.index}`
-      };
-    }
-
-    const fallback = normalized[0];
-    return {
-      index: fallback.index,
-      sensorKey: fallback.sensorKey || fallback.nameKey || `index:${fallback.index}`,
-      humidity: normalizeHumidityValue(fallback.sensor?.humidity),
-      seedKey: fallback.sensorKey || fallback.nameKey || `index:${fallback.index}`
-    };
-  }
-
-  function normalizeHumidityValue(value) {
-    const num = toNumber(value);
-    return Number.isFinite(num) ? num : null;
   }
 
   function resolveAmbientSeedOptions(sensors, seedOptions) {
@@ -1072,20 +1025,58 @@
     return Object.keys(result).length ? result : null;
   }
 
-  function buildMarkup(data, options) {
+  function buildCardMarkupList(data, options) {
     const opts = options && typeof options === 'object' ? options : {};
-    const ambientSeed = opts.ambientSeed || null;
-    return `
-      ${[
-        buildTempWindCard(data),
-        buildAmbientSensorCard(data, ambientSeed),
-        buildLightningCard(data),
-        buildPressureCard(data),
-        buildRainCard(data),
-        buildSolarSunCard(data),
-        buildAirQualityCard(data)
-      ].join('')}
-    `;
+    return CARD_RENDERERS.map(card => ({
+      key: card.key,
+      selector: card.selector,
+      markup: card.build(data, opts)
+    }));
+  }
+
+  function createElementFromMarkup(markup) {
+    if (typeof markup !== 'string' || !markup.trim().length) return null;
+    const template = document.createElement('div');
+    template.innerHTML = markup.trim();
+    return template.firstElementChild || null;
+  }
+
+  function ensureCardPresence(grid, card, cardMarkupList) {
+    if (!grid || !card) return null;
+    let existing = grid.querySelector(card.selector);
+    if (existing) return existing;
+
+    const element = createElementFromMarkup(card.markup);
+    if (!element) return null;
+
+    const insertionIndex = renderState.order.indexOf(card.key);
+    let anchor = null;
+    for (let idx = insertionIndex + 1; idx < renderState.order.length; idx += 1) {
+      const nextKey = renderState.order[idx];
+      const nextCard = cardMarkupList.find(item => item.key === nextKey);
+      if (!nextCard) continue;
+      const node = grid.querySelector(nextCard.selector);
+      if (node) {
+        anchor = node;
+        break;
+      }
+    }
+
+    if (anchor) {
+      grid.insertBefore(element, anchor);
+    } else {
+      grid.appendChild(element);
+    }
+
+    return element;
+  }
+
+  function replaceCardMarkup(grid, card, cardMarkupList) {
+    const existing = ensureCardPresence(grid, card, cardMarkupList);
+    if (!existing) return;
+    const replacement = createElementFromMarkup(card.markup);
+    if (!replacement) return;
+    existing.replaceWith(replacement);
   }
 
   function buildTempWindCard(data) {
@@ -1315,7 +1306,6 @@
   function initAmbientLastHum(container, options) {
     const opts = options && typeof options === 'object' ? options : {};
     const index = Number.isInteger(opts.index) ? opts.index : null;
-    const markupVersion = Number.isInteger(opts.markupVersion) ? opts.markupVersion : null;
     const sensorKeyOverride = typeof opts.sensorKey === 'string' ? opts.sensorKey.trim() : '';
     const sensorNameKeyOverride = typeof opts.sensorNameKey === 'string' ? opts.sensorNameKey.trim() : '';
     const headerKeyOverride = typeof opts.headerKey === 'string' ? opts.headerKey.trim() : '';
@@ -1401,11 +1391,6 @@
         delete circle.dataset.seedIndex;
       }
 
-      if (markupVersion != null) {
-        circle.dataset.seedMarkupVersion = String(markupVersion);
-      } else {
-        delete circle.dataset.seedMarkupVersion;
-      }
     } catch (e) { /* ignore */ }
   }
 
@@ -2975,12 +2960,10 @@
           sensorKey,
           sensorNameKey,
           headerKey: headerKeyBefore,
-          seedKey: guardSeedKey,
-          markupVersion: ambientMarkupVersion
+          seedKey: guardSeedKey
         });
         ambientLastInitIndex = ambientRotation.index;
         ambientLastInitSensorKey = guardSeedKey;
-        ambientLastInitMarkupVersion = ambientMarkupVersion;
       }
     } catch (e) { /* ignore */ }
 
