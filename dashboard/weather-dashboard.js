@@ -416,7 +416,11 @@
     lastSuccessfulPayload = payload;
 
     grid.dataset.empty = 'false';
-    const newMarkup = buildMarkup(payload);
+    const ambientSeed = resolveAmbientSeedState(payload);
+    if (ambientSeed && Number.isInteger(ambientSeed.index)) {
+      ambientRotation.index = ambientSeed.index;
+    }
+    const newMarkup = buildMarkup(payload, { ambientSeed });
     // Only replace the grid contents when markup actually changes to avoid
     // spurious DOM rebuilds (which can make the ambient rings redraw)
     if (grid.innerHTML !== newMarkup) {
@@ -950,11 +954,70 @@
     return Object.keys(result).length ? result : null;
   }
 
-  function buildMarkup(data) {
+  function resolveAmbientSeedState(data) {
+    const sensors = Array.isArray(data?.ambientSensors) ? data.ambientSensors.filter(Boolean) : [];
+    if (!sensors.length) return null;
+
+    const normalizedSensors = sensors.map((sensor, index) => ({ sensor, index }));
+    const desiredKeys = [];
+
+    const previousSensor = Array.isArray(ambientRotation.sensors)
+      ? ambientRotation.sensors[ambientRotation.index] || null
+      : null;
+    if (previousSensor) {
+      const prevKey = getAmbientSensorKey(previousSensor, ambientRotation.index);
+      if (prevKey) desiredKeys.push(prevKey);
+      if (previousSensor.name != null) {
+        const prevNameKey = getAmbientNameKey(previousSensor.name);
+        if (prevNameKey) desiredKeys.push(prevNameKey);
+      }
+    }
+
+    if (ambientLastDisplayedHumidity.key) {
+      desiredKeys.push(ambientLastDisplayedHumidity.key);
+    }
+
+    let index = Number.isInteger(ambientRotation.index) ? ambientRotation.index : 0;
+    if (index < 0) index = 0;
+    if (index >= normalizedSensors.length) index = normalizedSensors.length - 1;
+
+    if (desiredKeys.length) {
+      const keySet = new Set(desiredKeys.filter(Boolean).map(key => String(key).trim()).filter(Boolean));
+      const match = normalizedSensors.find(item => {
+        const key = getAmbientSensorKey(item.sensor, item.index);
+        if (key && keySet.has(key)) return true;
+        if (item.sensor && item.sensor.name != null) {
+          const nameKey = getAmbientNameKey(item.sensor.name);
+          if (nameKey && keySet.has(nameKey)) return true;
+        }
+        return false;
+      });
+      if (match) {
+        index = match.index;
+      }
+    }
+
+    const active = normalizedSensors[index] || normalizedSensors[0];
+    const sensorKey = getAmbientSensorKey(active.sensor, active.index);
+    let humidity = Number.isFinite(active.sensor?.humidity) ? active.sensor.humidity : null;
+    if (!Number.isFinite(humidity)) {
+      const cached = lookupAmbientCachedHumidity(active.sensor, sensorKey, active.sensor?.name);
+      if (Number.isFinite(cached)) humidity = cached;
+    }
+
+    return {
+      index: active.index,
+      sensorKey: sensorKey || null,
+      humidity: Number.isFinite(humidity) ? humidity : null
+    };
+  }
+
+  function buildMarkup(data, options = {}) {
+    const opts = options && typeof options === 'object' ? options : {};
     return `
       ${[
         buildTempWindCard(data),
-        buildAmbientSensorCard(data),
+        buildAmbientSensorCard(data, opts.ambientSeed),
         buildLightningCard(data),
         buildPressureCard(data),
         buildRainCard(data),
@@ -1220,10 +1283,15 @@
     } catch (e) { /* ignore */ }
   }
 
-  function buildAmbientSensorCard(data) {
+  function buildAmbientSensorCard(data, seedOptions) {
     const sensors = Array.isArray(data.ambientSensors) ? data.ambientSensors.filter(Boolean) : [];
     const hasSensors = sensors.length > 0;
-    const sensor = sensors[0] || {};
+    const seed = seedOptions && typeof seedOptions === 'object' ? seedOptions : null;
+    let index = hasSensors ? 0 : -1;
+    if (hasSensors && seed && Number.isInteger(seed.index)) {
+      index = Math.max(0, Math.min(sensors.length - 1, seed.index));
+    }
+    const sensor = index >= 0 ? sensors[index] || {} : {};
     const tempUnit = data.ambientTemperatureUnit || '°F';
     const humidityUnit = data.ambientHumidityUnit || '%';
     const sensorName = typeof sensor.name === 'string' ? sensor.name.trim() : '';
@@ -1231,10 +1299,13 @@
       ? (sensorName.length ? sensorName : 'Ambient Sensor')
       : 'Ambient Sensors';
     const rotationText = hasSensors
-      ? (sensors.length > 1 ? `Sensor 1 of ${sensors.length}` : '')
+      ? (sensors.length > 1 ? `Sensor ${index + 1} of ${sensors.length}` : '')
       : 'No sensors configured';
     const tempDisplay = formatAmbientValue(sensor.temperatureF, tempUnit, 1);
-    const humidityDisplay = formatAmbientValue(sensor.humidity, humidityUnit, 0);
+    const humiditySource = Number.isFinite(sensor.humidity)
+      ? sensor.humidity
+      : (seed && Number.isFinite(seed.humidity) ? seed.humidity : null);
+    const humidityDisplay = formatAmbientValue(humiditySource, humidityUnit, 0);
     const batteryLevel = toNumber(sensor.battery);
     const batteryLabel = sensorName.length ? sensorName : 'Ambient sensor';
     const batterySlot = buildBatterySlot(batteryLevel, {
@@ -1246,12 +1317,17 @@
     const timerDisabledAttr = sensors.length > 1 ? '' : ' disabled';
     const timerLabel = sensors.length > 1 ? 'Pause ambient sensor rotation' : 'Ambient sensor rotation unavailable';
 
-    const sensorKey = getAmbientSensorKey(sensor, 0);
+    const sensorKey = getAmbientSensorKey(sensor, index >= 0 ? index : 0) || (seed && seed.sensorKey) || '';
     const keyAttr = sensorKey ? ` data-active-sensor-key="${escapeHtml(sensorKey)}"` : '';
 
     const humidityCircumference = Math.round(2 * Math.PI * AMBIENT_RING.r);
-    const cachedHumidity = lookupAmbientCachedHumidity(sensor, sensorKey, nameDisplay);
-    const humidityValue = Number.isFinite(cachedHumidity) ? clamp(cachedHumidity, 0, 100) : null;
+    let humidityValue = null;
+    if (seed && Number.isFinite(seed.humidity)) {
+      humidityValue = clamp(seed.humidity, 0, 100);
+    } else {
+      const cachedHumidity = lookupAmbientCachedHumidity(sensor, sensorKey, nameDisplay);
+      if (Number.isFinite(cachedHumidity)) humidityValue = clamp(cachedHumidity, 0, 100);
+    }
     const humidityOffset = humidityValue != null
       ? Math.round(humidityCircumference - (humidityValue / 100) * humidityCircumference)
       : humidityCircumference;
