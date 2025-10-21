@@ -91,7 +91,8 @@
     normalizedAreas: { ...DEFAULT_NORMALIZED_AREAS },
     trackUnit: DEFAULT_TRACK_UNIT,
     signature: null,
-    pendingApply: false
+    pendingApply: false,
+    lastDiagnostics: null
   };
 
   const TEMP_COLORS = [
@@ -572,11 +573,15 @@
     }
   }
 
-  function measureDisplayTileBaseDimensions() {
+  function getDisplayTileHostElement() {
     const root = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-root');
     const displayTile = byId(DISPLAY_TILE_ID);
     const content = displayTile ? findContentElement(displayTile) : null;
-    const host = root?.parentElement || root || content || displayTile;
+    return root?.parentElement || root || content || displayTile || null;
+  }
+
+  function measureDisplayTileBaseDimensions() {
+    const host = getDisplayTileHostElement();
     if (!host) return null;
     let rect = null;
     if (typeof host.getBoundingClientRect === 'function') {
@@ -648,6 +653,237 @@
     tileMeasurementState.height = null;
   }
 
+  function safeGetElementRect(element) {
+    if (!element || typeof element.getBoundingClientRect !== 'function') return null;
+    try {
+      return element.getBoundingClientRect();
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function describeElementForDiagnostics(element) {
+    if (!element) return '(none)';
+    const tag = element.tagName ? element.tagName.toLowerCase() : element.nodeName || 'unknown';
+    const idPart = element.id ? `#${element.id}` : '';
+    const classPart = typeof element.className === 'string' && element.className.trim()
+      ? '.' + element.className.trim().split(/\s+/).join('.')
+      : '';
+    return `<${tag}${idPart}${classPart}>`;
+  }
+
+  function parseDimensionValue(value) {
+    if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+      return value;
+    }
+    if (typeof value === 'string') {
+      const match = value.trim().match(/^(-?\d+(?:\.\d+)?)/);
+      if (match) {
+        const numeric = Number(match[1]);
+        if (Number.isFinite(numeric) && numeric > 0) {
+          return numeric;
+        }
+      }
+    }
+    return null;
+  }
+
+  function determineDimensionSource({ sectionValue, fallbackValue, measurementValue }) {
+    if (parseDimensionValue(sectionValue) != null) return 'section-override';
+    if (parseDimensionValue(fallbackValue) != null) return 'layout-override';
+    if (Number.isFinite(measurementValue)) return 'measured';
+    return 'default';
+  }
+
+  function shouldLogLayoutDiagnostics(options = {}) {
+    if (options.force === true) return true;
+    if (IS_TEST_ENV) return false;
+    const target = typeof window !== 'undefined' ? window : globalThis;
+    if (target && target.__WDASH_DEBUG_LAYOUT__ === true) {
+      return true;
+    }
+    return layoutState.forceDiagnostics === true;
+  }
+
+  function createPercentDiagnosticsCollector() {
+    return {
+      rows: [],
+      columns: [],
+      recordRow(entry) {
+        this.rows.push(entry);
+      },
+      recordColumn(entry) {
+        this.columns.push(entry);
+      }
+    };
+  }
+
+  function buildLayoutDiagnosticsContext(options = {}) {
+    const host = options.hostElement || getDisplayTileHostElement();
+    const hostRect = safeGetElementRect(host);
+    const percentCollector = options.percentCollector || null;
+    const perBreakpoint = {};
+    const baseSources = {};
+    if (options.baseDimensions) {
+      for (const key of BREAKPOINTS) {
+        const dims = options.baseDimensions[key] || {};
+        perBreakpoint[key] = {
+          width: Number(dims.width) || null,
+          height: Number(dims.height) || null
+        };
+        baseSources[key] = options.baseSourceMap?.[key] || {
+          width: 'unknown',
+          height: 'unknown'
+        };
+      }
+    }
+
+    const rowCounts = options.rowCounts || {};
+
+    const context = {
+      timestamp: new Date().toISOString(),
+      host: {
+        description: describeElementForDiagnostics(host),
+        width: hostRect ? Number(hostRect.width) : null,
+        height: hostRect ? Number(hostRect.height) : null
+      },
+      measurement: {
+        raw: options.measurement || null,
+        sanitized: {
+          width: options.measuredWidth ?? null,
+          height: options.measuredHeight ?? null
+        }
+      },
+      base: {
+        width: options.baseWidth ?? null,
+        height: options.baseHeight ?? null,
+        perBreakpoint,
+        sources: baseSources,
+        activeBreakpoint: options.activeBreakpoint || getActiveBreakpoint()
+      },
+      trackUnit: options.trackUnit || layoutState.trackUnit,
+      trackUnitSource: options.trackUnitSource || 'state',
+      gaps: options.gaps || {},
+      columns: {
+        raw: options.columnsRaw || {},
+        applied: options.columnsApplied || {}
+      },
+      rows: {
+        raw: options.rowsRaw || {},
+        applied: options.rowsApplied || {},
+        counts: rowCounts
+      },
+      percentTracks: percentCollector
+        ? {
+            columns: percentCollector.columns.slice(),
+            rows: percentCollector.rows.slice()
+          }
+        : null,
+      layoutSignature: layoutState.signature,
+      pendingApply: layoutState.pendingApply,
+      currentBase: { width: currentBaseWidth, height: currentBaseHeight },
+      tileMeasurementState: { ...tileMeasurementState }
+    };
+
+    return context;
+  }
+
+  function logLayoutDiagnostics(context, options = {}) {
+    const payload = context || layoutState.lastDiagnostics || buildLayoutDiagnosticsContext();
+    if (!payload) {
+      if (typeof console !== 'undefined') {
+        console.warn('[WeatherDashboard] No layout diagnostics available');
+      }
+      return payload;
+    }
+    if (!shouldLogLayoutDiagnostics(options)) {
+      return payload;
+    }
+    const logger = typeof console !== 'undefined' ? console : null;
+    if (!logger) return payload;
+    const groupFn = typeof logger.groupCollapsed === 'function'
+      ? logger.groupCollapsed.bind(logger)
+      : logger.group ? logger.group.bind(logger) : null;
+    const groupEndFn = typeof logger.groupEnd === 'function' ? logger.groupEnd.bind(logger) : null;
+    const tableFn = typeof logger.table === 'function' ? logger.table.bind(logger) : null;
+    const logFn = typeof logger.log === 'function' ? logger.log.bind(logger) : () => {};
+
+    const title = `[WeatherDashboard] Layout diagnostics (${payload.base.activeBreakpoint || 'desktop'})`;
+    if (groupFn) {
+      groupFn(title);
+    } else {
+      logFn(title);
+    }
+
+    logFn('Host element:', payload.host.description);
+    logFn('Host size:', `${payload.host.width ?? 'n/a'} × ${payload.host.height ?? 'n/a'}`);
+    logFn('Measurement (raw):', payload.measurement.raw);
+    logFn('Measurement (sanitized):', payload.measurement.sanitized);
+    logFn('Base dimensions per breakpoint:', payload.base.perBreakpoint);
+    logFn('Base sources:', payload.base.sources);
+    logFn('Active base size:', {
+      width: payload.base.width,
+      height: payload.base.height,
+      currentBase: payload.currentBase
+    });
+    logFn('Track unit:', payload.trackUnit, `(source: ${payload.trackUnitSource})`);
+    logFn('Gaps:', payload.gaps);
+    logFn('Layout signature:', payload.layoutSignature);
+    logFn('Pending apply:', payload.pendingApply);
+
+    if (payload.percentTracks && payload.percentTracks.columns.length) {
+      for (const entry of payload.percentTracks.columns) {
+        logFn(`Percent columns (${entry.breakpoint}) raw:`, entry.raw);
+        const rows = entry.percents.map((percent, index) => ({
+          track: index + 1,
+          percent,
+          pixels: Number(entry.pixels[index].toFixed(3))
+        }));
+        if (tableFn) {
+          tableFn(rows);
+        } else {
+          logFn('Columns:', rows);
+        }
+        logFn('Column context:', {
+          available: entry.available,
+          baseWidth: entry.baseWidth,
+          columnGap: entry.columnGap,
+          horizontalPadding: entry.horizontalPadding,
+          totalPercent: entry.totalPercent
+        });
+      }
+    }
+
+    if (payload.percentTracks && payload.percentTracks.rows.length) {
+      for (const entry of payload.percentTracks.rows) {
+        logFn(`Percent rows (${entry.breakpoint}) raw:`, entry.raw);
+        const rows = entry.percents.map((percent, index) => ({
+          row: index + 1,
+          percent,
+          pixels: Number(entry.pixels[index].toFixed(3))
+        }));
+        if (tableFn) {
+          tableFn(rows);
+        } else {
+          logFn('Rows:', rows);
+        }
+        logFn('Row context:', {
+          available: entry.available,
+          baseHeight: entry.baseHeight,
+          rowGap: entry.rowGap,
+          verticalPadding: entry.verticalPadding,
+          totalPercent: entry.totalPercent
+        });
+      }
+    }
+
+    if (groupEndFn) {
+      groupEndFn();
+    }
+
+    return payload;
+  }
+
   function applyLayoutOverrides(metadata) {
     const root = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-root');
     const dash = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash');
@@ -656,6 +892,7 @@
       return;
     }
 
+    const hostElement = getDisplayTileHostElement();
     const rawLayout = metadata ? (metadata.layout != null ? metadata.layout : metadata.layoutOverride) : null;
     const override = rawLayout ? extractLayoutOverride(rawLayout) : null;
     const overrideLayout = isPlainObject(override) ? override : null;
@@ -676,13 +913,15 @@
     const measuredWidth = sanitizeDimension(measurement.width, DEFAULT_BASE_WIDTH);
     const measuredHeight = sanitizeDimension(measurement.height, DEFAULT_BASE_HEIGHT);
 
-    const trackUnit = normalizeTrackUnit(
+    const trackUnitToken = (
       overrideLayout?.trackUnit
         ?? overrideLayout?.unit
         ?? overrideLayout?.units
         ?? overrideLayout?.dimensionUnit
-        ?? layoutState.trackUnit
+        ?? null
     );
+    const trackUnit = normalizeTrackUnit(trackUnitToken != null ? trackUnitToken : layoutState.trackUnit);
+    const trackUnitSource = trackUnitToken != null ? 'layout-override' : 'state';
 
     const layoutForCompile = {};
     let inheritedRows = null;
@@ -777,6 +1016,43 @@
       mobile: { width: mobileWidth, height: mobileHeight }
     };
 
+    const desktopBaseSource = {
+      width: determineDimensionSource({
+        sectionValue: desktopSection?.baseWidth,
+        fallbackValue: overrideLayout?.baseWidth,
+        measurementValue: measurement.width
+      }),
+      height: determineDimensionSource({
+        sectionValue: desktopSection?.baseHeight,
+        fallbackValue: overrideLayout?.baseHeight,
+        measurementValue: measurement.height
+      })
+    };
+
+    const tabletBaseSource = {
+      width: parseDimensionValue(tabletSection?.baseWidth) != null
+        ? 'section-override'
+        : `inherit-${desktopBaseSource.width}`,
+      height: parseDimensionValue(tabletSection?.baseHeight) != null
+        ? 'section-override'
+        : `inherit-${desktopBaseSource.height}`
+    };
+
+    const mobileBaseSource = {
+      width: parseDimensionValue(mobileSection?.baseWidth) != null
+        ? 'section-override'
+        : `inherit-${tabletBaseSource.width}`,
+      height: parseDimensionValue(mobileSection?.baseHeight) != null
+        ? 'section-override'
+        : `inherit-${tabletBaseSource.height}`
+    };
+
+    const baseSourceMap = {
+      desktop: desktopBaseSource,
+      tablet: tabletBaseSource,
+      mobile: mobileBaseSource
+    };
+
     const baseWidth = desktopWidth;
     const baseHeight = desktopHeight;
 
@@ -788,12 +1064,15 @@
     let tabletRows = compiled.tablet.rows;
     let mobileRows = compiled.mobile.rows;
 
+    const percentCollector = trackUnit === 'percent' ? createPercentDiagnosticsCollector() : null;
+
     if (trackUnit === 'percent') {
       const adjustedDesktopColumns = adjustPercentColumnTracks(
         desktopColumns,
         baseDimensions.desktop.width,
         desktopGap,
-        desktopGap
+        desktopGap,
+        percentCollector && { collector: percentCollector, breakpoint: 'desktop' }
       );
       if (adjustedDesktopColumns) desktopColumns = adjustedDesktopColumns;
 
@@ -801,7 +1080,8 @@
         tabletColumns,
         baseDimensions.tablet.width,
         tabletGap,
-        tabletGap
+        tabletGap,
+        percentCollector && { collector: percentCollector, breakpoint: 'tablet' }
       );
       if (adjustedTabletColumns) tabletColumns = adjustedTabletColumns;
 
@@ -809,7 +1089,8 @@
         mobileColumns,
         baseDimensions.mobile.width,
         mobileGap,
-        mobileGap
+        mobileGap,
+        percentCollector && { collector: percentCollector, breakpoint: 'mobile' }
       );
       if (adjustedMobileColumns) mobileColumns = adjustedMobileColumns;
 
@@ -818,7 +1099,8 @@
         compiled.desktop.rowCount,
         baseDimensions.desktop.height,
         desktopGap,
-        desktopGap
+        desktopGap,
+        percentCollector && { collector: percentCollector, breakpoint: 'desktop' }
       );
       if (adjustedDesktopRows) desktopRows = adjustedDesktopRows;
 
@@ -827,7 +1109,8 @@
         compiled.tablet.rowCount,
         baseDimensions.tablet.height,
         tabletGap,
-        tabletGap
+        tabletGap,
+        percentCollector && { collector: percentCollector, breakpoint: 'tablet' }
       );
       if (adjustedTabletRows) tabletRows = adjustedTabletRows;
 
@@ -836,7 +1119,8 @@
         compiled.mobile.rowCount,
         baseDimensions.mobile.height,
         mobileGap,
-        mobileGap
+        mobileGap,
+        percentCollector && { collector: percentCollector, breakpoint: 'mobile' }
       );
       if (adjustedMobileRows) mobileRows = adjustedMobileRows;
     }
@@ -921,6 +1205,46 @@
     } else {
       layoutState.pendingApply = true;
     }
+
+    const diagnosticsContext = buildLayoutDiagnosticsContext({
+      hostElement,
+      measurement,
+      measuredWidth,
+      measuredHeight,
+      baseWidth,
+      baseHeight,
+      baseDimensions,
+      baseSourceMap,
+      trackUnit,
+      trackUnitSource,
+      gaps,
+      columnsRaw: {
+        desktop: desktopColumnsRaw,
+        tablet: tabletColumnsRaw,
+        mobile: mobileColumnsRaw
+      },
+      columnsApplied: columns,
+      rowsRaw: {
+        desktop: compiled.desktop.rows,
+        tablet: compiled.tablet.rows,
+        mobile: compiled.mobile.rows
+      },
+      rowsApplied: {
+        desktop: finalTemplates.desktop.rows,
+        tablet: finalTemplates.tablet.rows,
+        mobile: finalTemplates.mobile.rows
+      },
+      rowCounts: {
+        desktop: compiled.desktop.rowCount,
+        tablet: compiled.tablet.rowCount,
+        mobile: compiled.mobile.rowCount
+      },
+      percentCollector,
+      activeBreakpoint: getActiveBreakpoint()
+    });
+
+    layoutState.lastDiagnostics = diagnosticsContext;
+    logLayoutDiagnostics(diagnosticsContext);
 
     const hasLightningArea = templateHasArea(finalTemplates.desktop, 'lightning')
       || templateHasArea(finalTemplates.tablet, 'lightning')
@@ -3930,7 +4254,7 @@
     return fallback;
   }
 
-  function adjustPercentRowTracks(rowsValue, rowCount, baseHeight, gapValue, frameGapValue) {
+  function adjustPercentRowTracks(rowsValue, rowCount, baseHeight, gapValue, frameGapValue, options = {}) {
     if (typeof rowsValue !== 'string' || !rowsValue.trim()) return null;
     if (!Number.isFinite(baseHeight) || baseHeight <= 0) return null;
     if (!Number.isFinite(rowCount) || rowCount <= 0) return null;
@@ -3948,12 +4272,27 @@
     const available = baseHeight - verticalPadding - rowGap * Math.max(0, rowCount - 1);
     if (!Number.isFinite(available) || available <= 0) return null;
 
-    return percents
-      .map(percent => formatPixelTrack((percent / totalPercent) * available))
-      .join(' ');
+    const pixelValues = percents.map(percent => (percent / totalPercent) * available);
+
+    if (options && options.collector && typeof options.collector.recordRow === 'function') {
+      options.collector.recordRow({
+        breakpoint: options.breakpoint || 'desktop',
+        raw: rowsValue,
+        percents: percents.slice(),
+        pixels: pixelValues.slice(),
+        available,
+        baseHeight,
+        rowGap,
+        verticalPadding,
+        totalPercent,
+        rowCount
+      });
+    }
+
+    return pixelValues.map(formatPixelTrack).join(' ');
   }
 
-  function adjustPercentColumnTracks(columnsValue, baseWidth, gapValue, frameGapValue) {
+  function adjustPercentColumnTracks(columnsValue, baseWidth, gapValue, frameGapValue, options = {}) {
     if (typeof columnsValue !== 'string' || !columnsValue.trim()) return null;
     if (!Number.isFinite(baseWidth) || baseWidth <= 0) return null;
 
@@ -3971,9 +4310,24 @@
     const available = baseWidth - horizontalPadding - columnGap * Math.max(0, columnCount - 1);
     if (!Number.isFinite(available) || available <= 0) return null;
 
-    return percents
-      .map(percent => formatPixelTrack((percent / totalPercent) * available))
-      .join(' ');
+    const pixelValues = percents.map(percent => (percent / totalPercent) * available);
+
+    if (options && options.collector && typeof options.collector.recordColumn === 'function') {
+      options.collector.recordColumn({
+        breakpoint: options.breakpoint || 'desktop',
+        raw: columnsValue,
+        percents: percents.slice(),
+        pixels: pixelValues.slice(),
+        available,
+        baseWidth,
+        columnGap,
+        horizontalPadding,
+        totalPercent,
+        columnCount
+      });
+    }
+
+    return pixelValues.map(formatPixelTrack).join(' ');
   }
 
   function extractPercentTracks(value) {
@@ -5041,6 +5395,12 @@
     };
   }
 
+  if (!IS_TEST_ENV && typeof window !== 'undefined') {
+    window.weatherDashboard = window.weatherDashboard || {};
+    window.weatherDashboard.logLayoutDiagnostics = () => logLayoutDiagnostics(null, { force: true });
+    window.weatherDashboard.captureLayoutDiagnostics = () => layoutState.lastDiagnostics;
+  }
+
   if (IS_TEST_ENV) {
     const target = typeof window !== 'undefined' ? window : globalThis;
     target.__WDASH_TEST_HOOKS__ = target.__WDASH_TEST_HOOKS__ || {};
@@ -5051,7 +5411,9 @@
       layoutState,
       resolveMeasuredBaseDimensions,
       measureDisplayTileBaseDimensions,
-      resetTileMeasurement
+      resetTileMeasurement,
+      logLayoutDiagnostics,
+      buildLayoutDiagnosticsContext
     });
   }
 })();

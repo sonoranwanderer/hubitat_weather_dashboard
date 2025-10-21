@@ -172,5 +172,20 @@ function setHostSize(skeleton, width, height) {
   assert.strictEqual(rootStyle.getPropertyValue('--wdash-base-width'), '1280px', 'percent override should keep measured width');
   assert.strictEqual(rootStyle.getPropertyValue('--wdash-base-height'), '720px', 'percent override should fall back to measured height');
 
+  const diagnostics = layoutState.lastDiagnostics;
+  assert(diagnostics, 'layout diagnostics should be captured');
+  assert.strictEqual(diagnostics.trackUnit, 'percent', 'diagnostics should reflect percent track unit');
+  assert.strictEqual(diagnostics.base.perBreakpoint.desktop.width, 1280, 'diagnostics should record desktop width');
+  assert.strictEqual(diagnostics.base.sources.desktop.width, 'measured', 'diagnostics should mark measured base width');
+  assert(diagnostics.percentTracks, 'percent diagnostics should exist');
+  const percentRowDesktop = diagnostics.percentTracks.rows.find(entry => entry.breakpoint === 'desktop');
+  assert(percentRowDesktop, 'desktop percent row diagnostics should be present');
+  assert.deepStrictEqual(percentRowDesktop.percents, [40, 60], 'row percentages should be recorded');
+  assert(Math.abs(percentRowDesktop.pixels[0] - 271.2) < 0.1, 'row pixel conversion should be recorded');
+  const percentColumnDesktop = diagnostics.percentTracks.columns.find(entry => entry.breakpoint === 'desktop');
+  assert(percentColumnDesktop, 'desktop percent column diagnostics should be present');
+  assert.deepStrictEqual(percentColumnDesktop.percents, [60, 40], 'column percentages should be recorded');
+  assert(Math.abs(percentColumnDesktop.pixels[1] - 495.2) < 0.1, 'column pixel conversion should be recorded');
+
   console.log('Layout measurement harness passed');
 })();
