@@ -435,6 +435,9 @@
   const ambientLastDisplayedHumidity = { key: null, value: null };
   // track which ambient index we've initialized into the DOM to avoid re-init loops
   let ambientLastInitIndex = null;
+  let ambientLastInitSensorKey = null;
+  let ambientLastInitMarkupVersion = -1;
+  let ambientMarkupVersion = 0;
 
   const dataTileObservers = new Map();
   let domObserver = null;
@@ -648,6 +651,10 @@
     // spurious DOM rebuilds (which can make the ambient rings redraw)
     if (grid.innerHTML !== newMarkup) {
       grid.innerHTML = newMarkup;
+      ambientMarkupVersion += 1;
+      ambientLastInitIndex = null;
+      ambientLastInitSensorKey = null;
+      ambientLastInitMarkupVersion = -1;
       layoutState.pendingApply = true;
       applyLayoutOverrides(payload?.metadata);
       // initialize ambient humidity circle from any remembered last value so it
@@ -655,15 +662,34 @@
       try {
         const ambientContainer = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-ambient');
         if (ambientContainer) {
+          const ambientCard = ambientContainer.closest('.wdash-card--ambient');
+          const headerName = ambientCard?.querySelector('.wdash-ambient-name')?.textContent || '';
+          const headerKey = headerName ? getAmbientNameKey(headerName) : null;
+          const activeKey = getAmbientKeyFromElement(ambientContainer) || getAmbientKeyFromElement(ambientCard);
+          const initialIndex = Number.isInteger(ambientRotation.index) ? ambientRotation.index : 0;
+          const initialSeedKey = activeKey
+            || (ambientCard ? getAmbientKeyFromElement(ambientCard) : null)
+            || headerKey
+            || `index:${initialIndex}`;
           initAmbientLastHum(ambientContainer, {
             reason: 'initAmbientLastHum(renderFromData)',
             trigger: 'markup-mount',
+            index: initialIndex,
+            sensorKey: activeKey,
+            headerKey,
+            markupVersion: ambientMarkupVersion,
             extra: {
               callSite: 'renderFromData',
               markupChanged: true,
-              previousInitIndex: ambientLastInitIndex
+              previousInitIndex: ambientLastInitIndex,
+              markupVersion: ambientMarkupVersion,
+              previousSeedKey: ambientLastInitSensorKey,
+              previousMarkupVersion: ambientLastInitMarkupVersion
             }
           });
+          ambientLastInitIndex = initialIndex;
+          ambientLastInitSensorKey = initialSeedKey;
+          ambientLastInitMarkupVersion = ambientMarkupVersion;
         }
       } catch (e) { /* ignore */ }
     }
@@ -1430,6 +1456,20 @@
     const reason = opts.reason || 'initAmbientLastHum';
     const trigger = opts.trigger || 'sensor-index-change';
     const extraBase = opts.extra && typeof opts.extra === 'object' ? { ...opts.extra } : {};
+    const index = Number.isInteger(opts.index) ? opts.index : null;
+    const markupVersion = Number.isInteger(opts.markupVersion) ? opts.markupVersion : null;
+    const sensorKeyOverride = typeof opts.sensorKey === 'string' ? opts.sensorKey.trim() : '';
+    const sensorNameKeyOverride = typeof opts.sensorNameKey === 'string' ? opts.sensorNameKey.trim() : '';
+    const headerKeyOverride = typeof opts.headerKey === 'string' ? opts.headerKey.trim() : '';
+    const seedKeyOverride = typeof opts.seedKey === 'string' ? opts.seedKey.trim() : '';
+
+    const extraContext = { ...extraBase };
+    if (index != null) extraContext.sensorIndex = index;
+    if (markupVersion != null) extraContext.markupVersion = markupVersion;
+    if (seedKeyOverride) extraContext.seedKey = seedKeyOverride;
+    if (sensorKeyOverride) extraContext.sensorKeyOverride = sensorKeyOverride;
+    if (sensorNameKeyOverride) extraContext.sensorNameKeyOverride = sensorNameKeyOverride;
+    if (headerKeyOverride) extraContext.headerKeyOverride = headerKeyOverride;
 
     let containerKey = null;
     let headerKey = null;
@@ -1438,13 +1478,18 @@
       if (!container) return;
       const card = container.closest('.wdash-card--ambient');
       const scope = card || container;
-      containerKey = getAmbientKeyFromElement(container) || getAmbientKeyFromElement(card);
+      containerKey = seedKeyOverride
+        || sensorKeyOverride
+        || getAmbientKeyFromElement(container)
+        || getAmbientKeyFromElement(card);
+      if (!containerKey && sensorNameKeyOverride) containerKey = sensorNameKeyOverride;
       const headerName = scope.querySelector('.wdash-ambient-name')?.textContent || '';
-      headerKey = getAmbientNameKey(headerName);
+      headerKey = headerKeyOverride || getAmbientNameKey(headerName);
+      if (!headerKey && sensorNameKeyOverride) headerKey = sensorNameKeyOverride;
 
       const circle = container.querySelector('.wdash-ambient-circle--humidity .wdash-ambient-fill');
       if (!circle) {
-        const extra = { ...extraBase, stage: 'no-circle', containerKey, headerKey };
+        const extra = { ...extraContext, stage: 'no-circle', containerKey, headerKey };
         recordAmbientDebugEvent({
           reason,
           trigger,
@@ -1461,18 +1506,43 @@
         return;
       }
 
+      const datasetSnapshotBefore = circle.dataset
+        ? {
+            sensorKey: circle.dataset.sensorKey || '',
+            lastHum: circle.dataset.lastHum || '',
+            seedKey: circle.dataset.seedKey || '',
+            seedIndex: circle.dataset.seedIndex || '',
+            seedMarkupVersion: circle.dataset.seedMarkupVersion || ''
+          }
+        : null;
+
       let last = null;
       let source = null;
-      if (containerKey && ambientLastHumidity.has(containerKey)) {
-        last = ambientLastHumidity.get(containerKey);
-        source = `ambientLastHumidity(${containerKey})`;
-      } else if (headerKey && ambientLastHumidity.has(headerKey)) {
-        last = ambientLastHumidity.get(headerKey);
-        source = `ambientLastHumidity(${headerKey})`;
+      const lookupKeys = [];
+      const addLookupKey = key => {
+        if (key && !lookupKeys.includes(key)) lookupKeys.push(key);
+      };
+      addLookupKey(seedKeyOverride);
+      addLookupKey(sensorKeyOverride);
+      addLookupKey(sensorNameKeyOverride);
+      addLookupKey(containerKey);
+      addLookupKey(headerKey);
+      if (datasetSnapshotBefore && datasetSnapshotBefore.sensorKey) {
+        addLookupKey(datasetSnapshotBefore.sensorKey);
+      }
+      for (const key of lookupKeys) {
+        if (key && ambientLastHumidity.has(key)) {
+          const value = ambientLastHumidity.get(key);
+          if (Number.isFinite(value)) {
+            last = value;
+            source = `ambientLastHumidity(${key})`;
+            break;
+          }
+        }
       }
       if (last == null && Number.isFinite(ambientLastDisplayedHumidity.value)) {
         const lastKey = ambientLastDisplayedHumidity.key;
-        if ((containerKey && lastKey === containerKey) || (headerKey && lastKey === headerKey)) {
+        if (lookupKeys.includes(lastKey)) {
           last = ambientLastDisplayedHumidity.value;
           source = `ambientLastDisplayedHumidity(${lastKey || 'global'})`;
         }
@@ -1488,7 +1558,35 @@
         if (containerKey) {
           circle.dataset.sensorKey = containerKey;
         }
-        const extra = { ...extraBase, stage: 'seed', containerKey, headerKey };
+        const seedKey = seedKeyOverride || containerKey || sensorNameKeyOverride || headerKey || null;
+        if (seedKey) {
+          circle.dataset.seedKey = seedKey;
+        } else {
+          delete circle.dataset.seedKey;
+        }
+        if (index != null) {
+          circle.dataset.seedIndex = String(index);
+        } else {
+          delete circle.dataset.seedIndex;
+        }
+        if (markupVersion != null) {
+          circle.dataset.seedMarkupVersion = String(markupVersion);
+        } else {
+          delete circle.dataset.seedMarkupVersion;
+        }
+        const datasetSnapshotAfter = circle.dataset
+          ? {
+              sensorKey: circle.dataset.sensorKey || '',
+              lastHum: circle.dataset.lastHum || '',
+              seedKey: circle.dataset.seedKey || '',
+              seedIndex: circle.dataset.seedIndex || '',
+              seedMarkupVersion: circle.dataset.seedMarkupVersion || ''
+            }
+          : null;
+        const extra = { ...extraContext, stage: 'seed', containerKey, headerKey };
+        if (seedKey && !extra.seedKey) extra.seedKey = seedKey;
+        if (datasetSnapshotBefore) extra.datasetBefore = datasetSnapshotBefore;
+        if (datasetSnapshotAfter) extra.datasetAfter = datasetSnapshotAfter;
         recordAmbientDebugEvent({
           reason,
           trigger,
@@ -1504,7 +1602,35 @@
           extra
         }, container);
       } else {
-        const extra = { ...extraBase, stage: 'seed-miss', containerKey, headerKey };
+        const seedKey = seedKeyOverride || containerKey || sensorNameKeyOverride || headerKey || null;
+        if (seedKey) {
+          circle.dataset.seedKey = seedKey;
+        } else {
+          delete circle.dataset.seedKey;
+        }
+        if (index != null) {
+          circle.dataset.seedIndex = String(index);
+        } else {
+          delete circle.dataset.seedIndex;
+        }
+        if (markupVersion != null) {
+          circle.dataset.seedMarkupVersion = String(markupVersion);
+        } else {
+          delete circle.dataset.seedMarkupVersion;
+        }
+        const datasetSnapshotAfter = circle.dataset
+          ? {
+              sensorKey: circle.dataset.sensorKey || '',
+              lastHum: circle.dataset.lastHum || '',
+              seedKey: circle.dataset.seedKey || '',
+              seedIndex: circle.dataset.seedIndex || '',
+              seedMarkupVersion: circle.dataset.seedMarkupVersion || ''
+            }
+          : null;
+        const extra = { ...extraContext, stage: 'seed-miss', containerKey, headerKey };
+        if (seedKey && !extra.seedKey) extra.seedKey = seedKey;
+        if (datasetSnapshotBefore) extra.datasetBefore = datasetSnapshotBefore;
+        if (datasetSnapshotAfter) extra.datasetAfter = datasetSnapshotAfter;
         recordAmbientDebugEvent({
           reason,
           trigger,
@@ -1520,7 +1646,7 @@
         }, container);
       }
     } catch (e) {
-      const extra = { ...extraBase, stage: 'error', containerKey, headerKey };
+      const extra = { ...extraContext, stage: 'error', containerKey, headerKey };
       if (e && e.message) extra.error = e.message;
       recordAmbientDebugEvent({
         reason,
@@ -3085,28 +3211,70 @@
     const scope = card || container;
     const sensor = ambientRotation.sensors[ambientRotation.index];
     const sensorKey = sensor ? getAmbientSensorKey(sensor, ambientRotation.index) : null;
+    const sensorNameKey = sensor && sensor.name != null ? getAmbientNameKey(sensor.name) : null;
+    const headerNameBefore = (scope.querySelector('.wdash-ambient-name')?.textContent || '').trim();
+    const headerKeyBefore = headerNameBefore ? getAmbientNameKey(headerNameBefore) : null;
+    const guardSeedKey = sensorKey
+      || sensorNameKey
+      || headerKeyBefore
+      || (Number.isInteger(ambientRotation.index) ? `index:${ambientRotation.index}` : null);
 
     assignAmbientKeyToElements(container, card, sensorKey);
 
-    // If the ambient index changed since last init, (re)initialize the
-    // humidity circle from remembered values so the transition starts from the
-    // current visual state rather than empty. Updating the active key first
-    // ensures the initializer looks up the incoming sensor instead of the
-    // previously displayed one.
+    // If the ambient index or active sensor signature changed since last init,
+    // (re)initialize the humidity circle from remembered values so the
+    // transition starts from the current visual state rather than empty.
     try {
-      if (ambientLastInitIndex !== ambientRotation.index) {
+      const needsSeed = ambientLastInitIndex !== ambientRotation.index
+        || ambientLastInitSensorKey !== guardSeedKey
+        || ambientLastInitMarkupVersion !== ambientMarkupVersion;
+      if (needsSeed) {
         const previousIndex = ambientLastInitIndex;
         initAmbientLastHum(container, {
           reason: 'initAmbientLastHum(updateAmbientDisplay)',
           trigger: trigger || reason,
+          index: ambientRotation.index,
+          sensorKey,
+          sensorNameKey,
+          headerKey: headerKeyBefore,
+          seedKey: guardSeedKey,
+          markupVersion: ambientMarkupVersion,
           extra: {
             callSite: 'updateAmbientDisplay',
             previousInitIndex: previousIndex,
             nextInitIndex: ambientRotation.index,
-            sensorKey
+            sensorKey,
+            sensorNameKey,
+            headerKey: headerKeyBefore,
+            previousSeedKey: ambientLastInitSensorKey,
+            nextSeedKey: guardSeedKey,
+            previousMarkupVersion: ambientLastInitMarkupVersion,
+            markupVersion: ambientMarkupVersion
           }
         });
         ambientLastInitIndex = ambientRotation.index;
+        ambientLastInitSensorKey = guardSeedKey;
+        ambientLastInitMarkupVersion = ambientMarkupVersion;
+      } else if (ambientDebugState.enabled) {
+        recordAmbientDebugEvent({
+          reason: 'initAmbientLastHum(skip)',
+          trigger: trigger || reason,
+          humidity: null,
+          prevHumidity: null,
+          prevSource: 'skip-same-sensor',
+          sensorKey: guardSeedKey || null,
+          headerKey: headerKeyBefore || null,
+          valueChanged: false,
+          appliedChange: false,
+          animated: false,
+          extra: {
+            callSite: 'updateAmbientDisplay',
+            stage: 'seed-skip',
+            sensorIndex: ambientRotation.index,
+            seedKey: guardSeedKey,
+            markupVersion: ambientMarkupVersion
+          }
+        }, container);
       }
     } catch (e) { /* ignore */ }
 
