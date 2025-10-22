@@ -129,8 +129,18 @@ def mainPage() {
             ], defaultValue: "all", required: true, submitOnChange: true
 
             if ((settings.refreshTriggerMode ?: "all") == "single") {
-                input name: "singleTriggerDevice", type: "enum", title: "Trigger device", options: subscriptionDeviceOptions(deviceOptions), required: true
-                input name: "singleTriggerAttribute", type: "text", title: "Trigger attribute", required: true
+                input name: "singleTriggerDevice", type: "enum", title: "Trigger device", options: subscriptionDeviceOptions(deviceOptions), required: true, submitOnChange: true
+
+                def triggerAttributeOptions = singleTriggerAttributeOptions()
+                if (triggerAttributeOptions) {
+                    input name: "singleTriggerAttribute", type: "enum", title: "Trigger attribute", options: triggerAttributeOptions, required: true
+                } else {
+                    input name: "singleTriggerAttribute", type: "text", title: "Trigger attribute", required: true
+                    if (settings.singleTriggerDevice) {
+                        paragraph "The selected device did not provide a list of supported attributes. Enter the attribute name manually."
+                    }
+                }
+
                 paragraph "Only the selected attribute change will trigger dashboard refreshes."
             } else {
                 paragraph "The app will subscribe to all configured attributes."
@@ -416,6 +426,36 @@ private Map singleTriggerSubscription() {
     String attribute = settings.singleTriggerAttribute instanceof CharSequence ? settings.singleTriggerAttribute.toString().trim() : null
     if (!attribute) return null
     [device: device, attribute: attribute]
+}
+
+private Map singleTriggerAttributeOptions() {
+    def device = resolveSubscriptionDevice(settings.singleTriggerDevice)
+    if (!device) {
+        return null
+    }
+
+    List<String> attributeNames = []
+    try {
+        def supported = device?.getSupportedAttributes()
+        supported?.each { attr ->
+            String name = attr?.name
+            if (name) {
+                attributeNames << name
+            }
+        }
+    } catch (Throwable t) {
+        log.debug "Weather Dashboard App: unable to enumerate supported attributes for ${device?.displayName}: ${t.message}"
+    }
+
+    if (!attributeNames) {
+        return null
+    }
+
+    LinkedHashMap options = new LinkedHashMap()
+    attributeNames.unique().sort().each { attrName ->
+        options[attrName] = attrName
+    }
+    options
 }
 
 private def resolveDevice(def deviceSettingValue) {
