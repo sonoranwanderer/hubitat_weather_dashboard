@@ -176,8 +176,14 @@ def mainPage() {
 }
 
 private void attributeInputs(String label, String attrSetting, String defaultAttr, Map options) {
-    input name: "${attrSetting}Device", type: "enum", title: "${label} device", options: options ?: [:], required: false, width: 6
-    input name: attrSetting, type: "text", title: "${label} attribute", defaultValue: defaultAttr, width: 6
+    input name: "${attrSetting}Device", type: "enum", title: "${label} device", options: options ?: [:], required: false, width: 6, submitOnChange: true
+
+    def attributeOptions = attributeOptionsForSetting(attrSetting, defaultAttr)
+    if (attributeOptions) {
+        input name: attrSetting, type: "enum", title: "${label} attribute", options: attributeOptions, defaultValue: settings[attrSetting] ?: defaultAttr, required: false, width: 6
+    } else {
+        input name: attrSetting, type: "text", title: "${label} attribute", defaultValue: defaultAttr, width: 6
+    }
 }
 
 private Map weatherDeviceOptions() {
@@ -477,6 +483,50 @@ private def resolveSubscriptionDevice(def deviceSettingValue) {
     }
     String id = deviceSettingValue.toString()
     (getWeatherDevices() + getAmbientSensors()).find { dev -> dev?.id?.toString() == id }
+}
+
+private Map attributeOptionsForSetting(String attrSetting, String defaultAttr) {
+    def deviceSettingName = "${attrSetting}Device"
+    def device = resolveDevice(settings[deviceSettingName])
+    if (!device) {
+        return null
+    }
+
+    List<String> attributeNames = []
+    try {
+        def supported = device?.getSupportedAttributes()
+        supported?.each { attr ->
+            String name = attr?.name
+            if (name) {
+                attributeNames << name
+            }
+        }
+    } catch (Throwable t) {
+        log.debug "Weather Dashboard App: unable to enumerate supported attributes for ${device?.displayName}: ${t.message}"
+    }
+
+    if (!attributeNames) {
+        return null
+    }
+
+    LinkedHashSet orderedNames = new LinkedHashSet()
+    if (defaultAttr) {
+        orderedNames << defaultAttr.toString()
+    }
+    attributeNames.sort().each { attrName ->
+        orderedNames << attrName
+    }
+
+    def currentValue = settings[attrSetting]
+    if (currentValue) {
+        orderedNames << currentValue.toString()
+    }
+
+    LinkedHashMap options = new LinkedHashMap()
+    orderedNames.each { attrName ->
+        options[attrName] = attrName
+    }
+    options
 }
 
 private Map attributeConfig(String attrSetting) {
