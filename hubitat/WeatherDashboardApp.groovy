@@ -1163,6 +1163,35 @@ private Map captureRawReadings() {
     readings
 }
 
+private Map updateDailyTrackerMaintenance(Map readings, long timestamp, TimeZone tz) {
+    Map maintenance = [
+        outdoor  : null,
+        outdoorAQ: null,
+        indoorAQ : null
+    ]
+
+    Map source = readings ?: [:]
+
+    BigDecimal outdoorTemp = toBigDecimal(source.outdoorTemp)
+    maintenance.outdoor = updateDailyOutdoorExtrema(outdoorTemp, timestamp, tz)
+
+    Map outdoorAirReadings = (source.outdoorAir ?: [:]) as Map
+    Map outdoorValues = [:]
+    if (outdoorAirReadings.aqi != null) outdoorValues.aqi = toBigDecimal(outdoorAirReadings.aqi)
+    if (outdoorAirReadings.pm25 != null) outdoorValues.pm25 = toBigDecimal(outdoorAirReadings.pm25)
+    maintenance.outdoorAQ = updateDailyAQExtrema("outdoor", outdoorValues, timestamp, tz)
+
+    Map indoorAirReadings = (source.indoorAir ?: [:]) as Map
+    Map indoorValues = [:]
+    if (indoorAirReadings.aqi != null) indoorValues.aqi = toBigDecimal(indoorAirReadings.aqi)
+    if (indoorAirReadings.pm10 != null) indoorValues.pm10 = toBigDecimal(indoorAirReadings.pm10)
+    if (indoorAirReadings.pm25 != null) indoorValues.pm25 = toBigDecimal(indoorAirReadings.pm25)
+    if (indoorAirReadings.co2 != null) indoorValues.carbonDioxide = toBigDecimal(indoorAirReadings.co2)
+    maintenance.indoorAQ = updateDailyAQExtrema("indoor", indoorValues, timestamp, tz)
+
+    return maintenance
+}
+
 private String normalizeStationTimestamp(Object raw) {
     if (!(raw instanceof CharSequence)) {
         return null
@@ -1209,6 +1238,7 @@ def refreshWeatherData() {
         boolean force = state.remove('forceRefresh') == true
 
         Map readings = captureRawReadings() ?: [:]
+        Map dailyMaintenance = updateDailyTrackerMaintenance(readings, timestamp, tz) ?: [:]
         String fingerprint = JsonOutput.toJson(readings)
 
         if (!force && fingerprint && fingerprint == state.lastSourceFingerprint) {
@@ -1235,7 +1265,7 @@ def refreshWeatherData() {
         }
     }
 
-    def dailyExtrema = updateDailyOutdoorExtrema(tempF, timestamp, tz)
+    def dailyExtrema = dailyMaintenance.outdoor
     if (dailyExtrema?.high != null) {
         outdoor.dailyHighF = dailyExtrema.high
     }
@@ -1431,7 +1461,7 @@ def refreshWeatherData() {
     BigDecimal outdoorPm25 = outdoorAirReadings.pm25
     if (outdoorPm25 != null) outdoorAir.pm25 = round(outdoorPm25, 1)
 
-    def dailyOutdoorAQ = updateDailyAQExtrema("outdoor", [aqi: outdoorAqi, pm25: outdoorPm25], timestamp, tz)
+    def dailyOutdoorAQ = dailyMaintenance.outdoorAQ
     if (dailyOutdoorAQ?.aqiPeak != null) outdoorAir.aqiPeak = dailyOutdoorAQ.aqiPeak
     if (dailyOutdoorAQ?.pm25Peak != null) outdoorAir.pm25Peak = dailyOutdoorAQ.pm25Peak
 
@@ -1457,7 +1487,7 @@ def refreshWeatherData() {
     BigDecimal indoorCo2 = indoorAirReadings.co2
     if (indoorCo2 != null) indoorAir.carbonDioxide = Math.round(indoorCo2)
 
-    def dailyIndoorAQ = updateDailyAQExtrema("indoor", [aqi: indoorAqi, pm10: indoorPm10, pm25: indoorPm25, carbonDioxide: indoorCo2], timestamp, tz)
+    def dailyIndoorAQ = dailyMaintenance.indoorAQ
     if (dailyIndoorAQ?.aqiPeak != null) indoorAir.aqiPeak = dailyIndoorAQ.aqiPeak
     if (dailyIndoorAQ?.pm10Peak != null) indoorAir.pm10Peak = dailyIndoorAQ.pm10Peak
     if (dailyIndoorAQ?.pm25Peak != null) indoorAir.pm25Peak = dailyIndoorAQ.pm25Peak
