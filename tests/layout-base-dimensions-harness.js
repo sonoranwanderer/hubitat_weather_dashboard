@@ -213,10 +213,14 @@ function setTileSize(skeleton, width, height) {
   assert(percentRowDesktop, 'desktop percent row diagnostics should be present');
   assert.deepStrictEqual(percentRowDesktop.percents, [40, 60], 'row percentages should be recorded');
   assert(Math.abs(percentRowDesktop.pixels[0] - 271.2) < 0.1, 'row pixel conversion should be recorded');
+  assert(Math.abs(percentRowDesktop.finalPixels - percentRowDesktop.available) < 0.1, 'row pixels should fill available height');
+  assert(percentRowDesktop.remainder <= 0.1, 'row remainder should be near zero');
   const percentColumnDesktop = diagnostics.percentTracks.columns.find(entry => entry.breakpoint === 'desktop');
   assert(percentColumnDesktop, 'desktop percent column diagnostics should be present');
   assert.deepStrictEqual(percentColumnDesktop.percents, [60, 40], 'column percentages should be recorded');
   assert(Math.abs(percentColumnDesktop.pixels[1] - 495.2) < 0.1, 'column pixel conversion should be recorded');
+  assert(Math.abs(percentColumnDesktop.finalPixels - percentColumnDesktop.available) < 0.1, 'column pixels should fill available width');
+  assert(percentColumnDesktop.remainder <= 0.1, 'column remainder should be near zero');
 
   // When the tile is smaller than the content container ensure the tile bounds win.
   setHostSize(skeleton, 1400, 900);

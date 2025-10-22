@@ -960,7 +960,12 @@
           baseWidth: entry.baseWidth,
           columnGap: entry.columnGap,
           horizontalPadding: entry.horizontalPadding,
-          totalPercent: entry.totalPercent
+          totalPercent: entry.totalPercent,
+          requestedPixels: entry.requestedPixels,
+          scaledPixels: entry.scaledPixels,
+          finalPixels: entry.finalPixels,
+          remainder: entry.remainder,
+          scale: entry.scale
         });
       }
     }
@@ -983,7 +988,12 @@
           baseHeight: entry.baseHeight,
           rowGap: entry.rowGap,
           verticalPadding: entry.verticalPadding,
-          totalPercent: entry.totalPercent
+          totalPercent: entry.totalPercent,
+          requestedPixels: entry.requestedPixels,
+          scaledPixels: entry.scaledPixels,
+          finalPixels: entry.finalPixels,
+          remainder: entry.remainder,
+          scale: entry.scale
         });
       }
     }
@@ -4365,6 +4375,59 @@
     return fallback;
   }
 
+  function resolvePercentPixelDistribution(percents, totalPercent, available) {
+    if (!Array.isArray(percents) || !percents.length) {
+      return {
+        values: [],
+        requestedSum: 0,
+        scaledSum: 0,
+        finalSum: 0,
+        remainder: Math.max(0, Number(available) || 0),
+        scale: 1
+      };
+    }
+
+    const safeAvailable = Number.isFinite(available) && available > 0 ? available : 0;
+    const requestedValues = percents.map(percent => (percent / totalPercent) * safeAvailable);
+    const requestedSum = requestedValues.reduce((sum, value) => sum + value, 0);
+
+    let scale = 1;
+    if (safeAvailable > 0 && requestedSum > safeAvailable) {
+      scale = safeAvailable / requestedSum;
+    }
+
+    const scaledValues = requestedValues.map(value => value * scale);
+    const result = [];
+    let running = 0;
+
+    for (let i = 0; i < scaledValues.length; i += 1) {
+      const remaining = safeAvailable - running;
+      let next = Math.max(0, scaledValues[i]);
+      if (remaining <= 0) {
+        next = 0;
+      } else if (i === scaledValues.length - 1) {
+        next = remaining;
+      } else if (next > remaining) {
+        next = remaining;
+      }
+      result.push(next);
+      running += next;
+    }
+
+    const finalSum = result.reduce((sum, value) => sum + value, 0);
+    const scaledSum = scaledValues.reduce((sum, value) => sum + value, 0);
+    const remainder = Math.max(0, safeAvailable - finalSum);
+
+    return {
+      values: result,
+      requestedSum,
+      scaledSum,
+      finalSum,
+      remainder,
+      scale
+    };
+  }
+
   function adjustPercentRowTracks(rowsValue, rowCount, baseHeight, gapValue, frameGapValue, options = {}) {
     if (typeof rowsValue !== 'string' || !rowsValue.trim()) return null;
     if (!Number.isFinite(baseHeight) || baseHeight <= 0) return null;
@@ -4383,7 +4446,8 @@
     const available = baseHeight - verticalPadding - rowGap * Math.max(0, rowCount - 1);
     if (!Number.isFinite(available) || available <= 0) return null;
 
-    const pixelValues = percents.map(percent => (percent / totalPercent) * available);
+    const distribution = resolvePercentPixelDistribution(percents, totalPercent, available);
+    const pixelValues = distribution.values;
 
     if (options && options.collector && typeof options.collector.recordRow === 'function') {
       options.collector.recordRow({
@@ -4396,7 +4460,12 @@
         rowGap,
         verticalPadding,
         totalPercent,
-        rowCount
+        rowCount,
+        requestedPixels: distribution.requestedSum,
+        scaledPixels: distribution.scaledSum,
+        finalPixels: distribution.finalSum,
+        remainder: distribution.remainder,
+        scale: distribution.scale
       });
     }
 
@@ -4421,7 +4490,8 @@
     const available = baseWidth - horizontalPadding - columnGap * Math.max(0, columnCount - 1);
     if (!Number.isFinite(available) || available <= 0) return null;
 
-    const pixelValues = percents.map(percent => (percent / totalPercent) * available);
+    const distribution = resolvePercentPixelDistribution(percents, totalPercent, available);
+    const pixelValues = distribution.values;
 
     if (options && options.collector && typeof options.collector.recordColumn === 'function') {
       options.collector.recordColumn({
@@ -4434,7 +4504,12 @@
         columnGap,
         horizontalPadding,
         totalPercent,
-        columnCount
+        columnCount,
+        requestedPixels: distribution.requestedSum,
+        scaledPixels: distribution.scaledSum,
+        finalPixels: distribution.finalSum,
+        remainder: distribution.remainder,
+        scale: distribution.scale
       });
     }
 
