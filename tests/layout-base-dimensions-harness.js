@@ -121,10 +121,37 @@ function setHostSize(skeleton, width, height) {
   assert.strictEqual(rootStyle.getPropertyValue('--wdash-base-width'), '1024px', 'measurement change should update base width');
   assert.strictEqual(rootStyle.getPropertyValue('--wdash-base-height'), '768px', 'measurement change should update base height');
 
+  setHostSize(skeleton, 1140.75, 855.44);
+  applyLayoutOverrides();
+  assert.strictEqual(
+    rootStyle.getPropertyValue('--wdash-base-width'),
+    '1140px',
+    'fractional measurement should floor the base width'
+  );
+  assert.strictEqual(
+    rootStyle.getPropertyValue('--wdash-base-height'),
+    '855px',
+    'fractional measurement should floor the base height'
+  );
+  assert.strictEqual(layoutState.baseDimensions.desktop.width, 1140, 'layout state width should reflect floored measurement');
+  assert.strictEqual(layoutState.baseDimensions.desktop.height, 855, 'layout state height should reflect floored measurement');
+  const fractionalDiagnostics = layoutState.lastDiagnostics;
+  assert(fractionalDiagnostics, 'fractional measurement should populate diagnostics');
+  assert.strictEqual(
+    fractionalDiagnostics.measurement.sanitized.width,
+    1140,
+    'diagnostics should report floored measurement width'
+  );
+  assert.strictEqual(
+    fractionalDiagnostics.measurement.sanitized.height,
+    855,
+    'diagnostics should report floored measurement height'
+  );
+
   setHostSize(skeleton, 0, 0);
   applyLayoutOverrides();
-  assert.strictEqual(rootStyle.getPropertyValue('--wdash-base-width'), '1024px', 'missing measurement should retain last width');
-  assert.strictEqual(rootStyle.getPropertyValue('--wdash-base-height'), '768px', 'missing measurement should retain last height');
+  assert.strictEqual(rootStyle.getPropertyValue('--wdash-base-width'), '1140px', 'missing measurement should retain last width');
+  assert.strictEqual(rootStyle.getPropertyValue('--wdash-base-height'), '855px', 'missing measurement should retain last height');
 
   setHostSize(skeleton, 1280, 720);
   applyLayoutOverrides({ layout: { baseHeight: 650 } });

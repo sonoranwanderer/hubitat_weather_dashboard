@@ -611,26 +611,19 @@
     const hasHeight = Number.isFinite(height) && height > 0;
 
     if (hasWidth) {
-      width = Math.max(1, Math.round(width));
-      if (Number.isFinite(prevWidth) && Math.abs(prevWidth - width) <= TILE_MEASURE_TOLERANCE) {
-        width = prevWidth;
-      }
+      width = Math.max(1, Math.floor(width));
     }
 
     if (hasHeight) {
-      height = Math.max(1, Math.round(height));
-      if (Number.isFinite(prevHeight) && Math.abs(prevHeight - height) <= TILE_MEASURE_TOLERANCE) {
-        height = prevHeight;
-      }
+      height = Math.max(1, Math.floor(height));
     }
 
     const nextWidth = hasWidth ? width : prevWidth;
     const nextHeight = hasHeight ? height : prevHeight;
 
-    const changed = (
-      (hasWidth && (!Number.isFinite(prevWidth) || nextWidth !== prevWidth))
-      || (hasHeight && (!Number.isFinite(prevHeight) || nextHeight !== prevHeight))
-    );
+    const widthChanged = hasWidth && (!Number.isFinite(prevWidth) || nextWidth !== prevWidth);
+    const heightChanged = hasHeight && (!Number.isFinite(prevHeight) || nextHeight !== prevHeight);
+    const changed = widthChanged || heightChanged;
 
     if (options.commit !== false) {
       if (Number.isFinite(nextWidth)) {
