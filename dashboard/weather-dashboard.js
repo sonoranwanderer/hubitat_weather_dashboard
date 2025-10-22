@@ -2419,9 +2419,8 @@
     const endPoint = getPointOnArc(arc, 1);
     const arcPath = `M ${startPoint.x} ${startPoint.y} A ${arc.r} ${arc.r} 0 0 1 ${endPoint.x} ${endPoint.y}`;
 
-    // Calculate sun's position using the same geometry and apply it as an SVG transform
+    // Calculate the sun's position using the same geometry so we can position the marker directly
     const sunPoint = getPointOnArc(arc, progress);
-    const sunTransform = `translate(${sunPoint.x}, ${sunPoint.y})`;
 
     // --- Metric Positioning ---
     // UV Index (upper left)
@@ -2465,9 +2464,9 @@
                 </radialGradient>
               </defs>
               <path class="wdash-sun-arc" d="${arcPath}" />
-              <g class="wdash-sun-marker ${dayNightClass}" transform="${sunTransform}">
-                <circle class="wdash-sun-marker-glow" r="18" fill="url(#wdash-sun-glow-gradient)" />
-                <circle class="wdash-sun-marker-core" r="8" fill="url(#wdash-sun-gradient)" />
+              <g class="wdash-sun-marker ${dayNightClass}">
+                <circle class="wdash-sun-marker-glow" r="18" cx="${sunPoint.x}" cy="${sunPoint.y}" fill="url(#wdash-sun-glow-gradient)" />
+                <circle class="wdash-sun-marker-core" r="8" cx="${sunPoint.x}" cy="${sunPoint.y}" fill="url(#wdash-sun-gradient)" />
               </g>
             </svg>
             <!-- Metric Labels (HTML) -->
@@ -4916,10 +4915,10 @@
 .wdash-sun-horizon { position: absolute; left: 12%; right: 12%; bottom: 42%; height: 2px; background: rgba(255,255,255,0.25); }
 .wdash-sun-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
 .wdash-sun-svg .wdash-sun-arc { fill: none; stroke: rgba(255,255,255,0.25); stroke-width: 2.5; vector-effect: non-scaling-stroke; }
-.wdash-sun-svg .wdash-sun-marker { transition: transform 0.3s ease; }
+.wdash-sun-svg .wdash-sun-marker { transition: opacity 0.3s ease; }
 .wdash-sun-svg .wdash-sun-marker.is-night { opacity: 0; }
 .wdash-sun-svg .wdash-sun-marker-core { filter: none; }
-.wdash-sun-svg .wdash-sun-marker-glow { transform-origin: center; opacity: 0.85; }
+.wdash-sun-svg .wdash-sun-marker-glow { opacity: 0.85; }
 .wdash-sun-html-metric { position: absolute; display: flex; flex-direction: column; align-items: center; gap: 2px; transform: translate(-50%, -50%); text-align: center; }
 .wdash-sun-metric-label { font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #8ea0c8; }
 .wdash-sun-metric-value { font-size: 0.8rem; font-weight: 600; color: #f4f6ff; }
