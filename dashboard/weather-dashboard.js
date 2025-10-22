@@ -306,6 +306,7 @@
   const tempWindGaugeLastSizes = new WeakMap();
   const tempWindState = { data: null };
   const solarState = { data: null };
+  let solarStaticLayoutCache = null;
   let rainDropObserver = null;
   let rainDropResizeHandler = null;
   let rainDropRaf = null;
@@ -395,7 +396,7 @@
                 Object.defineProperty(window, 'addToDashboardHistory', {
                   configurable: true,
                   writable: true,
-                  value
+                  value: value
                 });
               } catch (err) {
                 try {
@@ -2382,8 +2383,6 @@
     return `<span class="wdash-pressure-outlook-label">${escapeHtml(fallbackText)}</span>`;
   }
 
-  let solarStaticLayoutCache = null;
-
   function getSolarStaticLayout() {
     if (solarStaticLayoutCache) return solarStaticLayoutCache;
     const arc = SUN_CARD_GEOMETRY;
@@ -2458,11 +2457,61 @@
     };
   }
 
+  function resolveSunMarkerState(view) {
+    if (!view) return null;
+    const point = view.sunPoint || {};
+    const formatCoord = (value, fallback) => {
+      const base = Number.isFinite(fallback) ? fallback : 0;
+      const chosen = Number.isFinite(value) ? value : base;
+      return String(Math.round(chosen * 1000) / 1000);
+    };
+    const cx = formatCoord(point.x, SUN_CARD_GEOMETRY.cx);
+    const cy = formatCoord(point.y, SUN_CARD_GEOMETRY.cy);
+    const className = `wdash-sun-marker ${view.isDay ? 'is-day' : 'is-night'}`;
+    const markup = `
+      <g class="${className}">
+        <circle class="wdash-sun-marker-glow" r="18" cx="${cx}" cy="${cy}" fill="url(#wdash-sun-glow-gradient)" />
+        <circle class="wdash-sun-marker-core" r="8" cx="${cx}" cy="${cy}" fill="url(#wdash-sun-gradient)" />
+      </g>
+    `.trim();
+    return { className, cx, cy, markup };
+  }
+
+  function buildSunMarkerMarkup(view) {
+    const state = resolveSunMarkerState(view);
+    return state ? state.markup : '';
+  }
+
+  function createSunMarkerElement(state) {
+    if (!state) return null;
+    const NS = 'http://www.w3.org/2000/svg';
+    const group = document.createElementNS(NS, 'g');
+    group.setAttribute('class', state.className);
+
+    const glow = document.createElementNS(NS, 'circle');
+    glow.setAttribute('class', 'wdash-sun-marker-glow');
+    glow.setAttribute('r', '18');
+    glow.setAttribute('cx', state.cx);
+    glow.setAttribute('cy', state.cy);
+    glow.setAttribute('fill', 'url(#wdash-sun-glow-gradient)');
+
+    const core = document.createElementNS(NS, 'circle');
+    core.setAttribute('class', 'wdash-sun-marker-core');
+    core.setAttribute('r', '8');
+    core.setAttribute('cx', state.cx);
+    core.setAttribute('cy', state.cy);
+    core.setAttribute('fill', 'url(#wdash-sun-gradient)');
+
+    group.appendChild(glow);
+    group.appendChild(core);
+    return group;
+  }
+
   function buildSolarSunCard(data) {
     const view = resolveSolarSunViewModel(data);
     const layout = view.layout;
-    const dayNightClass = view.isDay ? 'is-day' : 'is-night';
     const moonIconClass = `wdash-moon-icon${view.moonHemisphere === 'southern' ? ' is-southern' : ''}`;
+    const markerMarkup = buildSunMarkerMarkup(view);
 
     return `
       <section class="wdash-card wdash-card--solar">
@@ -2494,10 +2543,7 @@
                 </radialGradient>
               </defs>
               <path class="wdash-sun-arc" d="${view.arcPath}" />
-              <g class="wdash-sun-marker ${dayNightClass}">
-                <circle class="wdash-sun-marker-glow" r="18" cx="${view.sunPoint.x}" cy="${view.sunPoint.y}" fill="url(#wdash-sun-glow-gradient)" />
-                <circle class="wdash-sun-marker-core" r="8" cx="${view.sunPoint.x}" cy="${view.sunPoint.y}" fill="url(#wdash-sun-gradient)" />
-              </g>
+              ${markerMarkup}
             </svg>
             <!-- Metric Labels (HTML) -->
             <div class="wdash-sun-html-metric wdash-sun-html-metric--uv" style="${layout.uvStyle}">
@@ -3529,9 +3575,20 @@
     );
     const currentHeader = card.querySelector('.wdash-card-header');
     if (currentHeader) {
+      if (currentHeader.dataset.wdashMarkup !== headerMarkup) {
+        const nextHeader = createElementFromMarkup(headerMarkup);
+        if (nextHeader) {
+          nextHeader.dataset.wdashMarkup = headerMarkup;
+          currentHeader.replaceWith(nextHeader);
+        }
+      } else {
+        currentHeader.dataset.wdashMarkup = headerMarkup;
+      }
+    } else {
       const nextHeader = createElementFromMarkup(headerMarkup);
       if (nextHeader) {
-        currentHeader.replaceWith(nextHeader);
+        nextHeader.dataset.wdashMarkup = headerMarkup;
+        card.prepend(nextHeader);
       }
     }
 
@@ -3540,21 +3597,25 @@
       arcPath.setAttribute('d', view.arcPath);
     }
 
-    const marker = card.querySelector('.wdash-sun-marker');
-    if (marker) {
-      marker.classList.toggle('is-day', view.isDay);
-      marker.classList.toggle('is-night', !view.isDay);
-      const cx = String(view.sunPoint.x);
-      const cy = String(view.sunPoint.y);
-      const glow = marker.querySelector('.wdash-sun-marker-glow');
-      if (glow) {
-        glow.setAttribute('cx', cx);
-        glow.setAttribute('cy', cy);
-      }
-      const core = marker.querySelector('.wdash-sun-marker-core');
-      if (core) {
-        core.setAttribute('cx', cx);
-        core.setAttribute('cy', cy);
+    const markerState = resolveSunMarkerState(view);
+    if (markerState && card.dataset.wdashSunMarker !== markerState.markup) {
+      const svg = card.querySelector('.wdash-sun-svg');
+      if (svg) {
+        const nextMarker = createSunMarkerElement(markerState);
+        if (nextMarker) {
+          const existing = svg.querySelector('.wdash-sun-marker');
+          if (existing) {
+            existing.replaceWith(nextMarker);
+          } else {
+            const arcSibling = svg.querySelector('.wdash-sun-arc');
+            if (arcSibling && arcSibling.parentNode) {
+              arcSibling.parentNode.insertBefore(nextMarker, arcSibling.nextSibling);
+            } else {
+              svg.appendChild(nextMarker);
+            }
+          }
+          card.dataset.wdashSunMarker = markerState.markup;
+        }
       }
     }
 
