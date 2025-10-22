@@ -285,7 +285,7 @@
     { key: 'lightning', selector: '.wdash-card--lightning', build: data => buildLightningCard(data) },
     { key: 'pressure', selector: '.wdash-card--pressure', build: data => buildPressureCard(data) },
     { key: 'rain', selector: '.wdash-card--rain', build: data => buildRainCard(data) },
-    { key: 'solar', selector: '.wdash-card--solar-moon', build: data => buildSolarSunCard(data) },
+    { key: 'solar', selector: '.wdash-card--solar', build: data => buildSolarSunCard(data) },
     { key: 'air', selector: '.wdash-card--air', build: data => buildAirQualityCard(data) }
   ];
 
