@@ -129,13 +129,13 @@ def mainPage() {
             ], defaultValue: "all", required: true, submitOnChange: true
 
             if ((settings.refreshTriggerMode ?: "all") == "single") {
-                input name: "singleTriggerDevice", type: "enum", title: "Trigger device", options: subscriptionDeviceOptions(deviceOptions), required: true, submitOnChange: true
+                input name: "singleTriggerDevice", type: "enum", title: "Trigger device", options: subscriptionDeviceOptions(deviceOptions), required: true, submitOnChange: true, width: 6
 
                 def triggerAttributeOptions = singleTriggerAttributeOptions()
                 if (triggerAttributeOptions) {
-                    input name: "singleTriggerAttribute", type: "enum", title: "Trigger attribute", options: triggerAttributeOptions, required: true
+                    input name: "singleTriggerAttribute", type: "enum", title: "Trigger attribute", options: triggerAttributeOptions, required: true, width: 6
                 } else {
-                    input name: "singleTriggerAttribute", type: "text", title: "Trigger attribute", required: true
+                    input name: "singleTriggerAttribute", type: "text", title: "Trigger attribute", required: true, width: 6
                     if (settings.singleTriggerDevice) {
                         paragraph "The selected device did not provide a list of supported attributes. Enter the attribute name manually."
                     }
@@ -176,8 +176,8 @@ def mainPage() {
 }
 
 private void attributeInputs(String label, String attrSetting, String defaultAttr, Map options) {
-    input name: "${attrSetting}Device", type: "enum", title: "${label} device", options: options ?: [:], required: false
-    input name: attrSetting, type: "text", title: "${label} attribute", defaultValue: defaultAttr
+    input name: "${attrSetting}Device", type: "enum", title: "${label} device", options: options ?: [:], required: false, width: 6
+    input name: attrSetting, type: "text", title: "${label} attribute", defaultValue: defaultAttr, width: 6
 }
 
 private Map weatherDeviceOptions() {
