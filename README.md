@@ -40,7 +40,7 @@ The app publishes a consolidated JSON document to the dashboard device. The driv
 * The JavaScript focuses purely on presentation—calculations live in the Hubitat app.
 * The JSON payload is designed to be compact but descriptive, minimizing the number of attributes required on the virtual device.
 * Derived metrics (wind averages, pressure tendency, outlook) are recalculated every minute or whenever the underlying weather attributes change.
-* A lightweight Node harness exercises the Temp & Wind card renderer without Hubitat. Run `node tests/temp-wind-card-harness.js` to verify the in-place update logic and guard against regressions in the gauge/compass behaviour.
+* Lightweight Node harnesses exercise the Temp & Wind card renderer and layout measurements without Hubitat. Run `tests/run-all.sh` (or invoke `node tests/temp-wind-card-harness.js` and `node tests/layout-base-dimensions-harness.js` individually) to verify the in-place update logic and guard against regressions in the gauge/compass behaviour and base dimension calculations.
 
 ## Runtime layout overrides
 
