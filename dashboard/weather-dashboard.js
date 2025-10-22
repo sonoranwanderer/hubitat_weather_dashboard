@@ -577,26 +577,90 @@
     const root = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-root');
     const displayTile = byId(DISPLAY_TILE_ID);
     const content = displayTile ? findContentElement(displayTile) : null;
-    return root?.parentElement || root || content || displayTile || null;
+    return content || root?.parentElement || root || displayTile || null;
+  }
+
+  function collectMeasurementCandidate(element, role) {
+    if (!element) return null;
+    const rect = safeGetElementRect(element);
+    const rectWidth = Number(rect?.width);
+    const rectHeight = Number(rect?.height);
+    const clientWidth = Number(element.clientWidth);
+    const clientHeight = Number(element.clientHeight);
+    const offsetWidth = Number(element.offsetWidth);
+    const offsetHeight = Number(element.offsetHeight);
+    const width = [rectWidth, clientWidth, offsetWidth].find(value => Number.isFinite(value) && value > 0) || null;
+    const height = [rectHeight, clientHeight, offsetHeight].find(value => Number.isFinite(value) && value > 0) || null;
+    if (!Number.isFinite(width) || !Number.isFinite(height)) return null;
+    return {
+      role,
+      description: describeElementForDiagnostics(element),
+      width,
+      height,
+      rectWidth: Number.isFinite(rectWidth) ? rectWidth : null,
+      rectHeight: Number.isFinite(rectHeight) ? rectHeight : null,
+      clientWidth: Number.isFinite(clientWidth) ? clientWidth : null,
+      clientHeight: Number.isFinite(clientHeight) ? clientHeight : null,
+      offsetWidth: Number.isFinite(offsetWidth) ? offsetWidth : null,
+      offsetHeight: Number.isFinite(offsetHeight) ? offsetHeight : null
+    };
   }
 
   function measureDisplayTileBaseDimensions() {
-    const host = getDisplayTileHostElement();
-    if (!host) return null;
-    let rect = null;
-    if (typeof host.getBoundingClientRect === 'function') {
-      try {
-        rect = host.getBoundingClientRect();
-      } catch (err) {
-        rect = null;
+    const displayTile = byId(DISPLAY_TILE_ID);
+    const content = displayTile ? findContentElement(displayTile) : null;
+    const root = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-root');
+    const parentHost = root?.parentElement || null;
+
+    const seen = new Set();
+    const candidates = [];
+
+    function pushCandidate(element, role) {
+      if (!element || seen.has(element)) return;
+      seen.add(element);
+      const candidate = collectMeasurementCandidate(element, role);
+      if (candidate) candidates.push(candidate);
+    }
+
+    pushCandidate(displayTile, 'tile');
+    pushCandidate(content, 'content');
+    pushCandidate(parentHost, 'host-parent');
+    pushCandidate(root, 'root');
+
+    if (!candidates.length) return null;
+
+    let width = null;
+    let height = null;
+    let widthSource = null;
+    let heightSource = null;
+
+    for (const candidate of candidates) {
+      if (!Number.isFinite(width) || candidate.width < width) {
+        width = candidate.width;
+        widthSource = candidate;
+      }
+      if (!Number.isFinite(height) || candidate.height < height) {
+        height = candidate.height;
+        heightSource = candidate;
       }
     }
-    const width = Number(rect?.width || host.clientWidth || 0);
-    const height = Number(rect?.height || host.clientHeight || 0);
+
     if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
       return null;
     }
-    return { width, height };
+
+    return {
+      width,
+      height,
+      strategy: 'min-candidate',
+      candidates,
+      widthSource: widthSource
+        ? { role: widthSource.role, description: widthSource.description, width: widthSource.width }
+        : null,
+      heightSource: heightSource
+        ? { role: heightSource.role, description: heightSource.description, height: heightSource.height }
+        : null
+    };
   }
 
   function resolveMeasuredBaseDimensions(options = {}) {
@@ -635,10 +699,19 @@
     }
 
     if (!Number.isFinite(nextWidth) || !Number.isFinite(nextHeight)) {
-      return { width: null, height: null, changed: false };
+      return { width: null, height: null, changed: false, raw: measurement };
     }
 
-    return { width: nextWidth, height: nextHeight, changed };
+    return {
+      width: nextWidth,
+      height: nextHeight,
+      changed,
+      raw: measurement,
+      widthSource: measurement?.widthSource || null,
+      heightSource: measurement?.heightSource || null,
+      strategy: measurement?.strategy || null,
+      candidates: Array.isArray(measurement?.candidates) ? measurement.candidates : null
+    };
   }
 
   function resetTileMeasurement() {
@@ -745,7 +818,24 @@
         sanitized: {
           width: options.measuredWidth ?? null,
           height: options.measuredHeight ?? null
-        }
+        },
+        strategy: options.measurement?.strategy || null,
+        widthSource: options.measurement?.widthSource || null,
+        heightSource: options.measurement?.heightSource || null,
+        candidates: Array.isArray(options.measurement?.candidates)
+          ? options.measurement.candidates.map(entry => ({
+              role: entry.role,
+              description: entry.description,
+              width: Number(entry.width) || null,
+              height: Number(entry.height) || null,
+              rectWidth: Number(entry.rectWidth) || null,
+              rectHeight: Number(entry.rectHeight) || null,
+              clientWidth: Number(entry.clientWidth) || null,
+              clientHeight: Number(entry.clientHeight) || null,
+              offsetWidth: Number(entry.offsetWidth) || null,
+              offsetHeight: Number(entry.offsetHeight) || null
+            }))
+          : null
       },
       base: {
         width: options.baseWidth ?? null,
@@ -812,6 +902,34 @@
     logFn('Host size:', `${payload.host.width ?? 'n/a'} × ${payload.host.height ?? 'n/a'}`);
     logFn('Measurement (raw):', payload.measurement.raw);
     logFn('Measurement (sanitized):', payload.measurement.sanitized);
+    if (payload.measurement.strategy) {
+      logFn('Measurement strategy:', payload.measurement.strategy);
+    }
+    if (payload.measurement.widthSource || payload.measurement.heightSource) {
+      logFn('Measurement sources:', {
+        width: payload.measurement.widthSource,
+        height: payload.measurement.heightSource
+      });
+    }
+    if (Array.isArray(payload.measurement.candidates) && payload.measurement.candidates.length) {
+      const summary = payload.measurement.candidates.map(entry => ({
+        role: entry.role,
+        description: entry.description,
+        width: entry.width,
+        height: entry.height,
+        rectWidth: entry.rectWidth,
+        rectHeight: entry.rectHeight,
+        clientWidth: entry.clientWidth,
+        clientHeight: entry.clientHeight,
+        offsetWidth: entry.offsetWidth,
+        offsetHeight: entry.offsetHeight
+      }));
+      if (tableFn) {
+        tableFn(summary);
+      } else {
+        logFn('Measurement candidates:', summary);
+      }
+    }
     logFn('Base dimensions per breakpoint:', payload.base.perBreakpoint);
     logFn('Base sources:', payload.base.sources);
     logFn('Active base size:', {

@@ -81,6 +81,10 @@ function setHostSize(skeleton, width, height) {
   skeleton.root.setBoundingClientRect({ width, height, top: 0, left: 0 });
 }
 
+function setTileSize(skeleton, width, height) {
+  skeleton.tile.setBoundingClientRect({ width, height, top: 0, left: 0 });
+}
+
 (function main() {
   const { window, document } = createTestEnvironment();
   const hooks = loadWeatherDashboard(window);
@@ -213,6 +217,35 @@ function setHostSize(skeleton, width, height) {
   assert(percentColumnDesktop, 'desktop percent column diagnostics should be present');
   assert.deepStrictEqual(percentColumnDesktop.percents, [60, 40], 'column percentages should be recorded');
   assert(Math.abs(percentColumnDesktop.pixels[1] - 495.2) < 0.1, 'column pixel conversion should be recorded');
+
+  // When the tile is smaller than the content container ensure the tile bounds win.
+  setHostSize(skeleton, 1400, 900);
+  setTileSize(skeleton, 1100, 640);
+  applyLayoutOverrides();
+  assert.strictEqual(rootStyle.getPropertyValue('--wdash-base-width'), '1100px', 'tile width should constrain base width');
+  assert.strictEqual(rootStyle.getPropertyValue('--wdash-base-height'), '640px', 'tile height should constrain base height');
+  const boundedDiagnostics = layoutState.lastDiagnostics;
+  assert(boundedDiagnostics, 'bounded diagnostics should exist');
+  assert.strictEqual(
+    boundedDiagnostics.measurement.sanitized.width,
+    1100,
+    'sanitized measurement width should match tile'
+  );
+  assert.strictEqual(
+    boundedDiagnostics.measurement.sanitized.height,
+    640,
+    'sanitized measurement height should match tile'
+  );
+  assert.strictEqual(
+    boundedDiagnostics.measurement.widthSource && boundedDiagnostics.measurement.widthSource.role,
+    'tile',
+    'width source should report tile'
+  );
+  assert.strictEqual(
+    boundedDiagnostics.measurement.heightSource && boundedDiagnostics.measurement.heightSource.role,
+    'tile',
+    'height source should report tile'
+  );
 
   console.log('Layout measurement harness passed');
 })();
