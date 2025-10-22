@@ -125,6 +125,7 @@ def mainPage() {
         section("Derived calculation settings") {
             input name: "windAverageMinutes", type: "number", title: "Wind average window (minutes)", defaultValue: 10, range: "5..60"
             input name: "pressureTrendHours", type: "number", title: "Pressure tendency window (hours)", defaultValue: 3, range: "1..12"
+            input name: "pressureBaselineDays", type: "number", title: "Pressure baseline window (days)", defaultValue: 30, range: "7..60"
         }
 
         section("Layout overrides (optional)") {
@@ -199,6 +200,7 @@ def initialize() {
     createOrUpdateChildDevice()
     state.windHistory = state.windHistory ?: []
     state.pressureHistory = state.pressureHistory ?: []
+    state.pressureBaseline = normalizePressureBaselineState(state.pressureBaseline)
     state.temperatureHistory = state.temperatureHistory ?: []
     state.dailyOutdoorAQ = state.dailyOutdoorAQ ?: [:]
     state.dailyIndoorAQ = state.dailyIndoorAQ ?: [:]
@@ -375,6 +377,38 @@ private BigDecimal readDecimalFor(String attrSetting) {
     readDecimal(config?.device, config?.attribute)
 }
 
+private Map normalizePressureBaselineState(Object raw) {
+    Map baseline = [:]
+    if (raw instanceof Map) {
+        baseline.putAll(raw as Map)
+    }
+
+    def history = (baseline.history instanceof List) ? baseline.history : []
+    List normalizedHistory = history.collect { entry ->
+        if (!(entry instanceof Map)) return null
+        def day = entry.day
+        def avg = entry.avg
+        String dayString = day != null ? day.toString() : null
+        BigDecimal avgValue = toBigDecimal(avg)
+        if (!dayString || avgValue == null) return null
+        [day: dayString, avg: avgValue]
+    }.findAll { it != null }
+
+    baseline.history = normalizedHistory
+    baseline.currentDay = baseline.currentDay ? baseline.currentDay.toString() : null
+    baseline.dailySum = baseline.dailySum != null ? (toBigDecimal(baseline.dailySum) ?: 0.0G) : 0.0G
+    baseline.dailyCount = baseline.dailyCount != null ? (baseline.dailyCount as Integer) : 0
+    baseline.lastUnit = baseline.lastUnit ?: null
+    baseline.lastUpdated = baseline.lastUpdated ?: null
+
+    return baseline
+}
+
+private Map readPressureSample(String attrSetting) {
+    def config = attributeConfig(attrSetting)
+    readPressureSample(config?.device, config?.attribute)
+}
+
 private String readStringFor(String attrSetting) {
     def config = attributeConfig(attrSetting)
     readString(config?.device, config?.attribute)
@@ -480,21 +514,57 @@ def refreshWeatherData() {
     if (wind) payload.wind = wind
 
     def pressure = [:]
-    def relPressure = readDecimalFor("attrPressure")
+    def relSample = readPressureSample("attrPressure")
+    def absSample = readPressureSample("attrAbsolutePressure")
+    def relPressure = relSample.value
+    def absPressure = absSample.value
     if (relPressure != null) {
         pressure.relativeInHg = round(relPressure, 2)
     }
-    def absPressure = readDecimalFor("attrAbsolutePressure")
     if (absPressure != null) {
         pressure.absoluteInHg = round(absPressure, 2)
     }
-    updatePressureHistory(relPressure ?: absPressure, now)
+    String pressureUnit = relSample.unit ?: absSample.unit ?: state.pressureBaseline?.lastUnit ?: "inHg"
+    def referencePressure = relPressure ?: absPressure
+    updatePressureHistory(referencePressure, now)
+    updatePressureBaseline(referencePressure, pressureUnit, now, tz)
     def trend = computePressureTrend(now)
     if (trend) {
         pressure.trendInHgPerHour = round(trend.ratePerHour, 3)
         pressure.trend = trend.label
         if (trend.changeTotal != null) {
             pressure.changeInTrendWindow = round(trend.changeTotal, 3)
+        }
+    }
+    def baseline = computePressureBaselineSummary(pressureUnit)
+    if (baseline) {
+        def baselinePayload = [:]
+        if (baseline.dailyAverage != null) {
+            baselinePayload.dailyAverageInHg = round(baseline.dailyAverage, 3)
+        }
+        if (baseline.thirtyDayAverage != null) {
+            baselinePayload.thirtyDayAverageInHg = round(baseline.thirtyDayAverage, 3)
+        }
+        if (baseline.tendencyInHg != null) {
+            baselinePayload.tendencyInHg = round(baseline.tendencyInHg, 3)
+        }
+        if (baseline.tendencyHpa != null) {
+            baselinePayload.tendencyHpa = round(baseline.tendencyHpa, 1)
+        }
+        if (baseline.trendText) {
+            baselinePayload.trend = baseline.trendText
+        }
+        if (baseline.iconKey) {
+            baselinePayload.iconKey = baseline.iconKey
+        }
+        if (baseline.iconLabel) {
+            baselinePayload.iconLabel = baseline.iconLabel
+        }
+        if (baseline.forecastText) {
+            baselinePayload.forecastText = baseline.forecastText
+        }
+        if (baselinePayload) {
+            pressure.baseline = baselinePayload
         }
     }
     if (pressure) payload.pressure = pressure
@@ -596,7 +666,13 @@ def refreshWeatherData() {
     if (lightning) payload.lightning = lightning
 
     if (!payload.outlook24h) {
-        def outlook = computeOutlook(payload.pressure?.relativeInHg ?: payload.pressure?.absoluteInHg, trend?.ratePerHour, outdoor?.humidity)
+        def outlook = computeOutlook(
+            payload.pressure?.relativeInHg ?: payload.pressure?.absoluteInHg,
+            trend,
+            outdoor?.humidity,
+            baseline,
+            pressureUnit
+        )
         if (outlook) payload.outlook24h = outlook
     }
 
@@ -765,6 +841,17 @@ private BigDecimal readDecimal(device, String attrName) {
     return toBigDecimal(value)
 }
 
+private Map readPressureSample(device, String attrName) {
+    if (!device || !attrName) {
+        return [value: null, unit: null]
+    }
+    def eventState = device.currentState(attrName)
+    if (!eventState) {
+        return [value: null, unit: null]
+    }
+    return [value: toBigDecimal(eventState.value), unit: eventState.unit]
+}
+
 private String readString(device, String attrName) {
     if (!device || !attrName) return null
     def value = device.currentValue(attrName)
@@ -855,6 +942,200 @@ private void updatePressureHistory(BigDecimal pressure, long timestamp) {
     state.pressureHistory = history
 }
 
+private void updatePressureBaseline(BigDecimal pressure, String unit, long timestamp, TimeZone tz) {
+    def baseline = normalizePressureBaselineState(state.pressureBaseline)
+    String dayKey = dayKeyFor(timestamp, tz)
+
+    if (!baseline.currentDay) {
+        baseline.currentDay = dayKey
+        baseline.dailySum = 0.0G
+        baseline.dailyCount = 0
+    } else if (baseline.currentDay != dayKey) {
+        finalizePressureBaselineDay(baseline)
+        baseline.currentDay = dayKey
+        baseline.dailySum = 0.0G
+        baseline.dailyCount = 0
+    }
+
+    if (pressure != null) {
+        baseline.dailySum = ((baseline.dailySum ?: 0.0G) as BigDecimal) + (pressure as BigDecimal)
+        baseline.dailyCount = ((baseline.dailyCount ?: 0) as Integer) + 1
+    }
+
+    if (unit) {
+        baseline.lastUnit = unit
+    }
+    baseline.lastUpdated = timestamp
+    state.pressureBaseline = baseline
+}
+
+private void finalizePressureBaselineDay(Map baseline) {
+    if (!baseline?.currentDay) return
+    Integer count = (baseline.dailyCount ?: 0) as Integer
+    if (!count) return
+    BigDecimal sum = (baseline.dailySum ?: 0.0G) as BigDecimal
+    if (sum == null) return
+    BigDecimal avg = sum / count
+    List history = (baseline.history instanceof List) ? baseline.history : []
+    history = history.findAll { it?.day && it.day != baseline.currentDay }
+    history << [day: baseline.currentDay, avg: avg]
+    history.sort { it.day }
+    baseline.history = history
+    enforcePressureBaselineLimit(baseline)
+}
+
+private void enforcePressureBaselineLimit(Map baseline) {
+    List history = (baseline?.history instanceof List) ? baseline.history : []
+    Integer keep = (settings.pressureBaselineDays ?: 30) as Integer
+    if (keep > 0 && history.size() > keep) {
+        history = history.sort { it.day }.takeRight(keep)
+        baseline.history = history
+    }
+}
+
+private Map computePressureBaselineSummary(String unit) {
+    def baseline = normalizePressureBaselineState(state.pressureBaseline)
+    enforcePressureBaselineLimit(baseline)
+
+    List history = (baseline.history instanceof List) ? baseline.history : []
+    history = history.sort { it.day }
+
+    BigDecimal dailyAverage = null
+    Integer count = (baseline.dailyCount ?: 0) as Integer
+    if (count && baseline.dailySum != null) {
+        BigDecimal sum = (baseline.dailySum as BigDecimal)
+        if (sum != null && count > 0) {
+            dailyAverage = sum / count
+        }
+    }
+    if (dailyAverage == null && history) {
+        def last = history.last()
+        dailyAverage = toBigDecimal(last?.avg)
+    }
+
+    List<BigDecimal> values = history.collect { toBigDecimal(it?.avg) }.findAll { it != null }
+    BigDecimal thirtyDayAverage = null
+    if (values) {
+        BigDecimal sum = values.inject(0.0G) { acc, val -> acc + val }
+        thirtyDayAverage = sum / values.size()
+    } else {
+        thirtyDayAverage = dailyAverage
+    }
+
+    BigDecimal tendency = null
+    if (dailyAverage != null && thirtyDayAverage != null) {
+        tendency = dailyAverage - thirtyDayAverage
+    }
+
+    BigDecimal tendencyHpa = convertPressureToHpa(tendency, unit ?: baseline.lastUnit)
+    def forecast = determineBaselineForecast(tendencyHpa)
+
+    boolean hasSamples = (count ?: 0) > 0 || (values && !values.isEmpty())
+    if (!hasSamples && dailyAverage == null && thirtyDayAverage == null) {
+        state.pressureBaseline = baseline
+        return null
+    }
+
+    Map result = [
+        dailyAverage      : dailyAverage,
+        thirtyDayAverage  : thirtyDayAverage,
+        tendencyInHg      : tendency,
+        tendencyHpa       : tendencyHpa,
+        trendText         : forecast.trendText,
+        iconKey           : forecast.key,
+        iconLabel         : forecast.label,
+        forecastText      : forecast.text
+    ]
+
+    if (values) {
+        result.historyDays = values.size()
+    }
+
+    state.pressureBaseline = baseline
+    return result.findAll { it.value != null }
+}
+
+private Map determineBaselineForecast(BigDecimal tendencyHpa) {
+    BigDecimal value = tendencyHpa != null ? tendencyHpa : 0.0G
+    String trendText
+    if (value > 1.0G) {
+        trendText = "Rising"
+    } else if (value < -1.0G) {
+        trendText = "Falling"
+    } else {
+        trendText = "Steady"
+    }
+
+    String key
+    String label
+    String text
+
+    if (value >= 3.0G) {
+        key = "sunny"
+        label = "Sunny"
+        text = "Pressure well above normal — clearing skies likely."
+    } else if (value >= 1.0G) {
+        key = "partly"
+        label = "Partly Cloudy"
+        text = "Pressure rising versus recent days — improving trend."
+    } else if (value > -1.0G) {
+        key = "cloudy"
+        label = "Cloudy"
+        text = "Pressure near seasonal baseline — conditions steady."
+    } else if (value > -3.0G) {
+        key = "rainy"
+        label = "Rain"
+        text = "Pressure below normal — showers possible."
+    } else {
+        key = "stormy"
+        label = "Stormy"
+        text = "Pressure far below normal — storms increasingly likely."
+    }
+
+    [key: key, label: label, text: text, trendText: trendText]
+}
+
+private String buildTrendNarrative(Map trend) {
+    if (!trend) return null
+    String label = trend.label
+    if (!label) return null
+    switch (label) {
+        case "Rising Rapidly":
+            return "Pressure rising rapidly now."
+        case "Rising":
+            return "Pressure rising steadily."
+        case "Falling Rapidly":
+            return "Pressure falling rapidly now."
+        case "Falling":
+            return "Pressure falling steadily."
+        default:
+            return null
+    }
+}
+
+private String buildHumidityNote(BigDecimal humidity) {
+    if (humidity == null) return null
+    if (humidity >= 85) {
+        return "High humidity could support fog or drizzle."
+    }
+    if (humidity <= 35) {
+        return "Dry air may keep skies clear."
+    }
+    return null
+}
+
+private String truncateSummary(String text, int maxLength) {
+    if (text == null) return null
+    String trimmed = text.trim()
+    if (!trimmed) return null
+    if (maxLength <= 0 || trimmed.length() <= maxLength) {
+        return trimmed
+    }
+    int end = Math.max(0, maxLength - 1)
+    String shortened = trimmed.substring(0, end).trim()
+    return shortened ? shortened + '…' : trimmed.substring(0, maxLength)
+}
+
 private Map computePressureTrend(long timestamp) {
     def history = (state.pressureHistory ?: []) as List
     if (!history) return null
@@ -896,53 +1177,89 @@ private Map computePressureTrend(long timestamp) {
     ]
 }
 
-private Map computeOutlook(BigDecimal pressure, BigDecimal rate, BigDecimal humidity) {
-    if (pressure == null && rate == null) return null
-    def summary
-    def category
-    def trend = rate ?: 0
+private Map computeOutlook(BigDecimal pressure, Map trend, BigDecimal humidity, Map baseline, String unit) {
+    Map baselineInfo = baseline ?: computePressureBaselineSummary(unit)
+    String trendNarrative = buildTrendNarrative(trend)
+    String humidityNote = buildHumidityNote(humidity)
 
-    if (trend >= 0.03) {
-        category = "Improving"
-        summary = "Pressure rising quickly — improving weather expected."
-    } else if (trend >= 0.01) {
-        category = "Fair"
-        summary = "Pressure rising — conditions should gradually improve."
-    } else if (trend <= -0.03) {
-        category = "Stormy"
-        summary = "Pressure falling quickly — unsettled weather likely within 24 hours."
-    } else if (trend <= -0.01) {
-        category = "Unsettled"
-        summary = "Pressure falling — precipitation possible in the next day."
-    } else if (pressure != null) {
-        if (pressure >= 30.2) {
-            category = "Fair"
-            summary = "High pressure dominant — fair skies expected."
-        } else if (pressure <= 29.5) {
-            category = "Unsettled"
-            summary = "Low pressure system — clouds or rain possible."
+    String baselineNarrative = baselineInfo?.forecastText
+    String summary = [trendNarrative, baselineNarrative, humidityNote].findAll { it }
+        .join(' ')
+
+    if (!summary) {
+        if (pressure != null) {
+            if (pressure >= 30.2) {
+                summary = "High pressure dominant — fair skies expected."
+            } else if (pressure <= 29.5) {
+                summary = "Low pressure system — clouds or rain possible."
+            }
         }
     }
 
-    if (!category) {
-        category = "Stable"
+    if (!summary) {
         summary = "Little pressure change — current conditions likely to persist."
     }
 
-    def humidityNote = null
-    if (humidity != null) {
-        if (humidity >= 85) {
-            humidityNote = "High humidity could support fog or drizzle."
-        } else if (humidity <= 35) {
-            humidityNote = "Dry air may keep skies clear."
+    String shortSummary
+    String trendLabel = trend?.label
+    if (trendLabel && trendLabel != 'Steady') {
+        shortSummary = trendLabel
+        if (baselineInfo?.iconLabel) {
+            shortSummary = "${shortSummary} • ${baselineInfo.iconLabel}"
         }
+    } else if (baselineInfo?.iconLabel) {
+        shortSummary = baselineInfo.iconLabel
     }
 
-    if (humidityNote) {
-        summary = summary + " " + humidityNote
+    if (humidityNote && !shortSummary) {
+        shortSummary = humidityNote
     }
 
-    [category: category, summary: summary]
+    shortSummary = truncateSummary(shortSummary ?: summary, 40)
+
+    Map baselinePayload = [:]
+    if (baselineInfo?.dailyAverage != null) {
+        baselinePayload.dailyAverageInHg = round(baselineInfo.dailyAverage, 3)
+    }
+    if (baselineInfo?.thirtyDayAverage != null) {
+        baselinePayload.thirtyDayAverageInHg = round(baselineInfo.thirtyDayAverage, 3)
+    }
+    if (baselineInfo?.tendencyInHg != null) {
+        baselinePayload.tendencyInHg = round(baselineInfo.tendencyInHg, 3)
+    }
+    if (baselineInfo?.tendencyHpa != null) {
+        baselinePayload.tendencyHpa = round(baselineInfo.tendencyHpa, 1)
+    }
+    if (baselineInfo?.trendText) {
+        baselinePayload.trend = baselineInfo.trendText
+    }
+    if (baselineInfo?.iconKey) {
+        baselinePayload.iconKey = baselineInfo.iconKey
+    }
+    if (baselineInfo?.iconLabel) {
+        baselinePayload.iconLabel = baselineInfo.iconLabel
+    }
+    if (baselineInfo?.forecastText) {
+        baselinePayload.forecastText = baselineInfo.forecastText
+    }
+
+    def category = baselineInfo?.iconLabel ?: (trendLabel ?: 'Stable')
+
+    Map result = [
+        category    : category,
+        summary     : summary,
+        shortSummary: shortSummary,
+        iconKey     : baselineInfo?.iconKey,
+        iconLabel   : baselineInfo?.iconLabel,
+        trendLabel  : trendLabel,
+        humidityNote: humidityNote
+    ]
+
+    if (baselinePayload) {
+        result.baseline = baselinePayload
+    }
+
+    return result.findAll { it.value != null }
 }
 
 private Map computeMoonPhase(Date reference, TimeZone tz, BigDecimal latitude, BigDecimal longitude) {
@@ -1106,6 +1423,24 @@ private BigDecimal cardinalToDegrees(String cardinal) {
     ]
     def key = cardinal.trim().toUpperCase()
     return lookup[key]
+}
+
+private static BigDecimal convertPressureToHpa(BigDecimal value, String unit) {
+    if (value == null) return null
+    switch ((unit ?: "inHg").toLowerCase()) {
+        case "inhg":
+            return value * 33.8638866667G
+        case "mmhg":
+            return value * 1.3332239G
+        case "kpa":
+            return value * 10.0G
+        case "mbar":
+        case "mb":
+        case "hpa":
+            return value
+        default:
+            return value
+    }
 }
 
 private String htmlEncode(String value) {

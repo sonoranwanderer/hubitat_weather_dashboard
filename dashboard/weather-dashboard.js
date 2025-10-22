@@ -160,81 +160,47 @@
 
   const PRESSURE_OUTLOOK_ICONS = {
     sunny: `
-      <svg viewBox="0 0 48 48" class="wdash-pressure-icon" focusable="false" aria-hidden="true">
-        <circle cx="24" cy="24" r="10" fill="#ffe27b" stroke="#f5b400" stroke-width="2.4" />
-        <g stroke="#f5b400" stroke-width="2.4" stroke-linecap="round">
-          <line x1="24" y1="5" x2="24" y2="11" />
-          <line x1="24" y1="37" x2="24" y2="43" />
-          <line x1="5" y1="24" x2="11" y2="24" />
-          <line x1="37" y1="24" x2="43" y2="24" />
-          <line x1="10" y1="10" x2="14" y2="14" />
-          <line x1="34" y1="34" x2="38" y2="38" />
-          <line x1="10" y1="38" x2="14" y2="34" />
-          <line x1="34" y1="14" x2="38" y2="10" />
+      <svg viewBox="0 0 48 48" class="wdash-pressure-icon-svg" focusable="false" aria-hidden="true">
+        <circle cx="24" cy="24" r="10" fill="#ffd766" stroke="#f0b400" stroke-width="2" />
+        <g stroke="#f0b400" stroke-width="2" stroke-linecap="round">
+          <line x1="24" y1="6" x2="24" y2="0" />
+          <line x1="24" y1="48" x2="24" y2="42" />
+          <line x1="6" y1="24" x2="0" y2="24" />
+          <line x1="48" y1="24" x2="42" y2="24" />
+          <line x1="10" y1="10" x2="5" y2="5" />
+          <line x1="38" y1="38" x2="43" y2="43" />
+          <line x1="10" y1="38" x2="5" y2="43" />
+          <line x1="38" y1="10" x2="43" y2="5" />
         </g>
       </svg>
     `,
     partly: `
-      <svg viewBox="0 0 48 48" class="wdash-pressure-icon" focusable="false" aria-hidden="true">
-        <circle cx="18" cy="20" r="8" fill="#ffe27b" stroke="#f5b400" stroke-width="2.2" />
-        <g stroke="#f5b400" stroke-width="2" stroke-linecap="round">
-          <line x1="18" y1="6" x2="18" y2="11" />
-          <line x1="18" y1="29" x2="18" y2="34" />
-          <line x1="6" y1="20" x2="11" y2="20" />
-          <line x1="25" y1="12" x2="28" y2="9" />
-        </g>
-        <path d="M16 34h18a6 6 0 000-12 6.7 6.7 0 00-.9.07A8 8 0 0012.2 25.9 5.5 5.5 0 0016 34z" fill="#f0f4ff" stroke="#ced8ff" stroke-width="2" stroke-linejoin="round" />
+      <svg viewBox="0 0 48 48" class="wdash-pressure-icon-svg" focusable="false" aria-hidden="true">
+        <circle cx="17" cy="19" r="9" fill="#ffd766" stroke="#f0b400" stroke-width="2" />
+        <path d="M15 30c1.6-3.6 5.2-6 9.3-6 5.7 0 10.3 4.5 10.3 10.1 0 0.3 0 0.7-0.1 1H15c-3.3 0-6-2.6-6-5.8 0-3 2.3-5.5 5.3-5.8" fill="#ffffff" stroke="#d0d6df" stroke-width="2" stroke-linejoin="round" />
       </svg>
     `,
     cloudy: `
-      <svg viewBox="0 0 48 48" class="wdash-pressure-icon" focusable="false" aria-hidden="true">
-        <path d="M18 34h18a7 7 0 000-14 7.4 7.4 0 00-1 .08 10 10 0 00-19.1 2.92A6.5 6.5 0 0018 34z" fill="#dce5ff" stroke="#c1cdee" stroke-width="2.2" stroke-linejoin="round" />
-        <path d="M12 34h12a5 5 0 000-10 5.6 5.6 0 00-.8.06 7 7 0 10-11.4 5.57A4.5 4.5 0 0012 34z" fill="#ecf1ff" stroke="#cbd7f5" stroke-width="1.8" stroke-linejoin="round" />
+      <svg viewBox="0 0 48 48" class="wdash-pressure-icon-svg" focusable="false" aria-hidden="true">
+        <path d="M17 34c-4.4 0-8-3.4-8-7.6 0-3.8 2.8-7 6.6-7.5 1.3-5.2 6-9.1 11.6-9.1 6.7 0 12.1 5.3 12.1 11.9 0 0.4 0 0.8-0.1 1.2 3.4 0.8 6 3.9 6 7.5 0 4.2-3.4 7.6-7.7 7.6H17z" fill="#ffffff" stroke="#d0d6df" stroke-width="2" stroke-linejoin="round" />
       </svg>
     `,
     rainy: `
-      <svg viewBox="0 0 48 48" class="wdash-pressure-icon" focusable="false" aria-hidden="true">
-        <path d="M18 32h18a6.5 6.5 0 000-13 6.6 6.6 0 00-1 .08 9.5 9.5 0 00-18.3 2.78A6 6 0 0018 32z" fill="#d9e6ff" stroke="#bed2ff" stroke-width="2.1" stroke-linejoin="round" />
-        <path d="M12 32h11a4.8 4.8 0 000-9.6 5.2 5.2 0 00-.8.06 6.2 6.2 0 10-10.6 4.9A4 4 0 0012 32z" fill="#edf3ff" stroke="#cbd8f9" stroke-width="1.7" stroke-linejoin="round" />
-        <g stroke="#7fb8ff" stroke-width="2.4" stroke-linecap="round">
-          <line x1="18" y1="36" x2="16" y2="42" />
-          <line x1="26" y1="36" x2="24" y2="42" />
-          <line x1="34" y1="36" x2="32" y2="42" />
+      <svg viewBox="0 0 48 48" class="wdash-pressure-icon-svg" focusable="false" aria-hidden="true">
+        <path d="M16 32c-4 0-7.3-3.1-7.3-7 0-3.5 2.6-6.5 6-6.9 1.1-5 5.7-8.7 11-8.7 6.3 0 11.4 4.9 11.4 10.9 0 0.4 0 0.8-0.1 1.1 3.2 0.7 5.6 3.6 5.6 7 0 3.9-3.2 7-7.1 7H16z" fill="#ffffff" stroke="#d0d6df" stroke-width="2" stroke-linejoin="round" />
+        <g stroke="#3ca0ff" stroke-width="2" stroke-linecap="round">
+          <line x1="18" y1="36" x2="15" y2="42" />
+          <line x1="28" y1="36" x2="25" y2="42" />
+          <line x1="38" y1="36" x2="35" y2="42" />
         </g>
       </svg>
     `,
     stormy: `
-      <svg viewBox="0 0 48 48" class="wdash-pressure-icon" focusable="false" aria-hidden="true">
-        <path d="M18 31h18a6.5 6.5 0 000-13 6.4 6.4 0 00-1 .07A9.5 9.5 0 0016.6 21 6 6 0 0018 31z" fill="#d9e6ff" stroke="#bccff7" stroke-width="2" stroke-linejoin="round" />
-        <path d="M12 31h11a4.8 4.8 0 000-9.6 5.2 5.2 0 00-.8.06 6.2 6.2 0 10-10.6 4.9A4 4 0 0012 31z" fill="#edf3ff" stroke="#cbd8f9" stroke-width="1.7" stroke-linejoin="round" />
-        <path d="M24 33l-5 9h4l-2 7 8-10h-4l3-6z" fill="#ffcc66" stroke="#f5a623" stroke-width="1.6" stroke-linejoin="round" />
+      <svg viewBox="0 0 48 48" class="wdash-pressure-icon-svg" focusable="false" aria-hidden="true">
+        <path d="M16 30c-4 0-7.3-3.1-7.3-7 0-3.5 2.6-6.5 6-6.9 1.1-5 5.7-8.7 11-8.7 6.3 0 11.4 4.9 11.4 10.9 0 0.4 0 0.8-0.1 1.1 3.2 0.7 5.6 3.6 5.6 7 0 3.9-3.2 7-7.1 7H16z" fill="#ffffff" stroke="#d0d6df" stroke-width="2" stroke-linejoin="round" />
+        <path d="M27 32l-5 9h4l-1 7 8-10h-4l2-6z" fill="#ffd766" stroke="#f0b400" stroke-width="1.5" stroke-linejoin="round" />
       </svg>
     `
-  };
-
-  const PRESSURE_OUTLOOK_KEY_MAP = {
-    sunny: 'sunny',
-    clear: 'sunny',
-    bright: 'sunny',
-    improving: 'sunny',
-    rise: 'sunny',
-    "high pressure": 'sunny',
-    partly: 'partly',
-    "partly cloudy": 'partly',
-    "partly sunny": 'partly',
-    fair: 'partly',
-    neutral: 'cloudy',
-    cloudy: 'cloudy',
-    overcast: 'cloudy',
-    stable: 'cloudy',
-    "steady": 'cloudy',
-    rainy: 'rainy',
-    rain: 'rainy',
-    showers: 'rainy',
-    unsettled: 'rainy',
-    stormy: 'stormy',
-    storm: 'stormy',
-    thunderstorm: 'stormy'
   };
 
   const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -2316,16 +2282,11 @@
     const rate = toNumber(pressure.trendInHgPerHour);
     const change = toNumber(pressure.changeInTrendWindow);
     const outlook = data.outlook24h || {};
-    const outlookLabel = (() => {
-      const text = outlook.category || outlook.label || outlook.title;
-      if (text == null) return 'Outlook';
-      const str = typeof text === 'string' ? text : String(text);
-      return str.trim() || 'Outlook';
+    const headerSummary = (() => {
+      const source = outlook.shortSummary || outlook.summary || outlook.text;
+      const limited = truncateText(source, 40);
+      return limited || '';
     })();
-    const outlookIconKey = derivePressureOutlookKey(outlook);
-    const outlookMarkup = buildPressureOutlookContent(outlook, outlookLabel, outlookIconKey);
-    const headerSummaryRaw = buildOutlookHeaderSummary(outlook);
-    const headerSummary = headerSummaryRaw && headerSummaryRaw.trim().length ? headerSummaryRaw.trim() : null;
     const mode = pressureMode === 'absolute' ? 'absolute' : 'relative';
     const relative = escapeHtml(formatPressure(pressure.relativeInHg));
     const absolute = escapeHtml(formatPressure(pressure.absoluteInHg));
@@ -2340,7 +2301,7 @@
         ${cardHeader(
           CARD_TITLES.pressure,
           data,
-          headerSummary,
+          headerSummary || null,
           { fallbackToRelative: !headerSummary }
         )}
         <div class="wdash-pressure">
@@ -2361,7 +2322,7 @@
                 </div>
               </div>
               <div class="wdash-pressure-band-cell">
-                ${outlookMarkup}
+                ${buildPressureOutlookBadge(outlook)}
               </div>
             </div>
             ${buildMetricRow(stats, 'wdash-pressure-stats')}
@@ -2371,82 +2332,36 @@
     `;
   }
 
-  function derivePressureOutlookKey(outlook) {
-    if (!outlook || typeof outlook !== 'object') return null;
-    const candidates = [
-      outlook.iconKey,
-      outlook.key,
-      outlook.outlookKey,
-      outlook.baselineKey,
-      outlook.category,
-      outlook.label,
-      outlook.text,
-      outlook.summary
-    ];
-    for (const candidate of candidates) {
-      const normalized = normalizeLower(candidate);
-      if (!normalized) continue;
-      if (PRESSURE_OUTLOOK_KEY_MAP[normalized]) {
-        return PRESSURE_OUTLOOK_KEY_MAP[normalized];
-      }
-      if (normalized.includes('storm')) return 'stormy';
-      if (normalized.includes('rain')) return 'rainy';
-      if (normalized.includes('sun')) return 'sunny';
-      if (normalized.includes('cloud')) return 'cloudy';
+  function buildPressureOutlookBadge(outlook) {
+    const iconKey = typeof outlook?.iconKey === 'string' ? outlook.iconKey.trim().toLowerCase() : '';
+    const iconLabel = (() => {
+      const raw = outlook?.iconLabel || outlook?.category || outlook?.label;
+      if (raw == null) return '';
+      const str = typeof raw === 'string' ? raw : String(raw);
+      return str.trim();
+    })();
+    const summary = (() => {
+      const raw = outlook?.summary || outlook?.text;
+      if (raw == null) return '';
+      const str = typeof raw === 'string' ? raw : String(raw);
+      return str.trim();
+    })();
+    const titleParts = [];
+    if (iconLabel) titleParts.push(iconLabel);
+    if (summary) titleParts.push(summary);
+    const title = titleParts.join(' — ');
+    const svg = iconKey ? PRESSURE_OUTLOOK_ICONS[iconKey] : null;
+    if (svg) {
+      const ariaLabel = escapeHtml(title || iconLabel || 'Barometer outlook');
+      const dataAttr = iconKey ? ` data-outlook-key="${escapeHtml(iconKey)}"` : '';
+      return `
+        <span class="wdash-pressure-outlook-icon" role="img" aria-label="${ariaLabel}"${dataAttr}>
+          ${svg}
+        </span>
+      `;
     }
-    return null;
-  }
-
-  function buildPressureOutlookContent(outlook, label, iconKey) {
-    const tooltip = buildOutlookTooltip(outlook, label);
-    if (iconKey && PRESSURE_OUTLOOK_ICONS[iconKey]) {
-      const titleAttr = tooltip ? ` title="${escapeHtml(tooltip)}"` : '';
-      const hidden = label ? `<span class="wdash-visually-hidden">${escapeHtml(label)}</span>` : '';
-      return `<span class="wdash-pressure-outlook-label" data-outlook-icon="${escapeHtml(iconKey)}"${titleAttr}>${PRESSURE_OUTLOOK_ICONS[iconKey]}${hidden}</span>`;
-    }
-    if (label && label.trim().length) {
-      const text = label.trim();
-      const titleAttr = tooltip ? ` title="${escapeHtml(tooltip)}"` : '';
-      return `<span class="wdash-pressure-outlook-text"${titleAttr}>${escapeHtml(text)}</span>`;
-    }
-    if (tooltip) {
-      return `<span class="wdash-pressure-outlook-text" title="${escapeHtml(tooltip)}">Outlook</span>`;
-    }
-    return '<span class="wdash-pressure-outlook-text">Outlook</span>';
-  }
-
-  function buildOutlookHeaderSummary(outlook) {
-    const candidates = [
-      outlook?.shortSummary,
-      outlook?.shortText,
-      outlook?.summary,
-      outlook?.text,
-      outlook?.label,
-      outlook?.category
-    ];
-    for (const candidate of candidates) {
-      const normalized = normalizeString(candidate);
-      if (normalized) {
-        return truncateText(normalized, 32);
-      }
-    }
-    return '';
-  }
-
-  function buildOutlookTooltip(outlook, fallback) {
-    const candidates = [
-      outlook?.summary,
-      outlook?.text,
-      outlook?.description,
-      fallback
-    ];
-    for (const candidate of candidates) {
-      const normalized = normalizeString(candidate);
-      if (normalized) {
-        return normalized;
-      }
-    }
-    return '';
+    const fallbackText = iconLabel || summary || 'Outlook';
+    return `<span class="wdash-pressure-outlook-label">${escapeHtml(fallbackText)}</span>`;
   }
 
   function buildSolarSunCard(data) {
@@ -4970,16 +4885,10 @@
 .wdash-pressure-button:hover { color: #f4f6ff; }
 .wdash-pressure-button.is-active { background: linear-gradient(140deg, #5ab3ff, #3f8bff); color: #0d1426; box-shadow: 0 8px 16px rgba(74,150,255,0.35); }
 .wdash-pressure-reading { font-size: 1.82rem; font-weight: 700; color: #e3edff; min-height: 2.2rem; display: flex; align-items: center; justify-content: center; }
-.wdash-pressure-outlook-label { display: inline-flex; align-items: center; justify-content: center; width: 48px; height: 48px; border-radius: 50%; box-shadow: 0 10px 18px rgba(0,0,0,0.35), inset 0 0 0 1px rgba(255,255,255,0.08); position: relative; overflow: hidden; }
-.wdash-pressure-outlook-label svg { width: 32px; height: 32px; display: block; }
-.wdash-pressure-outlook-label[data-outlook-icon='sunny'] { background: radial-gradient(circle at 32% 28%, #ffeaa7 0%, #f9c163 55%, #f6a741 95%); color: #7b4a00; }
-.wdash-pressure-outlook-label[data-outlook-icon='partly'] { background: linear-gradient(160deg, #f8ce76 0%, #7db9ff 100%); color: #123a5e; }
-.wdash-pressure-outlook-label[data-outlook-icon='cloudy'] { background: linear-gradient(160deg, #e4ecff 0%, #a8b9da 100%); color: #2a3c5f; }
-.wdash-pressure-outlook-label[data-outlook-icon='rainy'] { background: linear-gradient(160deg, #b3d9ff 0%, #3f7bdc 100%); color: #0a264f; }
-.wdash-pressure-outlook-label[data-outlook-icon='stormy'] { background: linear-gradient(160deg, #7481a4 0%, #182036 100%); color: #fdd76b; }
-.wdash-pressure-outlook-text { font-weight: 700; color: #ffb95a; text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.75rem; white-space: nowrap; display: inline-flex; align-items: center; justify-content: center; }
-.wdash-pressure-icon { width: 32px; height: 32px; display: block; }
-.wdash-visually-hidden { position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important; margin: -1px !important; overflow: hidden !important; clip: rect(0, 0, 0, 0) !important; clip-path: inset(50%) !important; border: 0 !important; white-space: nowrap !important; }
+.wdash-pressure-outlook-icon { width: 48px; height: 48px; display: inline-flex; align-items: center; justify-content: center; border-radius: 12px; background: rgba(255,255,255,0.06); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08); }
+.wdash-pressure-outlook-icon svg { width: 36px; height: 36px; display: block; }
+.wdash-pressure-icon-svg { width: 100%; height: 100%; }
+.wdash-pressure-outlook-label { font-weight: 700; color: #ffb95a; text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.75rem; white-space: nowrap; display: inline-flex; align-items: center; justify-content: center; padding: 4px 10px; border-radius: 999px; background: rgba(255,255,255,0.06); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08); }
 .wdash-temp-wind-footer { position: relative; }
 .wdash-temp-wind-footer .wdash-temp-wind-details { position: relative; z-index: 1; }
 .wdash-pressure-value { display: none; }
@@ -5160,6 +5069,18 @@
     const v = Number(value);
     if (!Number.isFinite(v)) return min;
     return Math.min(Math.max(v, min), max);
+  }
+
+  function truncateText(value, maxLength) {
+    if (value == null) return '';
+    const str = typeof value === 'string' ? value : String(value);
+    const trimmed = str.trim();
+    if (!trimmed) return '';
+    if (!Number.isFinite(maxLength) || maxLength <= 0 || trimmed.length <= maxLength) {
+      return trimmed;
+    }
+    const slice = trimmed.slice(0, Math.max(0, maxLength - 1)).trim();
+    return slice ? `${slice}…` : trimmed.slice(0, maxLength);
   }
 
   function formatTemperature(value) {
@@ -5721,27 +5642,6 @@
       if (el) return el;
     }
     return tile;
-  }
-
-  function normalizeString(value) {
-    if (value == null) return '';
-    const str = typeof value === 'string' ? value : String(value);
-    return str.trim();
-  }
-
-  function normalizeLower(value) {
-    const normalized = normalizeString(value);
-    return normalized ? normalized.toLowerCase() : '';
-  }
-
-  function truncateText(value, maxLength) {
-    const normalized = normalizeString(value);
-    if (!normalized) return '';
-    if (!Number.isFinite(maxLength) || maxLength <= 0) return normalized;
-    if (normalized.length <= maxLength) return normalized;
-    if (maxLength === 1) return '…';
-    const slice = normalized.slice(0, maxLength - 1).replace(/\s+$/u, '');
-    return `${slice}…`;
   }
 
   function escapeHtml(value) {
