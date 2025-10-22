@@ -177,17 +177,23 @@
     partly: `
       <svg viewBox="0 0 48 48" class="wdash-pressure-icon-svg" focusable="false" aria-hidden="true">
         <circle cx="17" cy="19" r="9" fill="#ffd766" stroke="#f0b400" stroke-width="2" />
-        <path d="M15 30c1.6-3.6 5.2-6 9.3-6 5.7 0 10.3 4.5 10.3 10.1 0 0.3 0 0.7-0.1 1H15c-3.3 0-6-2.6-6-5.8 0-3 2.3-5.5 5.3-5.8" fill="#ffffff" stroke="#d0d6df" stroke-width="2" stroke-linejoin="round" />
+        <g transform="translate(24 0) scale(1.5 1) translate(-24 0)">
+          <path d="M15 30c1.6-3.6 5.2-6 9.3-6 5.7 0 10.3 4.5 10.3 10.1 0 0.3 0 0.7-0.1 1H15c-3.3 0-6-2.6-6-5.8 0-3 2.3-5.5 5.3-5.8" fill="#ffffff" stroke="#d0d6df" stroke-width="2" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
+        </g>
       </svg>
     `,
     cloudy: `
       <svg viewBox="0 0 48 48" class="wdash-pressure-icon-svg" focusable="false" aria-hidden="true">
-        <path d="M17 34c-4.4 0-8-3.4-8-7.6 0-3.8 2.8-7 6.6-7.5 1.3-5.2 6-9.1 11.6-9.1 6.7 0 12.1 5.3 12.1 11.9 0 0.4 0 0.8-0.1 1.2 3.4 0.8 6 3.9 6 7.5 0 4.2-3.4 7.6-7.7 7.6H17z" fill="#ffffff" stroke="#d0d6df" stroke-width="2" stroke-linejoin="round" />
+        <g transform="translate(24 0) scale(1.5 1) translate(-24 0)">
+          <path d="M17 34c-4.4 0-8-3.4-8-7.6 0-3.8 2.8-7 6.6-7.5 1.3-5.2 6-9.1 11.6-9.1 6.7 0 12.1 5.3 12.1 11.9 0 0.4 0 0.8-0.1 1.2 3.4 0.8 6 3.9 6 7.5 0 4.2-3.4 7.6-7.7 7.6H17z" fill="#ffffff" stroke="#d0d6df" stroke-width="2" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
+        </g>
       </svg>
     `,
     rainy: `
       <svg viewBox="0 0 48 48" class="wdash-pressure-icon-svg" focusable="false" aria-hidden="true">
-        <path d="M16 32c-4 0-7.3-3.1-7.3-7 0-3.5 2.6-6.5 6-6.9 1.1-5 5.7-8.7 11-8.7 6.3 0 11.4 4.9 11.4 10.9 0 0.4 0 0.8-0.1 1.1 3.2 0.7 5.6 3.6 5.6 7 0 3.9-3.2 7-7.1 7H16z" fill="#ffffff" stroke="#d0d6df" stroke-width="2" stroke-linejoin="round" />
+        <g transform="translate(24 0) scale(1.5 1) translate(-24 0)">
+          <path d="M16 32c-4 0-7.3-3.1-7.3-7 0-3.5 2.6-6.5 6-6.9 1.1-5 5.7-8.7 11-8.7 6.3 0 11.4 4.9 11.4 10.9 0 0.4 0 0.8-0.1 1.1 3.2 0.7 5.6 3.6 5.6 7 0 3.9-3.2 7-7.1 7H16z" fill="#ffffff" stroke="#d0d6df" stroke-width="2" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
+        </g>
         <g stroke="#3ca0ff" stroke-width="2" stroke-linecap="round">
           <line x1="18" y1="36" x2="15" y2="42" />
           <line x1="28" y1="36" x2="25" y2="42" />
@@ -197,7 +203,9 @@
     `,
     stormy: `
       <svg viewBox="0 0 48 48" class="wdash-pressure-icon-svg" focusable="false" aria-hidden="true">
-        <path d="M16 30c-4 0-7.3-3.1-7.3-7 0-3.5 2.6-6.5 6-6.9 1.1-5 5.7-8.7 11-8.7 6.3 0 11.4 4.9 11.4 10.9 0 0.4 0 0.8-0.1 1.1 3.2 0.7 5.6 3.6 5.6 7 0 3.9-3.2 7-7.1 7H16z" fill="#ffffff" stroke="#d0d6df" stroke-width="2" stroke-linejoin="round" />
+        <g transform="translate(24 0) scale(1.5 1) translate(-24 0)">
+          <path d="M16 30c-4 0-7.3-3.1-7.3-7 0-3.5 2.6-6.5 6-6.9 1.1-5 5.7-8.7 11-8.7 6.3 0 11.4 4.9 11.4 10.9 0 0.4 0 0.8-0.1 1.1 3.2 0.7 5.6 3.6 5.6 7 0 3.9-3.2 7-7.1 7H16z" fill="#ffffff" stroke="#d0d6df" stroke-width="2" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
+        </g>
         <path d="M27 32l-5 9h4l-1 7 8-10h-4l2-6z" fill="#ffd766" stroke="#f0b400" stroke-width="1.5" stroke-linejoin="round" />
       </svg>
     `
@@ -4885,7 +4893,7 @@
 .wdash-pressure-button:hover { color: #f4f6ff; }
 .wdash-pressure-button.is-active { background: linear-gradient(140deg, #5ab3ff, #3f8bff); color: #0d1426; box-shadow: 0 8px 16px rgba(74,150,255,0.35); }
 .wdash-pressure-reading { font-size: 1.82rem; font-weight: 700; color: #e3edff; min-height: 2.2rem; display: flex; align-items: center; justify-content: center; }
-.wdash-pressure-outlook-icon { width: 48px; height: 48px; display: inline-flex; align-items: center; justify-content: center; border-radius: 12px; background: rgba(255,255,255,0.06); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08); }
+.wdash-pressure-outlook-icon { width: 48px; height: 48px; display: inline-flex; align-items: center; justify-content: center; border-radius: 12px; }
 .wdash-pressure-outlook-icon svg { width: 36px; height: 36px; display: block; }
 .wdash-pressure-icon-svg { width: 100%; height: 100%; }
 .wdash-pressure-outlook-label { font-weight: 700; color: #ffb95a; text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.75rem; white-space: nowrap; display: inline-flex; align-items: center; justify-content: center; padding: 4px 10px; border-radius: 999px; background: rgba(255,255,255,0.06); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08); }
