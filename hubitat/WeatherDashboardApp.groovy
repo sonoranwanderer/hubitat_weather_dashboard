@@ -56,6 +56,7 @@ def mainPage() {
             attributeInputs("Outdoor humidity", "attrOutdoorHumidity", "humidity", deviceOptions)
             attributeInputs("Indoor temperature", "attrIndoorTemp", "temperatureIndoor", deviceOptions)
             attributeInputs("Indoor humidity", "attrIndoorHumidity", "humidityIndoor", deviceOptions)
+            attributeInputs("Indoor battery", "attrIndoorBattery", "battery", deviceOptions)
             attributeInputs("Wind speed", "attrWindSpeed", "windSpeed", deviceOptions)
             attributeInputs("Wind gust", "attrWindGust", "windGust", deviceOptions)
             attributeInputs("Max Daily Gust", "attrWindGustMaxDaily", "windGustMaxDaily", deviceOptions)
@@ -71,6 +72,8 @@ def mainPage() {
             attributeInputs("Monthly rain", "attrRainMonthly", "rainMonthly", deviceOptions)
             attributeInputs("Yearly rain", "attrRainYearly", "rainYearly", deviceOptions)
             attributeInputs("UV index", "attrUVIndex", "uv", deviceOptions)
+            attributeInputs("UV color", "attrUVColor", "ultravioletColor", deviceOptions)
+            attributeInputs("UV danger", "attrUVDanger", "ultravioletDanger", deviceOptions)
             attributeInputs("Solar radiation", "attrSolarRadiation", "solarRadiation", deviceOptions)
             attributeInputs("Weather station update time", "attrStationUpdatedAt", "lastUpdateTime", deviceOptions)
         }
@@ -807,6 +810,7 @@ private List<Map> getAttributeSubscriptions() {
         "attrOutdoorHumidity",
         "attrIndoorTemp",
         "attrIndoorHumidity",
+        "attrIndoorBattery",
         "attrWindSpeed",
         "attrWindGust",
         "attrWindGustMaxDaily",
@@ -822,6 +826,8 @@ private List<Map> getAttributeSubscriptions() {
         "attrRainMonthly",
         "attrRainYearly",
         "attrUVIndex",
+        "attrUVColor",
+        "attrUVDanger",
         "attrSolarRadiation",
         "attrStationUpdatedAt",
         "attrOutdoorAQI",
@@ -1085,6 +1091,7 @@ private Map captureRawReadings() {
 
     readings.indoorTemp = readDecimalFor("attrIndoorTemp")
     readings.indoorHumidity = readDecimalFor("attrIndoorHumidity")
+    readings.indoorBattery = readDecimalFor("attrIndoorBattery")
 
     readings.windSpeed = readDecimalFor("attrWindSpeed")
     readings.windGust = readDecimalFor("attrWindGust")
@@ -1108,7 +1115,9 @@ private Map captureRawReadings() {
     ]
 
     readings.solar = [
-        uvIndex      : readDecimalFor("attrUVIndex"),
+        uvIndex       : readDecimalFor("attrUVIndex"),
+        uvColor       : readStringFor("attrUVColor"),
+        uvDanger      : readStringFor("attrUVDanger"),
         solarRadiation: readDecimalFor("attrSolarRadiation")
     ]
 
@@ -1263,6 +1272,10 @@ def refreshWeatherData() {
     if (indoorHumidity != null) {
         indoor.humidity = round(indoorHumidity, 1)
     }
+    BigDecimal indoorBattery = readings.indoorBattery
+    if (indoorBattery != null) {
+        indoor.battery = indoorBattery
+    }
     if (indoor) {
         payload.indoor = indoor
     }
@@ -1386,6 +1399,14 @@ def refreshWeatherData() {
     BigDecimal solarRad = readings.solar?.solarRadiation
     if (solarRad != null) {
         solar.solarRadiationWm2 = round(solarRad, 1)
+    }
+    String uvColor = readings.solar?.uvColor
+    if (uvColor) {
+        solar.uvColor = uvColor
+    }
+    String uvDanger = readings.solar?.uvDanger
+    if (uvDanger) {
+        solar.uvDanger = uvDanger
     }
     def sunriseDate = location?.sunrise
     if (sunriseDate) {
