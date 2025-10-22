@@ -122,6 +122,21 @@ def mainPage() {
             }
         }
 
+        section("Refresh scheduling") {
+            input name: "refreshTriggerMode", type: "enum", title: "Refresh trigger", options: [
+                "all": "Subscribe to all selected attributes",
+                "single": "Subscribe to a single attribute update"
+            ], defaultValue: "all", required: true, submitOnChange: true
+
+            if ((settings.refreshTriggerMode ?: "all") == "single") {
+                input name: "singleTriggerDevice", type: "enum", title: "Trigger device", options: subscriptionDeviceOptions(deviceOptions), required: true
+                input name: "singleTriggerAttribute", type: "text", title: "Trigger attribute", required: true
+                paragraph "Only the selected attribute change will trigger dashboard refreshes."
+            } else {
+                paragraph "The app will subscribe to all configured attributes."
+            }
+        }
+
         section("Derived calculation settings") {
             input name: "windAverageMinutes", type: "number", title: "Wind average window (minutes)", defaultValue: 10, range: "5..60"
             input name: "pressureTrendHours", type: "number", title: "Pressure tendency window (hours)", defaultValue: 3, range: "1..12"
@@ -162,15 +177,30 @@ private Map weatherDeviceOptions() {
     }
 }
 
+private Map subscriptionDeviceOptions(Map weatherOptions) {
+    LinkedHashMap options = new LinkedHashMap()
+    if (weatherOptions) {
+        options.putAll(weatherOptions)
+    }
+    getAmbientSensors()?.each { dev ->
+        if (dev?.id) {
+            options.put(dev.id.toString(), dev.displayName)
+        }
+    }
+    options
+}
+
 def appButtonHandler(String buttonName) {
     switch (buttonName) {
         case 'saveAndPreview':
             log.info "Weather Dashboard App save & refresh requested"
             updated()
+            state.forceRefresh = true
             refreshWeatherData()
             break
         case 'refreshNow':
             log.info "Weather Dashboard App manual refresh requested"
+            state.forceRefresh = true
             refreshWeatherData()
             break
         default:
@@ -204,13 +234,25 @@ def initialize() {
     state.temperatureHistory = state.temperatureHistory ?: []
     state.dailyOutdoorAQ = state.dailyOutdoorAQ ?: [:]
     state.dailyIndoorAQ = state.dailyIndoorAQ ?: [:]
+    state.lastSourceFingerprint = null
 
     subscribeToSource()
     runEvery1Minute("refreshWeatherData")
+    state.forceRefresh = true
     runIn(5, "refreshWeatherData")
 }
 
 private void subscribeToSource() {
+    if (useSingleTriggerMode()) {
+        if (subscribeToSingleTrigger()) {
+            return
+        }
+        log.warn "Weather Dashboard App: reverting to full subscriptions because the single trigger configuration is incomplete."
+    }
+    subscribeToAllSources()
+}
+
+private void subscribeToAllSources() {
     def subscriptions = []
     subscriptions.addAll(getAttributeSubscriptions())
     subscriptions.addAll(getAmbientSubscriptions())
@@ -228,6 +270,21 @@ private void subscribeToSource() {
         } catch (Throwable t) {
             log.debug "Unable to subscribe to ${device.displayName}.${attr}: ${t.message}"
         }
+    }
+}
+
+private boolean subscribeToSingleTrigger() {
+    def config = singleTriggerSubscription()
+    if (!config?.device || !config?.attribute) {
+        return false
+    }
+    try {
+        subscribe(config.device, config.attribute, "handleWeatherEvent")
+        log.info "Weather Dashboard App subscribed to ${config.device.displayName}.${config.attribute} for refresh triggers"
+        return true
+    } catch (Throwable t) {
+        log.warn "Weather Dashboard App: Unable to subscribe to ${config.device?.displayName ?: 'Unknown device'}.${config.attribute}: ${t.message}"
+        return false
     }
 }
 
@@ -350,6 +407,17 @@ private List getAmbientSensors() {
     unique
 }
 
+private boolean useSingleTriggerMode() {
+    (settings.refreshTriggerMode ?: "all") == "single"
+}
+
+private Map singleTriggerSubscription() {
+    def device = resolveSubscriptionDevice(settings.singleTriggerDevice)
+    String attribute = settings.singleTriggerAttribute instanceof CharSequence ? settings.singleTriggerAttribute.toString().trim() : null
+    if (!attribute) return null
+    [device: device, attribute: attribute]
+}
+
 private def resolveDevice(def deviceSettingValue) {
     def devices = getWeatherDevices()
     if (!deviceSettingValue) {
@@ -361,6 +429,14 @@ private def resolveDevice(def deviceSettingValue) {
 private def primaryWeatherDevice() {
     def devices = getWeatherDevices()
     devices ? devices.first() : null
+}
+
+private def resolveSubscriptionDevice(def deviceSettingValue) {
+    if (!deviceSettingValue) {
+        return primaryWeatherDevice()
+    }
+    String id = deviceSettingValue.toString()
+    (getWeatherDevices() + getAmbientSensors()).find { dev -> dev?.id?.toString() == id }
 }
 
 private Map attributeConfig(String attrSetting) {
@@ -414,9 +490,105 @@ private String readStringFor(String attrSetting) {
     readString(config?.device, config?.attribute)
 }
 
+private Map captureRawReadings() {
+    LinkedHashMap readings = new LinkedHashMap()
+    readings.outdoorTemp = readDecimalFor("attrOutdoorTemp")
+    readings.feelsLike = readDecimalFor("attrFeelsLike")
+    readings.dewPoint = readDecimalFor("attrDewPoint")
+    readings.outdoorHumidity = readDecimalFor("attrOutdoorHumidity")
+    readings.outdoorBattery = readDecimalFor("attrOutdoorBattery")
+
+    readings.indoorTemp = readDecimalFor("attrIndoorTemp")
+    readings.indoorHumidity = readDecimalFor("attrIndoorHumidity")
+
+    readings.windSpeed = readDecimalFor("attrWindSpeed")
+    readings.windGust = readDecimalFor("attrWindGust")
+    readings.windDailyMax = readDecimalFor("attrWindGustMaxDaily")
+    readings.windBattery = readDecimalFor("attrBatteryWind")
+    readings.windDirectionDegrees = readDecimalFor("attrWindDirectionDegrees")
+    readings.windDirectionText = readStringFor("attrWindDirection")
+
+    readings.pressureRelative = readPressureSample("attrPressure")
+    readings.pressureAbsolute = readPressureSample("attrAbsolutePressure")
+
+    readings.rain = [
+        rate   : readDecimalFor("attrRainRate"),
+        daily  : readDecimalFor("attrRainDaily"),
+        event  : readDecimalFor("attrRainEvent"),
+        hourly : readDecimalFor("attrRainHourly"),
+        weekly : readDecimalFor("attrRainWeekly"),
+        monthly: readDecimalFor("attrRainMonthly"),
+        yearly : readDecimalFor("attrRainYearly"),
+        battery: readDecimalFor("attrBatteryRain")
+    ]
+
+    readings.solar = [
+        uvIndex      : readDecimalFor("attrUVIndex"),
+        solarRadiation: readDecimalFor("attrSolarRadiation")
+    ]
+
+    readings.outdoorAir = [
+        aqi          : readDecimalFor("attrOutdoorAQI"),
+        aqi24h       : readDecimalFor("attrOutdoorAQI24h"),
+        aqiColor     : readStringFor("attrOutdoorAQIColor"),
+        aqiColor24h  : readStringFor("attrOutdoorAQIColor24h"),
+        aqiDanger    : readStringFor("attrOutdoorAQIDanger"),
+        aqiDanger24h : readStringFor("attrOutdoorAQIDanger24h"),
+        pm25         : readDecimalFor("attrOutdoorPM25"),
+        pm25_24h     : readDecimalFor("attrOutdoorPM25_24h"),
+        battery      : readDecimalFor("attrOutdoorAQIBattery")
+    ]
+
+    readings.indoorAir = [
+        aqi          : readDecimalFor("attrIndoorAQI"),
+        aqi24h       : readDecimalFor("attrIndoorAQI24h"),
+        aqiColor     : readStringFor("attrIndoorAQIColor"),
+        aqiColor24h  : readStringFor("attrIndoorAQIColor24h"),
+        aqiDanger    : readStringFor("attrIndoorAQIDanger"),
+        aqiDanger24h : readStringFor("attrIndoorAQIDanger24h"),
+        pm10         : readDecimalFor("attrIndoorPM10"),
+        pm10_24h     : readDecimalFor("attrIndoorPM10_24h"),
+        pm25         : readDecimalFor("attrIndoorPM25"),
+        pm25_24h     : readDecimalFor("attrIndoorPM25_24h"),
+        co2          : readDecimalFor("attrIndoorCO2"),
+        co2_24h      : readDecimalFor("attrIndoorCO2_24h"),
+        battery      : readDecimalFor("attrIndoorAQIBattery")
+    ]
+
+    readings.lightning = [
+        count  : readDecimalFor("attrLightningCount"),
+        distance: readDecimalFor("attrLightningDistance"),
+        time   : readStringFor("attrLightningTime"),
+        battery: readDecimalFor("attrLightningBattery")
+    ]
+
+    readings.stationUpdatedAt = normalizeStationTimestamp(readStringFor("attrStationUpdatedAt"))
+    readings.ambient = buildAmbientSensorsPayload()
+    readings.layoutRaw = currentLayoutOverrideText()
+
+    readings
+}
+
+private String normalizeStationTimestamp(Object raw) {
+    if (!(raw instanceof CharSequence)) {
+        return null
+    }
+    String text = raw.toString().trim()
+    return text ? text : null
+}
+
+private String currentLayoutOverrideText() {
+    def raw = settings.layoutOverrideJson
+    if (!(raw instanceof CharSequence)) {
+        return null
+    }
+    String text = raw.toString().trim()
+    return text ? text : null
+}
+
 def handleWeatherEvent(evt) {
     // Debounce frequent events by scheduling a refresh shortly after the last update.
-    runIn(2, "refreshWeatherData")
+    runIn(2, "refreshWeatherData", [overwrite: true])
 }
 
 def refreshWeatherData() {
@@ -426,27 +598,37 @@ def refreshWeatherData() {
         return
     }
 
-    def now = now()
-    def tz = location?.timeZone ?: UTC_ZONE
+    long timestamp = now()
+    TimeZone tz = location?.timeZone ?: UTC_ZONE
+    boolean force = state.remove('forceRefresh') == true
+
+    Map readings = captureRawReadings() ?: [:]
+    String fingerprint = JsonOutput.toJson(readings)
+
+    if (!force && fingerprint && fingerprint == state.lastSourceFingerprint) {
+        pruneHistoriesForUnchanged(timestamp)
+        return
+    }
+    state.lastSourceFingerprint = fingerprint
+
     def latitude = location?.latitude
     def longitude = location?.longitude
-    def generated = new Date(now)
-    def payload = [:]
+    Date generated = new Date(timestamp)
+    Map payload = [:]
 
-    def outdoor = [:]
-    def tempF = readDecimalFor("attrOutdoorTemp")
+    Map outdoor = [:]
+    BigDecimal tempF = readings.outdoorTemp
     if (tempF != null) {
         outdoor.temperatureF = round(tempF, 1)
-        def tempC = fahrenheitToCelsius(tempF)
-        outdoor.temperatureC = round(tempC, 1)
-        updateTemperatureHistory(tempF, now)
+        outdoor.temperatureC = round(fahrenheitToCelsius(tempF), 1)
+        updateTemperatureHistory(tempF, timestamp)
         def trend = computeTemperatureTrend()
         if (trend != null) {
             outdoor.trendFPerHour = round(trend, 2)
         }
     }
 
-    def dailyExtrema = updateDailyOutdoorExtrema(tempF, now, tz)
+    def dailyExtrema = updateDailyOutdoorExtrema(tempF, timestamp, tz)
     if (dailyExtrema?.high != null) {
         outdoor.dailyHighF = dailyExtrema.high
     }
@@ -454,47 +636,59 @@ def refreshWeatherData() {
         outdoor.dailyLowF = dailyExtrema.low
     }
 
-    def feels = readDecimalFor("attrFeelsLike")
-    if (feels != null) outdoor.feelsLikeF = round(feels, 1)
+    BigDecimal feels = readings.feelsLike
+    if (feels != null) {
+        outdoor.feelsLikeF = round(feels, 1)
+    }
+    BigDecimal dew = readings.dewPoint
+    if (dew != null) {
+        outdoor.dewPointF = round(dew, 1)
+    }
+    BigDecimal humidity = readings.outdoorHumidity
+    if (humidity != null) {
+        outdoor.humidity = round(humidity, 1)
+    }
+    BigDecimal outdoorBattery = readings.outdoorBattery
+    if (outdoorBattery != null) {
+        outdoor.battery = outdoorBattery
+    }
+    if (outdoor) {
+        payload.outdoor = outdoor
+    }
 
-    def dew = readDecimalFor("attrDewPoint")
-    if (dew != null) outdoor.dewPointF = round(dew, 1)
+    Map indoor = [:]
+    BigDecimal indoorTemp = readings.indoorTemp
+    if (indoorTemp != null) {
+        indoor.temperatureF = round(indoorTemp, 1)
+    }
+    BigDecimal indoorHumidity = readings.indoorHumidity
+    if (indoorHumidity != null) {
+        indoor.humidity = round(indoorHumidity, 1)
+    }
+    if (indoor) {
+        payload.indoor = indoor
+    }
 
-    def humidity = readDecimalFor("attrOutdoorHumidity")
-    if (humidity != null) outdoor.humidity = round(humidity, 1)
-
-    def outdoorBattery = readDecimalFor("attrOutdoorBattery")
-    if (outdoorBattery != null) outdoor.battery = outdoorBattery
-
-    if (outdoor) payload.outdoor = outdoor
-
-    def indoor = [:]
-    def indoorTemp = readDecimalFor("attrIndoorTemp")
-    if (indoorTemp != null) indoor.temperatureF = round(indoorTemp, 1)
-    def indoorHum = readDecimalFor("attrIndoorHumidity")
-    if (indoorHum != null) indoor.humidity = round(indoorHum, 1)
-    if (indoor) payload.indoor = indoor
-
-    def wind = [:]
-    def windSpeed = readDecimalFor("attrWindSpeed")
+    Map wind = [:]
+    BigDecimal windSpeed = readings.windSpeed
     if (windSpeed != null) {
         wind.speedMph = round(windSpeed, 1)
     }
-    def windGust = readDecimalFor("attrWindGust")
+    BigDecimal windGust = readings.windGust
     if (windGust != null) {
         wind.gustMph = round(windGust, 1)
     }
-    def dailyMaxGust = readDecimalFor("attrWindGustMaxDaily")
-    if (dailyMaxGust != null) {
-        wind.dailyMaxGustMph = round(dailyMaxGust, 1)
+    BigDecimal windDailyMax = readings.windDailyMax
+    if (windDailyMax != null) {
+        wind.dailyMaxGustMph = round(windDailyMax, 1)
     }
-    def windBattery = readDecimalFor("attrBatteryWind")
+    BigDecimal windBattery = readings.windBattery
     if (windBattery != null) {
         wind.battery = windBattery
     }
 
-    def directionDegrees = readDecimalFor("attrWindDirectionDegrees")
-    def directionText = readStringFor("attrWindDirection")
+    BigDecimal directionDegrees = readings.windDirectionDegrees
+    String directionText = readings.windDirectionText
     if (directionDegrees == null && directionText) {
         directionDegrees = cardinalToDegrees(directionText)
     }
@@ -505,19 +699,21 @@ def refreshWeatherData() {
         wind.directionCardinal = directionText
     }
 
-    updateWindHistory(windSpeed, directionDegrees, now)
-    def avgWind = computeWindAverage(now)
+    updateWindHistory(windSpeed, directionDegrees, timestamp)
+    def avgWind = computeWindAverage(timestamp)
     if (avgWind) {
         wind.averageMinutes = (settings.windAverageMinutes ?: 10) as Integer
         wind.average = avgWind
     }
-    if (wind) payload.wind = wind
+    if (wind) {
+        payload.wind = wind
+    }
 
-    def pressure = [:]
-    def relSample = readPressureSample("attrPressure")
-    def absSample = readPressureSample("attrAbsolutePressure")
-    def relPressure = relSample.value
-    def absPressure = absSample.value
+    Map pressure = [:]
+    Map relSample = readings.pressureRelative ?: [:]
+    Map absSample = readings.pressureAbsolute ?: [:]
+    BigDecimal relPressure = relSample.value
+    BigDecimal absPressure = absSample.value
     if (relPressure != null) {
         pressure.relativeInHg = round(relPressure, 2)
     }
@@ -525,10 +721,10 @@ def refreshWeatherData() {
         pressure.absoluteInHg = round(absPressure, 2)
     }
     String pressureUnit = relSample.unit ?: absSample.unit ?: state.pressureBaseline?.lastUnit ?: "inHg"
-    def referencePressure = relPressure ?: absPressure
-    updatePressureHistory(referencePressure, now)
-    updatePressureBaseline(referencePressure, pressureUnit, now, tz)
-    def trend = computePressureTrend(now)
+    BigDecimal referencePressure = relPressure ?: absPressure
+    updatePressureHistory(referencePressure, timestamp)
+    updatePressureBaseline(referencePressure, pressureUnit, timestamp, tz)
+    def trend = computePressureTrend(timestamp)
     if (trend) {
         pressure.trendInHgPerHour = round(trend.ratePerHour, 3)
         pressure.trend = trend.label
@@ -538,7 +734,7 @@ def refreshWeatherData() {
     }
     def baseline = computePressureBaselineSummary(pressureUnit)
     if (baseline) {
-        def baselinePayload = [:]
+        Map baselinePayload = [:]
         if (baseline.dailyAverage != null) {
             baselinePayload.dailyAverageInHg = round(baseline.dailyAverage, 3)
         }
@@ -567,103 +763,108 @@ def refreshWeatherData() {
             pressure.baseline = baselinePayload
         }
     }
-    if (pressure) payload.pressure = pressure
+    if (pressure) {
+        payload.pressure = pressure
+    }
 
-    def rain = [:]
-    def rainRate = readDecimalFor("attrRainRate")
-    if (rainRate != null) rain.rateInPerHour = round(rainRate, 2)
-    def rainDaily = readDecimalFor("attrRainDaily")
-    if (rainDaily != null) rain.dailyIn = round(rainDaily, 2)
-    def rainEvent = readDecimalFor("attrRainEvent")
-    if (rainEvent != null) rain.eventIn = round(rainEvent, 2)
-    def rainHourly = readDecimalFor("attrRainHourly")
-    if (rainHourly != null) rain.hourlyIn = round(rainHourly, 2)
-    def rainWeekly = readDecimalFor("attrRainWeekly")
-    if (rainWeekly != null) rain.weeklyIn = round(rainWeekly, 2)
-    def rainMonthly = readDecimalFor("attrRainMonthly")
-    if (rainMonthly != null) rain.monthlyIn = round(rainMonthly, 2)
-    def rainYearly = readDecimalFor("attrRainYearly")
-    if (rainYearly != null) rain.yearlyIn = round(rainYearly, 2)
-    def rainBattery = readDecimalFor("attrBatteryRain")
-    if (rainBattery != null) rain.battery = rainBattery
-    if (rain) payload.rain = rain
+    Map rain = [:]
+    if (readings.rain?.rate != null) rain.rateInPerHour = round(readings.rain.rate, 2)
+    if (readings.rain?.daily != null) rain.dailyIn = round(readings.rain.daily, 2)
+    if (readings.rain?.event != null) rain.eventIn = round(readings.rain.event, 2)
+    if (readings.rain?.hourly != null) rain.hourlyIn = round(readings.rain.hourly, 2)
+    if (readings.rain?.weekly != null) rain.weeklyIn = round(readings.rain.weekly, 2)
+    if (readings.rain?.monthly != null) rain.monthlyIn = round(readings.rain.monthly, 2)
+    if (readings.rain?.yearly != null) rain.yearlyIn = round(readings.rain.yearly, 2)
+    if (readings.rain?.battery != null) rain.battery = readings.rain.battery
+    if (rain) {
+        payload.rain = rain
+    }
 
-    def solar = [:]
-    def uv = readDecimalFor("attrUVIndex")
-    if (uv != null) solar.uvIndex = round(uv, 1)
-    def solarRad = readDecimalFor("attrSolarRadiation")
-    if (solarRad != null) solar.solarRadiationWm2 = round(solarRad, 1)
+    Map solar = [:]
+    BigDecimal uv = readings.solar?.uvIndex
+    if (uv != null) {
+        solar.uvIndex = round(uv, 1)
+    }
+    BigDecimal solarRad = readings.solar?.solarRadiation
+    if (solarRad != null) {
+        solar.solarRadiationWm2 = round(solarRad, 1)
+    }
+    def sunriseDate = location?.sunrise
+    if (sunriseDate) {
+        solar.sunrise = formatDateTime(sunriseDate, tz)
+    }
+    def sunsetDate = location?.sunset
+    if (sunsetDate) {
+        solar.sunset = formatDateTime(sunsetDate, tz)
+    }
+    def moon = computeMoonPhase(generated, tz, latitude, longitude)
+    if (moon) {
+        solar.moon = moon
+    }
+    if (solar) {
+        payload.solar = solar
+    }
 
-    def outdoorAir = [:]
-    def outdoorAqi = readDecimalFor("attrOutdoorAQI")
+    Map outdoorAirReadings = readings.outdoorAir ?: [:]
+    Map outdoorAir = [:]
+    BigDecimal outdoorAqi = outdoorAirReadings.aqi
     if (outdoorAqi != null) outdoorAir.aqi = Math.round(outdoorAqi)
-    def outdoorPm25 = readDecimalFor("attrOutdoorPM25")
+    BigDecimal outdoorPm25 = outdoorAirReadings.pm25
     if (outdoorPm25 != null) outdoorAir.pm25 = round(outdoorPm25, 1)
 
-    def dailyOutdoorAQExtrema = updateDailyAQExtrema("outdoor", [aqi: outdoorAqi, pm25: outdoorPm25], now, tz)
-    if (dailyOutdoorAQExtrema?.aqiPeak != null) outdoorAir.aqiPeak = dailyOutdoorAQExtrema.aqiPeak
-    if (dailyOutdoorAQExtrema?.pm25Peak != null) outdoorAir.pm25Peak = dailyOutdoorAQExtrema.pm25Peak
+    def dailyOutdoorAQ = updateDailyAQExtrema("outdoor", [aqi: outdoorAqi, pm25: outdoorPm25], timestamp, tz)
+    if (dailyOutdoorAQ?.aqiPeak != null) outdoorAir.aqiPeak = dailyOutdoorAQ.aqiPeak
+    if (dailyOutdoorAQ?.pm25Peak != null) outdoorAir.pm25Peak = dailyOutdoorAQ.pm25Peak
 
-    outdoorAir.aqi_avg_24h = readDecimalFor("attrOutdoorAQI24h")
-    outdoorAir.aqiColor = readStringFor("attrOutdoorAQIColor")
-    outdoorAir.aqiColor_avg_24h = readStringFor("attrOutdoorAQIColor24h")
-    outdoorAir.aqiDanger = readStringFor("attrOutdoorAQIDanger")
-    outdoorAir.aqiDanger_avg_24h = readStringFor("attrOutdoorAQIDanger24h")
-    outdoorAir.pm25_avg_24h = readDecimalFor("attrOutdoorPM25_24h")
-    outdoorAir.battery = readDecimalFor("attrOutdoorAQIBattery")
+    outdoorAir.aqi_avg_24h = outdoorAirReadings.aqi24h
+    outdoorAir.aqiColor = outdoorAirReadings.aqiColor
+    outdoorAir.aqiColor_avg_24h = outdoorAirReadings.aqiColor24h
+    outdoorAir.aqiDanger = outdoorAirReadings.aqiDanger
+    outdoorAir.aqiDanger_avg_24h = outdoorAirReadings.aqiDanger24h
+    outdoorAir.pm25_avg_24h = outdoorAirReadings.pm25_24h
+    outdoorAir.battery = outdoorAirReadings.battery
+    if (outdoorAir.any { it.value != null }) {
+        payload.outdoorAirQuality = outdoorAir.findAll { it.value != null }
+    }
 
-    if (outdoorAir.any { it.value != null }) payload.outdoorAirQuality = outdoorAir.findAll { it.value != null }
-
-    def indoorAir = [:]
-    def indoorAqi = readDecimalFor("attrIndoorAQI")
+    Map indoorAirReadings = readings.indoorAir ?: [:]
+    Map indoorAir = [:]
+    BigDecimal indoorAqi = indoorAirReadings.aqi
     if (indoorAqi != null) indoorAir.aqi = Math.round(indoorAqi)
-    def indoorPm10 = readDecimalFor("attrIndoorPM10")
+    BigDecimal indoorPm10 = indoorAirReadings.pm10
     if (indoorPm10 != null) indoorAir.pm10 = round(indoorPm10, 1)
-    def indoorPm25 = readDecimalFor("attrIndoorPM25")
+    BigDecimal indoorPm25 = indoorAirReadings.pm25
     if (indoorPm25 != null) indoorAir.pm25 = round(indoorPm25, 1)
-    def indoorCo2 = readDecimalFor("attrIndoorCO2")
+    BigDecimal indoorCo2 = indoorAirReadings.co2
     if (indoorCo2 != null) indoorAir.carbonDioxide = Math.round(indoorCo2)
 
-    def dailyIndoorAQExtrema = updateDailyAQExtrema("indoor", [aqi: indoorAqi, pm10: indoorPm10, pm25: indoorPm25, carbonDioxide: indoorCo2], now, tz)
-    if (dailyIndoorAQExtrema?.aqiPeak != null) indoorAir.aqiPeak = dailyIndoorAQExtrema.aqiPeak
-    if (dailyIndoorAQExtrema?.pm10Peak != null) indoorAir.pm10Peak = dailyIndoorAQExtrema.pm10Peak
-    if (dailyIndoorAQExtrema?.pm25Peak != null) indoorAir.pm25Peak = dailyIndoorAQExtrema.pm25Peak
-    if (dailyIndoorAQExtrema?.carbonDioxidePeak != null) indoorAir.carbonDioxidePeak = dailyIndoorAQExtrema.carbonDioxidePeak
+    def dailyIndoorAQ = updateDailyAQExtrema("indoor", [aqi: indoorAqi, pm10: indoorPm10, pm25: indoorPm25, carbonDioxide: indoorCo2], timestamp, tz)
+    if (dailyIndoorAQ?.aqiPeak != null) indoorAir.aqiPeak = dailyIndoorAQ.aqiPeak
+    if (dailyIndoorAQ?.pm10Peak != null) indoorAir.pm10Peak = dailyIndoorAQ.pm10Peak
+    if (dailyIndoorAQ?.pm25Peak != null) indoorAir.pm25Peak = dailyIndoorAQ.pm25Peak
+    if (dailyIndoorAQ?.carbonDioxidePeak != null) indoorAir.carbonDioxidePeak = dailyIndoorAQ.carbonDioxidePeak
 
-    indoorAir.aqi_avg_24h = readDecimalFor("attrIndoorAQI24h")
-    indoorAir.aqiColor = readStringFor("attrIndoorAQIColor")
-    indoorAir.aqiColor_avg_24h = readStringFor("attrIndoorAQIColor24h")
-    indoorAir.aqiDanger = readStringFor("attrIndoorAQIDanger")
-    indoorAir.aqiDanger_avg_24h = readStringFor("attrIndoorAQIDanger24h")
-    indoorAir.carbonDioxide_avg_24h = readDecimalFor("attrIndoorCO2_24h")
-    indoorAir.pm10_avg_24h = readDecimalFor("attrIndoorPM10_24h")
-    indoorAir.pm25_avg_24h = readDecimalFor("attrIndoorPM25_24h")
-    indoorAir.battery = readDecimalFor("attrIndoorAQIBattery")
-
-    if (indoorAir.any { it.value != null }) payload.indoorAirQuality = indoorAir.findAll { it.value != null }
-    
-    def sunriseDate = location?.sunrise
-    if (sunriseDate) solar.sunrise = formatDateTime(sunriseDate, tz)
-    def sunsetDate = location?.sunset
-    if (sunsetDate) solar.sunset = formatDateTime(sunsetDate, tz)
-    def moon = computeMoonPhase(generated, tz, latitude, longitude)
-    if (moon) solar.moon = moon
-    if (solar) payload.solar = solar
-
-    def lightning = [:]
-    def lightningCount = readDecimalFor("attrLightningCount")
-    if (lightningCount != null) lightning.count = lightningCount
-    def lightningDistance = readDecimalFor("attrLightningDistance")
-    if (lightningDistance != null) lightning.distance = lightningDistance
-    def lightningTime = readStringFor("attrLightningTime")
-    if (lightningTime != null) {
-        lightning.time = lightningTime
+    indoorAir.aqi_avg_24h = indoorAirReadings.aqi24h
+    indoorAir.aqiColor = indoorAirReadings.aqiColor
+    indoorAir.aqiColor_avg_24h = indoorAirReadings.aqiColor24h
+    indoorAir.aqiDanger = indoorAirReadings.aqiDanger
+    indoorAir.aqiDanger_avg_24h = indoorAirReadings.aqiDanger24h
+    indoorAir.carbonDioxide_avg_24h = indoorAirReadings.co2_24h
+    indoorAir.pm10_avg_24h = indoorAirReadings.pm10_24h
+    indoorAir.pm25_avg_24h = indoorAirReadings.pm25_24h
+    indoorAir.battery = indoorAirReadings.battery
+    if (indoorAir.any { it.value != null }) {
+        payload.indoorAirQuality = indoorAir.findAll { it.value != null }
     }
-    def lightningBattery = readDecimalFor("attrLightningBattery")
-    if (lightningBattery != null) {
-        lightning.battery = lightningBattery
+
+    Map lightning = [:]
+    if (readings.lightning?.count != null) lightning.count = readings.lightning.count
+    if (readings.lightning?.distance != null) lightning.distance = readings.lightning.distance
+    if (readings.lightning?.time) lightning.time = readings.lightning.time
+    if (readings.lightning?.battery != null) lightning.battery = readings.lightning.battery
+    if (lightning) {
+        payload.lightning = lightning
     }
-    if (lightning) payload.lightning = lightning
 
     if (!payload.outlook24h) {
         def outlook = computeOutlook(
@@ -673,10 +874,12 @@ def refreshWeatherData() {
             baseline,
             pressureUnit
         )
-        if (outlook) payload.outlook24h = outlook
+        if (outlook) {
+            payload.outlook24h = outlook
+        }
     }
 
-    def ambient = buildAmbientSensorsPayload()
+    Map ambient = readings.ambient
     if (ambient?.sensors) {
         payload.ambientSensors = ambient.sensors
         if (ambient.rotationSeconds) payload.ambientRotationSeconds = ambient.rotationSeconds
@@ -684,22 +887,14 @@ def refreshWeatherData() {
         if (ambient.humidityUnit) payload.ambientHumidityUnit = ambient.humidityUnit
     }
 
-    def stationUpdatedAt = readStringFor("attrStationUpdatedAt")
-    if (stationUpdatedAt instanceof CharSequence) {
-        stationUpdatedAt = stationUpdatedAt.toString().trim()
-        if (!stationUpdatedAt) {
-            stationUpdatedAt = null
-        }
-    }
+    Map layoutOverride = parseLayoutOverrideSetting(readings.layoutRaw)
+    payload.metadata = buildMetadata(generated, tz, readings.stationUpdatedAt, layoutOverride)
 
-    def layoutOverride = parseLayoutOverrideSetting()
-    payload.metadata = buildMetadata(generated, tz, stationUpdatedAt, layoutOverride)
-
-    def json = JsonOutput.toJson(payload)
-    def pretty = JsonOutput.prettyPrint(json)
+    String json = JsonOutput.toJson(payload)
 
     state.lastPayload = payload
-    state.lastPrettyPayload = pretty
+    state.lastPayloadJson = json
+    state.remove('lastPrettyPayload')
 
     def child = getChildDevice(childDeviceDni())
     if (child) {
@@ -707,33 +902,45 @@ def refreshWeatherData() {
     }
 }
 
-private Map parseLayoutOverrideSetting() {
-    def raw = settings.layoutOverrideJson
-    if (!(raw instanceof CharSequence)) {
+private void pruneHistoriesForUnchanged(long timestamp) {
+    updateWindHistory(null, null, timestamp)
+    updateTemperatureHistory(null, timestamp)
+    updatePressureHistory(null, timestamp)
+}
+
+
+private Map parseLayoutOverrideSetting(String layoutText) {
+    if (!layoutText) {
+        state.remove('cachedLayoutOverride')
+        state.remove('cachedLayoutOverrideRaw')
         state.remove('lastLayoutOverrideError')
         return null
     }
-    def text = raw.toString().trim()
-    if (!text) {
-        state.remove('lastLayoutOverrideError')
-        return null
+
+    String cachedRaw = state.cachedLayoutOverrideRaw
+    if (cachedRaw == layoutText && state.cachedLayoutOverride instanceof Map) {
+        return state.cachedLayoutOverride as Map
     }
+
     try {
-        def parsed = new JsonSlurper().parseText(text)
+        def parsed = new JsonSlurper().parseText(layoutText)
         if (parsed instanceof Map) {
+            state.cachedLayoutOverrideRaw = layoutText
+            state.cachedLayoutOverride = parsed as Map
             state.remove('lastLayoutOverrideError')
             return parsed as Map
         }
-        if (state.lastLayoutOverrideError != text) {
+        if (state.lastLayoutOverrideError != layoutText) {
             log.warn "Weather Dashboard App: Layout override JSON must be an object."
-            state.lastLayoutOverrideError = text
+            state.lastLayoutOverrideError = layoutText
         }
     } catch (Exception ex) {
-        if (state.lastLayoutOverrideError != text) {
+        if (state.lastLayoutOverrideError != layoutText) {
             log.warn "Weather Dashboard App: Unable to parse layout override JSON (${ex?.message ?: ex})."
-            state.lastLayoutOverrideError = text
+            state.lastLayoutOverrideError = layoutText
         }
     }
+
     return null
 }
 
@@ -1449,11 +1656,22 @@ private String htmlEncode(String value) {
 }
 
 def diagnosticsPage() {
+    state.forceRefresh = true
     refreshWeatherData()
     dynamicPage(name: "diagnosticsPage", title: "Diagnostics", install: false, uninstall: false) {
         section("Latest Payload") {
-            def payload = state.lastPrettyPayload ?: 'No payload generated yet. Please save settings and refresh.'
-            paragraph "<pre style='white-space:pre-wrap;font-family:monospace;'>${htmlEncode(payload)}</pre>"
+            def json = state.lastPayloadJson
+            if (json) {
+                String pretty
+                try {
+                    pretty = JsonOutput.prettyPrint(json)
+                } catch (Exception ex) {
+                    pretty = json
+                }
+                paragraph "<pre style='white-space:pre-wrap;font-family:monospace;'>${htmlEncode(pretty)}</pre>"
+            } else {
+                paragraph "No payload generated yet. Please save settings and refresh."
+            }
         }
     }
 }
