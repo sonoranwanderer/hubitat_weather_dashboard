@@ -242,6 +242,242 @@ private boolean eventTriggersEnabled() {
     settings.enableEventTriggers != false
 }
 
+private Map metricsState() {
+    if (!(state.metrics instanceof Map)) {
+        state.metrics = [:]
+    }
+    state.metrics as Map
+}
+
+private Map ensureMetricsSubMap(Map parent, String key) {
+    if (!(parent[key] instanceof Map)) {
+        parent[key] = [:]
+    }
+    parent[key] as Map
+}
+
+private void enqueueRefreshSource(String source) {
+    List queue = (state.nextRefreshSourceQueue instanceof List) ? (state.nextRefreshSourceQueue as List) : []
+    queue << (source ?: 'unknown')
+    state.nextRefreshSourceQueue = queue
+}
+
+private String consumeRefreshSource(String defaultSource = 'unknown') {
+    List queue = (state.nextRefreshSourceQueue instanceof List) ? (state.nextRefreshSourceQueue as List) : []
+    String source = queue ? (queue.remove(0) ?: defaultSource) : defaultSource
+    state.nextRefreshSourceQueue = queue
+    return source ?: defaultSource
+}
+
+private void recordRefreshMetrics(String source, long startedAt, long completedAt, boolean suppressed, boolean payloadUpdated) {
+    Map metrics = metricsState()
+    Map refresh = ensureMetricsSubMap(metrics, 'refresh')
+
+    long durationMs = Math.max(0L, completedAt - startedAt)
+    long totalInvocations = ((refresh.totalInvocations ?: 0L) as Long) + 1L
+    refresh.totalInvocations = totalInvocations
+    refresh.firstRunAt = (refresh.firstRunAt ?: startedAt)
+    refresh.lastRunAt = completedAt
+    refresh.lastDurationMs = durationMs
+    refresh.totalDurationMs = ((refresh.totalDurationMs ?: 0L) as Long) + durationMs
+    refresh.lastSource = source
+
+    Map bySource = ensureMetricsSubMap(refresh, 'bySource')
+    bySource[source] = ((bySource[source] ?: 0L) as Long) + 1L
+
+    if (suppressed) {
+        refresh.suppressedRuns = ((refresh.suppressedRuns ?: 0L) as Long) + 1L
+    } else {
+        refresh.completedRuns = ((refresh.completedRuns ?: 0L) as Long) + 1L
+        if (payloadUpdated) {
+            refresh.payloadUpdates = ((refresh.payloadUpdates ?: 0L) as Long) + 1L
+        }
+        refresh.lastCompletedAt = completedAt
+    }
+}
+
+private void recordCronMetrics(Map updates) {
+    Map refresh = ensureMetricsSubMap(metricsState(), 'refresh')
+    Map cron = ensureMetricsSubMap(refresh, 'cron')
+    updates.each { key, value ->
+        if (key instanceof String && key.startsWith('set:')) {
+            String actual = key.substring(4)
+            cron[actual] = value
+        } else if (value instanceof Number) {
+            cron[key] = ((cron[key] ?: 0L) as Long) + (value as Number).longValue()
+        } else {
+            cron[key] = value
+        }
+    }
+    cron.lastUpdatedAt = now()
+}
+
+private void recordEventTriggerMetrics(evt) {
+    if (!evt) {
+        return
+    }
+    Map metrics = metricsState()
+    Map events = ensureMetricsSubMap(metrics, 'events')
+    events.totalEvents = ((events.totalEvents ?: 0L) as Long) + 1L
+    events.lastEventAt = now()
+    String deviceName = evt?.displayName ?: evt?.device?.displayName ?: evt?.deviceId ?: 'Unknown device'
+    String attribute = evt?.name ?: 'unknown'
+    String key = "${deviceName}.${attribute}"
+    Map bySource = ensureMetricsSubMap(events, 'bySource')
+    bySource[key] = ((bySource[key] ?: 0L) as Long) + 1L
+    events.lastEventSource = key
+}
+
+private void recordHistoryMaintenance(String name, int before, int after, int pruned, boolean added, long timestamp) {
+    Map histories = ensureMetricsSubMap(metricsState(), 'histories')
+    Map entry = ensureMetricsSubMap(histories, name)
+    entry.lastSize = after
+    entry.maxSize = Math.max((entry.maxSize ?: 0L) as Long, after as long)
+    entry.totalPruned = ((entry.totalPruned ?: 0L) as Long) + Math.max(0L, pruned as long)
+    if (added) {
+        entry.totalAppended = ((entry.totalAppended ?: 0L) as Long) + 1L
+    }
+    entry.lastUpdatedAt = timestamp
+}
+
+private String formatDuration(Long ms) {
+    if (ms == null) {
+        return 'n/a'
+    }
+    if (ms < 1000L) {
+        return "${ms} ms"
+    }
+    double seconds = ms / 1000.0D
+    if (seconds < 60) {
+        return String.format('%.1f s', seconds)
+    }
+    double minutes = seconds / 60.0D
+    if (minutes < 60) {
+        return String.format('%.1f min', minutes)
+    }
+    double hours = minutes / 60.0D
+    return String.format('%.1f hr', hours)
+}
+
+private String formatPerHour(Long total, Long firstAt, Long lastAt) {
+    if (!total || total <= 1L || !firstAt || !lastAt || lastAt <= firstAt) {
+        return 'n/a'
+    }
+    double spanMs = (lastAt - firstAt) as double
+    double perHour = (total * 3600000.0D) / spanMs
+    return String.format('%.2f/hr', perHour)
+}
+
+private String formatTimestamp(Long millis) {
+    if (!millis) {
+        return 'n/a'
+    }
+    return new Date(millis).format("yyyy-MM-dd HH:mm:ss", location?.timeZone ?: UTC_ZONE)
+}
+
+private String htmlList(List<String> entries) {
+    if (!entries) {
+        return null
+    }
+    String items = entries.collect { entry -> "<li>${htmlEncode(entry)}</li>" }.join('')
+    return "<ul>${items}</ul>"
+}
+
+private String renderRefreshMetricsHtml() {
+    Map refresh = (metricsState().refresh ?: [:]) as Map
+    if (!(refresh.totalInvocations)) {
+        return null
+    }
+
+    long total = (refresh.totalInvocations ?: 0L) as Long
+    long completed = (refresh.completedRuns ?: 0L) as Long
+    long suppressed = (refresh.suppressedRuns ?: 0L) as Long
+    long payloads = (refresh.payloadUpdates ?: 0L) as Long
+    long totalDuration = (refresh.totalDurationMs ?: 0L) as Long
+    long avgDuration = total > 0 ? Math.round(totalDuration / (double) total) : 0L
+    String avgFormatted = formatDuration(avgDuration)
+    String lastDuration = formatDuration(refresh.lastDurationMs as Long)
+    String lastSource = refresh.lastSource ?: 'unknown'
+    String lastTimestamp = formatTimestamp(refresh.lastRunAt as Long)
+    String rate = formatPerHour(total, refresh.firstRunAt as Long, refresh.lastRunAt as Long)
+
+    List<String> entries = []
+    entries << "Invocations: ${total} (completed: ${completed}, suppressed: ${suppressed}, payload updates: ${payloads})"
+    entries << "Average duration: ${avgFormatted}; last run ${lastDuration} via ${lastSource} at ${lastTimestamp}"
+    entries << "Observed cadence: ${rate}"
+
+    Map bySource = (refresh.bySource ?: [:]) as Map
+    if (bySource) {
+        def topSources = bySource.entrySet().sort { -((it.value ?: 0L) as Long) }.take(5)
+        String summary = topSources.collect { entry ->
+            "${entry.key ?: 'unknown'} (${entry.value})"
+        }.join(', ')
+        entries << "Top refresh sources: ${summary}"
+    }
+
+    Map cron = (refresh.cron ?: [:]) as Map
+    if (cron?.invocations) {
+        long invocations = (cron.invocations ?: 0L) as Long
+        long executions = (cron.executions ?: 0L) as Long
+        long skippedDuringEvent = (cron.skippedDuringEvent ?: 0L) as Long
+        long skippedRecent = (cron.skippedRecentEvent ?: 0L) as Long
+        long skippedDisabled = (cron.skippedDisabled ?: 0L) as Long
+        String lastExec = formatTimestamp(cron.lastExecutionAt as Long)
+        entries << "Cron invocations: ${invocations}; executed: ${executions}; skipped (pending event: ${skippedDuringEvent}, recent event: ${skippedRecent}, disabled: ${skippedDisabled}); last execution: ${lastExec}"
+    }
+
+    return htmlList(entries)
+}
+
+private String renderEventMetricsHtml() {
+    Map events = (metricsState().events ?: [:]) as Map
+    if (!(events.totalEvents)) {
+        return null
+    }
+
+    long total = (events.totalEvents ?: 0L) as Long
+    String lastSource = events.lastEventSource ?: 'unknown'
+    String lastTimestamp = formatTimestamp(events.lastEventAt as Long)
+
+    List<String> entries = []
+    entries << "Total trigger events: ${total}"
+    entries << "Last trigger: ${lastSource} at ${lastTimestamp}"
+
+    Map bySource = (events.bySource ?: [:]) as Map
+    if (bySource) {
+        def topSources = bySource.entrySet().sort { -((it.value ?: 0L) as Long) }.take(5)
+        String summary = topSources.collect { entry ->
+            "${entry.key ?: 'unknown'} (${entry.value})"
+        }.join(', ')
+        entries << "Noisiest attributes: ${summary}"
+    }
+
+    return htmlList(entries)
+}
+
+private String renderHistoryMetricsHtml() {
+    Map histories = (metricsState().histories ?: [:]) as Map
+    if (!histories) {
+        return null
+    }
+
+    List<String> entries = []
+    ['wind', 'temperature', 'pressure'].each { key ->
+        Map entry = (histories[key] ?: [:]) as Map
+        if (entry) {
+            long lastSize = (entry.lastSize ?: 0L) as Long
+            long maxSize = (entry.maxSize ?: 0L) as Long
+            long totalPruned = (entry.totalPruned ?: 0L) as Long
+            long totalAppended = (entry.totalAppended ?: 0L) as Long
+            String label = key.capitalize()
+            String lastUpdated = formatTimestamp(entry.lastUpdatedAt as Long)
+            entries << "${label} samples — current: ${lastSize}, max: ${maxSize}, pruned: ${totalPruned}, appended: ${totalAppended}; last maintenance: ${lastUpdated}"
+        }
+    }
+
+    return entries ? htmlList(entries) : null
+}
+
 private Integer safeToInt(def value, Integer defaultValue) {
     if (value == null) {
         return defaultValue
@@ -266,11 +502,13 @@ def appButtonHandler(String buttonName) {
             log.info "Weather Dashboard App save & refresh requested"
             updated()
             state.forceRefresh = true
+            enqueueRefreshSource('manual-save')
             refreshWeatherData()
             break
         case 'refreshNow':
             log.info "Weather Dashboard App manual refresh requested"
             state.forceRefresh = true
+            enqueueRefreshSource('manual')
             refreshWeatherData()
             break
         default:
@@ -336,7 +574,12 @@ def initialize() {
         log.info "Weather Dashboard App cron-based refreshes are disabled."
     }
     state.forceRefresh = true
-    runIn(5, "refreshWeatherData")
+    runIn(5, "initialRefreshKickoff")
+}
+
+def initialRefreshKickoff() {
+    enqueueRefreshSource('startup')
+    refreshWeatherData()
 }
 
 private void subscribeToSource() {
@@ -398,18 +641,24 @@ private void scheduleCronRefresh(Integer minutes = null) {
 }
 
 def scheduledCronRefresh() {
+    long invokedAt = now()
+    recordCronMetrics([invocations: 1, 'set:lastInvocationAt': invokedAt])
+    boolean executed = false
     try {
         if (!cronSchedulingEnabled()) {
+            recordCronMetrics([skippedDisabled: 1])
             return
         }
 
         if (state.eventDebounceActive || state.eventRefreshActive) {
             log.debug "Skipping cron refresh because an event-driven refresh is pending or running."
+            recordCronMetrics([skippedDuringEvent: 1])
             return
         }
 
         Integer intervalMinutes = cronIntervalMinutes()
         if (intervalMinutes <= 0) {
+            recordCronMetrics([skippedDisabled: 1])
             return
         }
 
@@ -418,11 +667,17 @@ def scheduledCronRefresh() {
         Long elapsed = lastEventRefresh ? (now() - lastEventRefresh) : null
         if (elapsed != null && elapsed < intervalMillis) {
             log.debug "Skipping cron refresh because an event-driven refresh completed ${elapsed} ms ago (< ${intervalMillis} ms interval)."
+            recordCronMetrics([skippedRecentEvent: 1])
             return
         }
 
+        enqueueRefreshSource('cron')
+        executed = true
         refreshWeatherData()
     } finally {
+        if (executed) {
+            recordCronMetrics([executions: 1, 'set:lastExecutionAt': now()])
+        }
         if (cronSchedulingEnabled()) {
             scheduleCronRefresh()
         }
@@ -437,6 +692,7 @@ def refreshFromEvent() {
 
     state.eventRefreshActive = true
     try {
+        enqueueRefreshSource('event')
         refreshWeatherData()
     } finally {
         state.eventRefreshActive = false
@@ -821,6 +1077,7 @@ def handleWeatherEvent(evt) {
     if (!eventTriggersEnabled()) {
         return
     }
+    recordEventTriggerMetrics(evt)
     state.lastEventTriggerAt = now()
     state.eventDebounceActive = true
     // Debounce frequent events by scheduling a refresh shortly after the last update.
@@ -828,24 +1085,31 @@ def handleWeatherEvent(evt) {
 }
 
 def refreshWeatherData() {
-    def devices = getWeatherDevices()
-    if (!devices) {
-        log.warn "No weather devices configured"
-        return
-    }
+    long startedAt = now()
+    String source = consumeRefreshSource()
+    boolean suppressed = false
+    boolean payloadUpdated = false
+    try {
+        def devices = getWeatherDevices()
+        if (!devices) {
+            log.warn "No weather devices configured"
+            suppressed = true
+            return
+        }
 
-    long timestamp = now()
-    TimeZone tz = location?.timeZone ?: UTC_ZONE
-    boolean force = state.remove('forceRefresh') == true
+        long timestamp = startedAt
+        TimeZone tz = location?.timeZone ?: UTC_ZONE
+        boolean force = state.remove('forceRefresh') == true
 
-    Map readings = captureRawReadings() ?: [:]
-    String fingerprint = JsonOutput.toJson(readings)
+        Map readings = captureRawReadings() ?: [:]
+        String fingerprint = JsonOutput.toJson(readings)
 
-    if (!force && fingerprint && fingerprint == state.lastSourceFingerprint) {
-        pruneHistoriesForUnchanged(timestamp)
-        return
-    }
-    state.lastSourceFingerprint = fingerprint
+        if (!force && fingerprint && fingerprint == state.lastSourceFingerprint) {
+            pruneHistoriesForUnchanged(timestamp)
+            suppressed = true
+            return
+        }
+        state.lastSourceFingerprint = fingerprint
 
     def latitude = location?.latitude
     def longitude = location?.longitude
@@ -1131,10 +1395,14 @@ def refreshWeatherData() {
     state.lastPayload = payload
     state.lastPayloadJson = json
     state.remove('lastPrettyPayload')
+    payloadUpdated = true
 
     def child = getChildDevice(childDeviceDni())
     if (child) {
         child.updateDashboardData(json)
+    }
+    } finally {
+        recordRefreshMetrics(source, startedAt, now(), suppressed, payloadUpdated)
     }
 }
 
@@ -1326,12 +1594,15 @@ private BigDecimal fahrenheitToCelsius(BigDecimal tempF) {
 private void updateWindHistory(BigDecimal speed, BigDecimal direction, long timestamp) {
     def minutes = (settings.windAverageMinutes ?: 10) as Integer
     def cutoff = timestamp - (minutes * 60 * 1000L)
-    def history = (state.windHistory ?: []) as List
-    history = history.findAll { it.time >= cutoff }
+    List history = (state.windHistory ?: []) as List
+    int before = history.size()
+    List filtered = history.findAll { it.time >= cutoff }
+    int pruned = before - filtered.size()
     if (speed != null) {
-        history << [time: timestamp, speed: speed as BigDecimal, direction: direction]
+        filtered << [time: timestamp, speed: speed as BigDecimal, direction: direction]
     }
-    state.windHistory = history
+    state.windHistory = filtered
+    recordHistoryMaintenance('wind', before, filtered.size(), pruned, speed != null, timestamp)
 }
 
 private Map computeWindAverage(long timestamp) {
@@ -1376,13 +1647,16 @@ private Map computeWindAverage(long timestamp) {
 }
 
 private void updatePressureHistory(BigDecimal pressure, long timestamp) {
-    def history = (state.pressureHistory ?: []) as List
+    List history = (state.pressureHistory ?: []) as List
+    int before = history.size()
     def cutoff = timestamp - (24 * 60 * 60 * 1000L)
-    history = history.findAll { it.time >= cutoff }
+    List filtered = history.findAll { it.time >= cutoff }
+    int pruned = before - filtered.size()
     if (pressure != null) {
-        history << [time: timestamp, pressure: pressure as BigDecimal]
+        filtered << [time: timestamp, pressure: pressure as BigDecimal]
     }
-    state.pressureHistory = history
+    state.pressureHistory = filtered
+    recordHistoryMaintenance('pressure', before, filtered.size(), pruned, pressure != null, timestamp)
 }
 
 private void updatePressureBaseline(BigDecimal pressure, String unit, long timestamp, TimeZone tz) {
@@ -1779,13 +2053,16 @@ private Map computeMoonPhase(Date reference, TimeZone tz, BigDecimal latitude, B
 }
 
 private void updateTemperatureHistory(BigDecimal temperature, long timestamp) {
-    def history = (state.temperatureHistory ?: []) as List
+    List history = (state.temperatureHistory ?: []) as List
+    int before = history.size()
     def cutoff = timestamp - (6 * 60 * 60 * 1000L)
-    history = history.findAll { it.time >= cutoff }
+    List filtered = history.findAll { it.time >= cutoff }
+    int pruned = before - filtered.size()
     if (temperature != null) {
-        history << [time: timestamp, temperature: temperature as BigDecimal]
+        filtered << [time: timestamp, temperature: temperature as BigDecimal]
     }
-    state.temperatureHistory = history
+    state.temperatureHistory = filtered
+    recordHistoryMaintenance('temperature', before, filtered.size(), pruned, temperature != null, timestamp)
 }
 
 private Map updateDailyOutdoorExtrema(BigDecimal temperature, long timestamp, TimeZone tz) {
@@ -1893,8 +2170,31 @@ private String htmlEncode(String value) {
 
 def diagnosticsPage() {
     state.forceRefresh = true
+    enqueueRefreshSource('diagnostics')
     refreshWeatherData()
     dynamicPage(name: "diagnosticsPage", title: "Diagnostics", install: false, uninstall: false) {
+        section("Performance metrics") {
+            String refreshHtml = renderRefreshMetricsHtml()
+            String eventHtml = renderEventMetricsHtml()
+            String historyHtml = renderHistoryMetricsHtml()
+
+            if (!refreshHtml && !eventHtml && !historyHtml) {
+                paragraph "Metrics will appear after the dashboard processes refresh activity."
+            } else {
+                if (refreshHtml) {
+                    paragraph "<b>Refresh performance</b>"
+                    paragraph refreshHtml
+                }
+                if (eventHtml) {
+                    paragraph "<b>Event trigger pressure</b>"
+                    paragraph eventHtml
+                }
+                if (historyHtml) {
+                    paragraph "<b>History maintenance</b>"
+                    paragraph historyHtml
+                }
+            }
+        }
         section("Latest Payload") {
             def json = state.lastPayloadJson
             if (json) {
