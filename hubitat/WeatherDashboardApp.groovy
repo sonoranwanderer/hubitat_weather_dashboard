@@ -25,6 +25,13 @@ definition(
 )
 
 @Field final TimeZone UTC_ZONE = TimeZone.getTimeZone('UTC')
+@Field final Map<String, Integer> LOG_LEVEL_ORDER = [
+    error: 0,
+    warn : 1,
+    info : 2,
+    debug: 3,
+    trace: 4
+]
 
 preferences {
     page(name: "mainPage", title: "Weather Dashboard", install: true, uninstall: true)
@@ -164,6 +171,35 @@ def mainPage() {
             }
         }
 
+        section("Logging") {
+            paragraph "Choose the minimum level of messages that should appear in the Hubitat logs."
+            input name: "logLevel", type: "enum", title: "Logging level", options: loggingLevelOptions(), defaultValue: "info", required: true, submitOnChange: true, width: 6
+        }
+
+        section("Performance metrics summary") {
+            paragraph "Recent refresh statistics collected during normal operation." 
+            String refreshSummary = renderRefreshMetricsHtml()
+            String eventSummary = renderEventMetricsHtml()
+            String historySummary = renderHistoryMetricsHtml()
+
+            if (!refreshSummary && !eventSummary && !historySummary) {
+                paragraph "Metrics appear after the dashboard processes refresh activity."
+            } else {
+                if (refreshSummary) {
+                    paragraph "<b>Refresh performance</b>"
+                    paragraph refreshSummary
+                }
+                if (eventSummary) {
+                    paragraph "<b>Event trigger pressure</b>"
+                    paragraph eventSummary
+                }
+                if (historySummary) {
+                    paragraph "<b>History maintenance</b>"
+                    paragraph historySummary
+                }
+            }
+        }
+
         section("Derived calculation settings") {
             input name: "windAverageMinutes", type: "number", title: "Wind average window (minutes)", defaultValue: 10, range: "5..60"
             input name: "pressureTrendHours", type: "number", title: "Pressure tendency window (hours)", defaultValue: 3, range: "1..12"
@@ -207,6 +243,68 @@ private Map weatherDeviceOptions() {
     def devices = getWeatherDevices()
     devices.collectEntries { dev ->
         [(dev.id?.toString()): dev.displayName]
+    }
+}
+
+private Map loggingLevelOptions() {
+    [
+        error: 'Error',
+        warn : 'Warn',
+        info : 'Info',
+        debug: 'Debug',
+        trace: 'Trace'
+    ]
+}
+
+private String configuredLogLevel() {
+    String level = (settings?.logLevel ?: 'info')?.toString()?.toLowerCase()
+    if (!LOG_LEVEL_ORDER.containsKey(level)) {
+        level = 'info'
+    }
+    level
+}
+
+private boolean shouldLogLevel(String level) {
+    if (!level) {
+        return false
+    }
+    Integer candidate = LOG_LEVEL_ORDER[level] ?: LOG_LEVEL_ORDER.info
+    Integer configured = LOG_LEVEL_ORDER[configuredLogLevel()] ?: LOG_LEVEL_ORDER.info
+    candidate <= configured
+}
+
+private void logTrace(String message) {
+    if (shouldLogLevel('trace')) {
+        log.trace message
+    }
+}
+
+private void logDebug(String message) {
+    if (shouldLogLevel('debug')) {
+        log.debug message
+    }
+}
+
+private void logInfo(String message) {
+    if (shouldLogLevel('info')) {
+        log.info message
+    }
+}
+
+private void logWarn(String message) {
+    if (shouldLogLevel('warn')) {
+        log.warn message
+    }
+}
+
+private void logError(String message, Throwable t = null) {
+    if (!shouldLogLevel('error')) {
+        return
+    }
+    if (t) {
+        log.error message, t
+    } else {
+        log.error message
     }
 }
 
@@ -499,30 +597,30 @@ private Integer safeToInt(def value, Integer defaultValue) {
 def appButtonHandler(String buttonName) {
     switch (buttonName) {
         case 'saveAndPreview':
-            log.info "Weather Dashboard App save & refresh requested"
+            logInfo "Weather Dashboard App save & refresh requested"
             updated()
             state.forceRefresh = true
             enqueueRefreshSource('manual-save')
             refreshWeatherData()
             break
         case 'refreshNow':
-            log.info "Weather Dashboard App manual refresh requested"
+            logInfo "Weather Dashboard App manual refresh requested"
             state.forceRefresh = true
             enqueueRefreshSource('manual')
             refreshWeatherData()
             break
         default:
-            log.warn "Unhandled button press: ${buttonName}"
+            logWarn "Unhandled button press: ${buttonName}"
     }
 }
 
 def installed() {
-    log.info "Installing Weather Dashboard App"
+    logInfo "Installing Weather Dashboard App"
     initialize()
 }
 
 def updated() {
-    log.info "Updating Weather Dashboard App"
+    logInfo "Updating Weather Dashboard App"
     unschedule()
     unsubscribe()
     initialize()
@@ -531,7 +629,7 @@ def updated() {
 def initialize() {
     def devices = getWeatherDevices()
     if (!devices) {
-        log.warn "Weather devices not configured yet"
+        logWarn "Weather devices not configured yet"
         return
     }
 
@@ -555,7 +653,7 @@ def initialize() {
 
     if (!cronEnabled && !eventEnabled) {
         Integer fallbackMinutes = 1
-        log.warn "Weather Dashboard App requires at least one refresh trigger. Restoring the cron schedule to ${fallbackMinutes} minute."
+        logWarn "Weather Dashboard App requires at least one refresh trigger. Restoring the cron schedule to ${fallbackMinutes} minute."
         app.updateSetting("refreshCronMinutes", [value: fallbackMinutes, type: "number"])
         state.cronFallbackMinutes = fallbackMinutes
         cronMinutes = fallbackMinutes
@@ -565,13 +663,13 @@ def initialize() {
     if (eventEnabled) {
         subscribeToSource()
     } else {
-        log.info "Weather Dashboard App event-driven refreshes are disabled."
+        logInfo "Weather Dashboard App event-driven refreshes are disabled."
     }
 
     if (cronEnabled) {
         scheduleCronRefresh(cronMinutes)
     } else {
-        log.info "Weather Dashboard App cron-based refreshes are disabled."
+        logInfo "Weather Dashboard App cron-based refreshes are disabled."
     }
     state.forceRefresh = true
     runIn(5, "initialRefreshKickoff")
@@ -590,7 +688,7 @@ private void subscribeToSource() {
         if (subscribeToSingleTrigger()) {
             return
         }
-        log.warn "Weather Dashboard App: reverting to full subscriptions because the single trigger configuration is incomplete."
+        logWarn "Weather Dashboard App: reverting to full subscriptions because the single trigger configuration is incomplete."
     }
     subscribeToAllSources()
 }
@@ -611,7 +709,7 @@ private void subscribeToAllSources() {
             subscribe(device, attr, "handleWeatherEvent")
             seen << key
         } catch (Throwable t) {
-            log.debug "Unable to subscribe to ${device.displayName}.${attr}: ${t.message}"
+            logDebug "Unable to subscribe to ${device.displayName}.${attr}: ${t.message}"
         }
     }
 }
@@ -623,10 +721,10 @@ private boolean subscribeToSingleTrigger() {
     }
     try {
         subscribe(config.device, config.attribute, "handleWeatherEvent")
-        log.info "Weather Dashboard App subscribed to ${config.device.displayName}.${config.attribute} for refresh triggers"
+        logInfo "Weather Dashboard App subscribed to ${config.device.displayName}.${config.attribute} for refresh triggers"
         return true
     } catch (Throwable t) {
-        log.warn "Weather Dashboard App: Unable to subscribe to ${config.device?.displayName ?: 'Unknown device'}.${config.attribute}: ${t.message}"
+        logWarn "Weather Dashboard App: Unable to subscribe to ${config.device?.displayName ?: 'Unknown device'}.${config.attribute}: ${t.message}"
         return false
     }
 }
@@ -651,7 +749,7 @@ def scheduledCronRefresh() {
         }
 
         if (state.eventDebounceActive || state.eventRefreshActive) {
-            log.debug "Skipping cron refresh because an event-driven refresh is pending or running."
+            logDebug "Skipping cron refresh because an event-driven refresh is pending or running."
             recordCronMetrics([skippedDuringEvent: 1])
             return
         }
@@ -666,7 +764,7 @@ def scheduledCronRefresh() {
         Long intervalMillis = intervalMinutes * 60_000L
         Long elapsed = lastEventRefresh ? (now() - lastEventRefresh) : null
         if (elapsed != null && elapsed < intervalMillis) {
-            log.debug "Skipping cron refresh because an event-driven refresh completed ${elapsed} ms ago (< ${intervalMillis} ms interval)."
+            logDebug "Skipping cron refresh because an event-driven refresh completed ${elapsed} ms ago (< ${intervalMillis} ms interval)."
             recordCronMetrics([skippedRecentEvent: 1])
             return
         }
@@ -847,7 +945,7 @@ private Map singleTriggerAttributeOptions() {
             }
         }
     } catch (Throwable t) {
-        log.debug "Weather Dashboard App: unable to enumerate supported attributes for ${device?.displayName}: ${t.message}"
+        logDebug "Weather Dashboard App: unable to enumerate supported attributes for ${device?.displayName}: ${t.message}"
     }
 
     if (!attributeNames) {
@@ -899,7 +997,7 @@ private Map attributeOptionsForSetting(String attrSetting, String defaultAttr) {
             }
         }
     } catch (Throwable t) {
-        log.debug "Weather Dashboard App: unable to enumerate supported attributes for ${device?.displayName}: ${t.message}"
+        logDebug "Weather Dashboard App: unable to enumerate supported attributes for ${device?.displayName}: ${t.message}"
     }
 
     if (!attributeNames) {
@@ -1092,7 +1190,7 @@ def refreshWeatherData() {
     try {
         def devices = getWeatherDevices()
         if (!devices) {
-            log.warn "No weather devices configured"
+            logWarn "No weather devices configured"
             suppressed = true
             return
         }
@@ -1435,12 +1533,12 @@ private Map parseLayoutOverrideSetting(String layoutText) {
             return parsed as Map
         }
         if (state.lastLayoutOverrideError != layoutText) {
-            log.warn "Weather Dashboard App: Layout override JSON must be an object."
+            logWarn "Weather Dashboard App: Layout override JSON must be an object."
             state.lastLayoutOverrideError = layoutText
         }
     } catch (Exception ex) {
         if (state.lastLayoutOverrideError != layoutText) {
-            log.warn "Weather Dashboard App: Unable to parse layout override JSON (${ex?.message ?: ex})."
+            logWarn "Weather Dashboard App: Unable to parse layout override JSON (${ex?.message ?: ex})."
             state.lastLayoutOverrideError = layoutText
         }
     }
@@ -1530,9 +1628,9 @@ private void createOrUpdateChildDevice() {
                 dni,
                 [label: settings.dashboardDeviceLabel ?: "Weather Dashboard", isComponent: false]
             )
-            log.info "Created dashboard device: ${existing?.displayName}"
+            logInfo "Created dashboard device: ${existing?.displayName}"
         } catch (Throwable t) {
-            log.error "Unable to create dashboard device: ${t.message}", t
+            logError "Unable to create dashboard device: ${t.message}", t
         }
     } else {
         if (settings.dashboardDeviceLabel && existing.label != settings.dashboardDeviceLabel) {
