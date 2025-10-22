@@ -4893,8 +4893,8 @@
 .wdash-pressure-button:hover { color: #f4f6ff; }
 .wdash-pressure-button.is-active { background: linear-gradient(140deg, #5ab3ff, #3f8bff); color: #0d1426; box-shadow: 0 8px 16px rgba(74,150,255,0.35); }
 .wdash-pressure-reading { font-size: 1.82rem; font-weight: 700; color: #e3edff; min-height: 2.2rem; display: flex; align-items: center; justify-content: center; }
-.wdash-pressure-outlook-icon { width: 48px; height: 48px; display: inline-flex; align-items: center; justify-content: center; border-radius: 12px; }
-.wdash-pressure-outlook-icon svg { width: 36px; height: 36px; display: block; }
+.wdash-pressure-outlook-icon { width: 48px; height: 48px; display: inline-flex; align-items: center; justify-content: center; border-radius: 12px; overflow: visible; }
+.wdash-pressure-outlook-icon svg { width: 100%; height: 100%; display: block; overflow: visible; }
 .wdash-pressure-icon-svg { width: 100%; height: 100%; }
 .wdash-pressure-outlook-label { font-weight: 700; color: #ffb95a; text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.75rem; white-space: nowrap; display: inline-flex; align-items: center; justify-content: center; padding: 4px 10px; border-radius: 999px; background: rgba(255,255,255,0.06); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08); }
 .wdash-temp-wind-footer { position: relative; }
