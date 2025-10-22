@@ -40,12 +40,14 @@ The app publishes a consolidated JSON document to the dashboard device. The driv
 * The JavaScript focuses purely on presentation—calculations live in the Hubitat app.
 * The JSON payload is designed to be compact but descriptive, minimizing the number of attributes required on the virtual device.
 * Derived metrics (wind averages, pressure tendency, outlook) are recalculated every minute or whenever the underlying weather attributes change.
+* A lightweight Node harness exercises the Temp & Wind card renderer without Hubitat. Run `node tests/temp-wind-card-harness.js` to verify the in-place update logic and guard against regressions in the gauge/compass behaviour.
 
 ## Runtime layout overrides
 
-The app exposes an optional **Layout configuration JSON** textarea that lets you change the dashboard canvas size and grid without editing the JavaScript. Provide a JSON object with the following keys:
+The app exposes an optional **Layout configuration JSON** textarea that lets you change the dashboard canvas size and grid without editing the JavaScript. The renderer measures the Hubitat dashboard tile that hosts `weather-dashboard.js` to seed the base canvas dimensions, so overrides are only needed when you want to force a different size or grid definition. Provide a JSON object with the following keys:
 
-* `baseWidth` / `baseHeight` – numbers (pixels) that define the logical canvas size the renderer scales from.
+* `baseWidth` / `baseHeight` – numbers that override the measured Hubitat tile dimensions. When omitted the measured width and height become the base canvas for all breakpoints.
+* `trackUnit` – optional string (`"px"` or `"percent"`). When set to `"percent"`, numeric row heights and column widths are interpreted as percentages of the active base dimensions instead of pixels. The renderer automatically reserves space for frame padding and grid gaps, so the supplied percentages are scaled to keep the layout inside the measured Hubitat tile.
 * `desktop`, `tablet`, `mobile` – objects that can override `columns`, `gap`, and `rows` for each breakpoint. Rows are arrays of objects with a `height` (pixels) and a `columns` array that names the cards to place in that row.
 
 Example:
@@ -65,11 +67,43 @@ Example:
 }
 ```
 
+To size tracks as percentages of the measured base dimensions, set `"trackUnit": "percent"` and continue supplying numeric values. The dashboard adjusts the resulting track pixels so the rows and columns plus their gutters exactly fit the tile, even when you change the gap or frame padding. For example, the snippet below splits the desktop grid into a 60/40 column ratio with two rows that fill 40% and 60% of the canvas height:
+
+```json
+{
+  "trackUnit": "percent",
+  "desktop": {
+    "columns": [60, 40],
+    "rows": [
+      { "height": 40, "columns": ["temp-wind", "ambient"] },
+      { "height": 60, "columns": ["air", "rain"] }
+    ]
+  }
+}
+```
+
 Values you omit fall back to the defaults compiled into `weather-dashboard.js`, so you only need to supply the parts you want to adjust.
+
+### Viewing layout diagnostics
+
+The renderer snapshots every successful layout pass and keeps the latest values on `window.weatherDashboard`. Open the Hubitat dashboard in a browser, launch the developer tools console, and run:
+
+```javascript
+weatherDashboard.logLayoutDiagnostics();
+```
+
+The helper prints the host element, its measured size, the resolved base dimensions, the source of each base value, and any percent-to-pixel conversions that were applied to rows or columns. The function returns the raw diagnostics object, so you can also inspect it programmatically:
+
+```javascript
+const info = weatherDashboard.captureLayoutDiagnostics();
+console.log(info.base, info.percentTracks);
+```
+
+Set `window.__WDASH_DEBUG_LAYOUT__ = true` before the dashboard script runs (for example via the browser console and a refresh) to have the diagnostics logged automatically after each layout application.
 
 ### Controlling individual card heights and vertical placement
 
-Rows define the vertical tracks of the grid. Every card listed in the same row shares that track’s height. To make one card taller than another in the same column, split the column into multiple rows and repeat the card name in each row you want it to span. Cards only occupy the rows where their name appears, so you can leave a gap for the other column by using `"."` as a placeholder.
+Rows define the vertical tracks of the grid. Every card listed in the same row shares that track’s height, expressed in pixels or percentages depending on `trackUnit`. To make one card taller than another in the same column, split the column into multiple rows and repeat the card name in each row you want it to span. Cards only occupy the rows where their name appears, so you can leave a gap for the other column by using `"."` as a placeholder.
 
 For example, the snippet below keeps **Temp & Wind** at 420px tall while the **Ambient** card only occupies the first 220px of the right column. The `"."` placeholder leaves the lower portion of the right column empty so the next card can start higher up.
 

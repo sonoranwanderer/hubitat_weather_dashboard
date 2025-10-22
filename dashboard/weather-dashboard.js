@@ -7,6 +7,7 @@
 // console.
 
 (() => {
+  const IS_TEST_ENV = typeof window !== 'undefined' && window.__WDASH_TEST_MODE__ === true;
   const DISPLAY_TILE_ID = 'tile-0';
   const CSS_ID = 'weather-dashboard-css';
   const TEMP_RANGE = { min: -40, max: 120 };
@@ -23,6 +24,13 @@
   const DEFAULT_BASE_HEIGHT = 900;
   const BREAKPOINTS = ['desktop', 'tablet', 'mobile'];
   const LAYOUT_STYLE_ID = 'weather-dashboard-layout-style';
+  const DEFAULT_TRACK_UNIT = 'px';
+  const TILE_MEASURE_TOLERANCE = 1;
+
+  const tileMeasurementState = {
+    width: null,
+    height: null
+  };
 
   const SHARED_DESKTOP_LAYOUT = {
     columns: 'repeat(2, minmax(0, 1fr))',
@@ -49,7 +57,7 @@
     mobile: { width: DEFAULT_BASE_WIDTH, height: DEFAULT_BASE_HEIGHT }
   };
 
-  const DEFAULT_TEMPLATES = compileLayoutTemplates(DEFAULT_LAYOUT);
+  const DEFAULT_TEMPLATES = compileLayoutTemplates(DEFAULT_LAYOUT, { trackUnit: DEFAULT_TRACK_UNIT });
   const DEFAULT_NORMALIZED_AREAS = {
     desktop: normalizeTemplateAreas(DEFAULT_TEMPLATES.desktop.areas),
     tablet: normalizeTemplateAreas(DEFAULT_TEMPLATES.tablet.areas),
@@ -81,8 +89,10 @@
     gaps: { ...DEFAULT_GAPS },
     templates: DEFAULT_TEMPLATES,
     normalizedAreas: { ...DEFAULT_NORMALIZED_AREAS },
+    trackUnit: DEFAULT_TRACK_UNIT,
     signature: null,
-    pendingApply: false
+    pendingApply: false,
+    lastDiagnostics: null
   };
 
   const TEMP_COLORS = [
@@ -209,6 +219,22 @@
   // track which ambient index we've initialized into the DOM to avoid re-init loops
   let ambientLastInitIndex = null;
 
+  const CARD_RENDERERS = [
+    { key: 'tempWind', selector: '.wdash-card--temp-wind', build: data => buildTempWindCard(data) },
+    { key: 'ambient', selector: '.wdash-card--ambient', build: (data, opts) => buildAmbientSensorCard(data, opts?.ambientSeed) },
+    { key: 'lightning', selector: '.wdash-card--lightning', build: data => buildLightningCard(data) },
+    { key: 'pressure', selector: '.wdash-card--pressure', build: data => buildPressureCard(data) },
+    { key: 'rain', selector: '.wdash-card--rain', build: data => buildRainCard(data) },
+    { key: 'solar', selector: '.wdash-card--solar-moon', build: data => buildSolarSunCard(data) },
+    { key: 'air', selector: '.wdash-card--air', build: data => buildAirQualityCard(data) }
+  ];
+
+  const renderState = {
+    mounted: false,
+    markupByKey: new Map(),
+    order: CARD_RENDERERS.map(card => card.key)
+  };
+
   const dataTileObservers = new Map();
   let domObserver = null;
   let scaleObserver = null;
@@ -218,6 +244,7 @@
   let tempWindGaugeResizeHandler = null;
   let tempWindGaugeHosts = [];
   const tempWindGaugeLastSizes = new WeakMap();
+  const tempWindState = { data: null };
   let rainDropObserver = null;
   let rainDropResizeHandler = null;
   let rainDropRaf = null;
@@ -230,8 +257,10 @@
   let pressureMode = 'relative';
   let lastSuccessfulPayload = null;
 
-  patchDashboardGlitches();
-  whenDomReady(init);
+    if (!IS_TEST_ENV) {
+      patchDashboardGlitches();
+      whenDomReady(init);
+    }
 
   function whenDomReady(callback) {
     if (document.readyState === 'loading') {
@@ -406,6 +435,9 @@
     if (!payload) {
       grid.dataset.empty = 'true';
       grid.innerHTML = `<div class="wdash-empty">Waiting for weather data…</div>`;
+      renderState.mounted = false;
+      renderState.markupByKey.clear();
+      tempWindState.data = null;
       clearAmbientRotation();
       toggleSourceTileMask(false);
       stopHubClock();
@@ -420,20 +452,49 @@
     if (ambientSeed && Number.isInteger(ambientSeed.index)) {
       ambientRotation.index = ambientSeed.index;
     }
-    const newMarkup = buildMarkup(payload, { ambientSeed });
-    // Only replace the grid contents when markup actually changes to avoid
-    // spurious DOM rebuilds (which can make the ambient rings redraw)
-    if (grid.innerHTML !== newMarkup) {
-      grid.innerHTML = newMarkup;
-      layoutState.pendingApply = true;
-      applyLayoutOverrides(payload?.metadata);
-      // initialize ambient humidity circle from any remembered last value so it
-      // doesn't animate from 0% when the card is first built or when switching sensors
+    const cardMarkupList = buildCardMarkupList(payload, { ambientSeed });
+    let cardsChanged = false;
+
+    if (!renderState.mounted) {
+      grid.innerHTML = cardMarkupList.map(card => card.markup).join('');
+      renderState.mounted = true;
+      renderState.markupByKey.clear();
+      cardMarkupList.forEach(card => {
+        renderState.markupByKey.set(card.key, card.markup);
+      });
+      cardsChanged = true;
       try {
         const ambientContainer = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-ambient');
         if (ambientContainer) initAmbientLastHum(ambientContainer);
       } catch (e) { /* ignore */ }
+    } else {
+      cardMarkupList.forEach(card => {
+        const previousMarkup = renderState.markupByKey.get(card.key) || null;
+        if (card.key === 'ambient' || card.key === 'tempWind') {
+          const ensured = ensureCardPresence(grid, card, cardMarkupList);
+          if (ensured) {
+            renderState.markupByKey.set(card.key, card.markup);
+          }
+          return;
+        }
+
+        if (previousMarkup !== card.markup) {
+          replaceCardMarkup(grid, card, cardMarkupList);
+          renderState.markupByKey.set(card.key, card.markup);
+          cardsChanged = true;
+        }
+      });
     }
+
+    if (cardsChanged) {
+      layoutState.pendingApply = true;
+      applyLayoutOverrides(payload?.metadata);
+    } else if (layoutState.pendingApply) {
+      layoutState.pendingApply = false;
+    }
+
+    tempWindState.data = payload;
+    updateTempWindCard();
     setupAmbientRotation(payload);
     setupAirQualityRotation(payload);
     setupInteractiveComponents(grid);
@@ -512,6 +573,438 @@
     }
   }
 
+  function getDisplayTileHostElement() {
+    const root = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-root');
+    const displayTile = byId(DISPLAY_TILE_ID);
+    const content = displayTile ? findContentElement(displayTile) : null;
+    return content || root?.parentElement || root || displayTile || null;
+  }
+
+  function collectMeasurementCandidate(element, role) {
+    if (!element) return null;
+    const rect = safeGetElementRect(element);
+    const rectWidth = Number(rect?.width);
+    const rectHeight = Number(rect?.height);
+    const clientWidth = Number(element.clientWidth);
+    const clientHeight = Number(element.clientHeight);
+    const offsetWidth = Number(element.offsetWidth);
+    const offsetHeight = Number(element.offsetHeight);
+    const width = [rectWidth, clientWidth, offsetWidth].find(value => Number.isFinite(value) && value > 0) || null;
+    const height = [rectHeight, clientHeight, offsetHeight].find(value => Number.isFinite(value) && value > 0) || null;
+    if (!Number.isFinite(width) || !Number.isFinite(height)) return null;
+    return {
+      role,
+      description: describeElementForDiagnostics(element),
+      width,
+      height,
+      rectWidth: Number.isFinite(rectWidth) ? rectWidth : null,
+      rectHeight: Number.isFinite(rectHeight) ? rectHeight : null,
+      clientWidth: Number.isFinite(clientWidth) ? clientWidth : null,
+      clientHeight: Number.isFinite(clientHeight) ? clientHeight : null,
+      offsetWidth: Number.isFinite(offsetWidth) ? offsetWidth : null,
+      offsetHeight: Number.isFinite(offsetHeight) ? offsetHeight : null
+    };
+  }
+
+  function measureDisplayTileBaseDimensions() {
+    const displayTile = byId(DISPLAY_TILE_ID);
+    const content = displayTile ? findContentElement(displayTile) : null;
+    const root = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-root');
+    const parentHost = root?.parentElement || null;
+
+    const seen = new Set();
+    const candidates = [];
+
+    function pushCandidate(element, role) {
+      if (!element || seen.has(element)) return;
+      seen.add(element);
+      const candidate = collectMeasurementCandidate(element, role);
+      if (candidate) candidates.push(candidate);
+    }
+
+    pushCandidate(displayTile, 'tile');
+    pushCandidate(content, 'content');
+    pushCandidate(parentHost, 'host-parent');
+    pushCandidate(root, 'root');
+
+    if (!candidates.length) return null;
+
+    let width = null;
+    let height = null;
+    let widthSource = null;
+    let heightSource = null;
+
+    for (const candidate of candidates) {
+      if (!Number.isFinite(width) || candidate.width < width) {
+        width = candidate.width;
+        widthSource = candidate;
+      }
+      if (!Number.isFinite(height) || candidate.height < height) {
+        height = candidate.height;
+        heightSource = candidate;
+      }
+    }
+
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+      return null;
+    }
+
+    return {
+      width,
+      height,
+      strategy: 'min-candidate',
+      candidates,
+      widthSource: widthSource
+        ? { role: widthSource.role, description: widthSource.description, width: widthSource.width }
+        : null,
+      heightSource: heightSource
+        ? { role: heightSource.role, description: heightSource.description, height: heightSource.height }
+        : null
+    };
+  }
+
+  function resolveMeasuredBaseDimensions(options = {}) {
+    const measurement = measureDisplayTileBaseDimensions();
+    const prevWidth = tileMeasurementState.width;
+    const prevHeight = tileMeasurementState.height;
+
+    let width = Number(measurement?.width);
+    let height = Number(measurement?.height);
+
+    const hasWidth = Number.isFinite(width) && width > 0;
+    const hasHeight = Number.isFinite(height) && height > 0;
+
+    if (hasWidth) {
+      width = Math.max(1, Math.floor(width));
+    }
+
+    if (hasHeight) {
+      height = Math.max(1, Math.floor(height));
+    }
+
+    const nextWidth = hasWidth ? width : prevWidth;
+    const nextHeight = hasHeight ? height : prevHeight;
+
+    const widthChanged = hasWidth && (!Number.isFinite(prevWidth) || nextWidth !== prevWidth);
+    const heightChanged = hasHeight && (!Number.isFinite(prevHeight) || nextHeight !== prevHeight);
+    const changed = widthChanged || heightChanged;
+
+    if (options.commit !== false) {
+      if (Number.isFinite(nextWidth)) {
+        tileMeasurementState.width = nextWidth;
+      }
+      if (Number.isFinite(nextHeight)) {
+        tileMeasurementState.height = nextHeight;
+      }
+    }
+
+    if (!Number.isFinite(nextWidth) || !Number.isFinite(nextHeight)) {
+      return { width: null, height: null, changed: false, raw: measurement };
+    }
+
+    return {
+      width: nextWidth,
+      height: nextHeight,
+      changed,
+      raw: measurement,
+      widthSource: measurement?.widthSource || null,
+      heightSource: measurement?.heightSource || null,
+      strategy: measurement?.strategy || null,
+      candidates: Array.isArray(measurement?.candidates) ? measurement.candidates : null
+    };
+  }
+
+  function resetTileMeasurement() {
+    tileMeasurementState.width = null;
+    tileMeasurementState.height = null;
+  }
+
+  function safeGetElementRect(element) {
+    if (!element || typeof element.getBoundingClientRect !== 'function') return null;
+    try {
+      return element.getBoundingClientRect();
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function describeElementForDiagnostics(element) {
+    if (!element) return '(none)';
+    const tag = element.tagName ? element.tagName.toLowerCase() : element.nodeName || 'unknown';
+    const idPart = element.id ? `#${element.id}` : '';
+    const classPart = typeof element.className === 'string' && element.className.trim()
+      ? '.' + element.className.trim().split(/\s+/).join('.')
+      : '';
+    return `<${tag}${idPart}${classPart}>`;
+  }
+
+  function parseDimensionValue(value) {
+    if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+      return value;
+    }
+    if (typeof value === 'string') {
+      const match = value.trim().match(/^(-?\d+(?:\.\d+)?)/);
+      if (match) {
+        const numeric = Number(match[1]);
+        if (Number.isFinite(numeric) && numeric > 0) {
+          return numeric;
+        }
+      }
+    }
+    return null;
+  }
+
+  function determineDimensionSource({ sectionValue, fallbackValue, measurementValue }) {
+    if (parseDimensionValue(sectionValue) != null) return 'section-override';
+    if (parseDimensionValue(fallbackValue) != null) return 'layout-override';
+    if (Number.isFinite(measurementValue)) return 'measured';
+    return 'default';
+  }
+
+  function shouldLogLayoutDiagnostics(options = {}) {
+    if (options.force === true) return true;
+    if (IS_TEST_ENV) return false;
+    const target = typeof window !== 'undefined' ? window : globalThis;
+    if (target && target.__WDASH_DEBUG_LAYOUT__ === true) {
+      return true;
+    }
+    return layoutState.forceDiagnostics === true;
+  }
+
+  function createPercentDiagnosticsCollector() {
+    return {
+      rows: [],
+      columns: [],
+      recordRow(entry) {
+        this.rows.push(entry);
+      },
+      recordColumn(entry) {
+        this.columns.push(entry);
+      }
+    };
+  }
+
+  function buildLayoutDiagnosticsContext(options = {}) {
+    const host = options.hostElement || getDisplayTileHostElement();
+    const hostRect = safeGetElementRect(host);
+    const percentCollector = options.percentCollector || null;
+    const perBreakpoint = {};
+    const baseSources = {};
+    if (options.baseDimensions) {
+      for (const key of BREAKPOINTS) {
+        const dims = options.baseDimensions[key] || {};
+        perBreakpoint[key] = {
+          width: Number(dims.width) || null,
+          height: Number(dims.height) || null
+        };
+        baseSources[key] = options.baseSourceMap?.[key] || {
+          width: 'unknown',
+          height: 'unknown'
+        };
+      }
+    }
+
+    const rowCounts = options.rowCounts || {};
+
+    const context = {
+      timestamp: new Date().toISOString(),
+      host: {
+        description: describeElementForDiagnostics(host),
+        width: hostRect ? Number(hostRect.width) : null,
+        height: hostRect ? Number(hostRect.height) : null
+      },
+      measurement: {
+        raw: options.measurement || null,
+        sanitized: {
+          width: options.measuredWidth ?? null,
+          height: options.measuredHeight ?? null
+        },
+        strategy: options.measurement?.strategy || null,
+        widthSource: options.measurement?.widthSource || null,
+        heightSource: options.measurement?.heightSource || null,
+        candidates: Array.isArray(options.measurement?.candidates)
+          ? options.measurement.candidates.map(entry => ({
+              role: entry.role,
+              description: entry.description,
+              width: Number(entry.width) || null,
+              height: Number(entry.height) || null,
+              rectWidth: Number(entry.rectWidth) || null,
+              rectHeight: Number(entry.rectHeight) || null,
+              clientWidth: Number(entry.clientWidth) || null,
+              clientHeight: Number(entry.clientHeight) || null,
+              offsetWidth: Number(entry.offsetWidth) || null,
+              offsetHeight: Number(entry.offsetHeight) || null
+            }))
+          : null
+      },
+      base: {
+        width: options.baseWidth ?? null,
+        height: options.baseHeight ?? null,
+        perBreakpoint,
+        sources: baseSources,
+        activeBreakpoint: options.activeBreakpoint || getActiveBreakpoint()
+      },
+      trackUnit: options.trackUnit || layoutState.trackUnit,
+      trackUnitSource: options.trackUnitSource || 'state',
+      gaps: options.gaps || {},
+      columns: {
+        raw: options.columnsRaw || {},
+        applied: options.columnsApplied || {}
+      },
+      rows: {
+        raw: options.rowsRaw || {},
+        applied: options.rowsApplied || {},
+        counts: rowCounts
+      },
+      percentTracks: percentCollector
+        ? {
+            columns: percentCollector.columns.slice(),
+            rows: percentCollector.rows.slice()
+          }
+        : null,
+      layoutSignature: layoutState.signature,
+      pendingApply: layoutState.pendingApply,
+      currentBase: { width: currentBaseWidth, height: currentBaseHeight },
+      tileMeasurementState: { ...tileMeasurementState }
+    };
+
+    return context;
+  }
+
+  function logLayoutDiagnostics(context, options = {}) {
+    const payload = context || layoutState.lastDiagnostics || buildLayoutDiagnosticsContext();
+    if (!payload) {
+      if (typeof console !== 'undefined') {
+        console.warn('[WeatherDashboard] No layout diagnostics available');
+      }
+      return payload;
+    }
+    if (!shouldLogLayoutDiagnostics(options)) {
+      return payload;
+    }
+    const logger = typeof console !== 'undefined' ? console : null;
+    if (!logger) return payload;
+    const groupFn = typeof logger.groupCollapsed === 'function'
+      ? logger.groupCollapsed.bind(logger)
+      : logger.group ? logger.group.bind(logger) : null;
+    const groupEndFn = typeof logger.groupEnd === 'function' ? logger.groupEnd.bind(logger) : null;
+    const tableFn = typeof logger.table === 'function' ? logger.table.bind(logger) : null;
+    const logFn = typeof logger.log === 'function' ? logger.log.bind(logger) : () => {};
+
+    const title = `[WeatherDashboard] Layout diagnostics (${payload.base.activeBreakpoint || 'desktop'})`;
+    if (groupFn) {
+      groupFn(title);
+    } else {
+      logFn(title);
+    }
+
+    logFn('Host element:', payload.host.description);
+    logFn('Host size:', `${payload.host.width ?? 'n/a'} × ${payload.host.height ?? 'n/a'}`);
+    logFn('Measurement (raw):', payload.measurement.raw);
+    logFn('Measurement (sanitized):', payload.measurement.sanitized);
+    if (payload.measurement.strategy) {
+      logFn('Measurement strategy:', payload.measurement.strategy);
+    }
+    if (payload.measurement.widthSource || payload.measurement.heightSource) {
+      logFn('Measurement sources:', {
+        width: payload.measurement.widthSource,
+        height: payload.measurement.heightSource
+      });
+    }
+    if (Array.isArray(payload.measurement.candidates) && payload.measurement.candidates.length) {
+      const summary = payload.measurement.candidates.map(entry => ({
+        role: entry.role,
+        description: entry.description,
+        width: entry.width,
+        height: entry.height,
+        rectWidth: entry.rectWidth,
+        rectHeight: entry.rectHeight,
+        clientWidth: entry.clientWidth,
+        clientHeight: entry.clientHeight,
+        offsetWidth: entry.offsetWidth,
+        offsetHeight: entry.offsetHeight
+      }));
+      if (tableFn) {
+        tableFn(summary);
+      } else {
+        logFn('Measurement candidates:', summary);
+      }
+    }
+    logFn('Base dimensions per breakpoint:', payload.base.perBreakpoint);
+    logFn('Base sources:', payload.base.sources);
+    logFn('Active base size:', {
+      width: payload.base.width,
+      height: payload.base.height,
+      currentBase: payload.currentBase
+    });
+    logFn('Track unit:', payload.trackUnit, `(source: ${payload.trackUnitSource})`);
+    logFn('Gaps:', payload.gaps);
+    logFn('Layout signature:', payload.layoutSignature);
+    logFn('Pending apply:', payload.pendingApply);
+
+    if (payload.percentTracks && payload.percentTracks.columns.length) {
+      for (const entry of payload.percentTracks.columns) {
+        logFn(`Percent columns (${entry.breakpoint}) raw:`, entry.raw);
+        const rows = entry.percents.map((percent, index) => ({
+          track: index + 1,
+          percent,
+          pixels: Number(entry.pixels[index].toFixed(3))
+        }));
+        if (tableFn) {
+          tableFn(rows);
+        } else {
+          logFn('Columns:', rows);
+        }
+        logFn('Column context:', {
+          available: entry.available,
+          baseWidth: entry.baseWidth,
+          columnGap: entry.columnGap,
+          horizontalPadding: entry.horizontalPadding,
+          totalPercent: entry.totalPercent,
+          requestedPixels: entry.requestedPixels,
+          scaledPixels: entry.scaledPixels,
+          finalPixels: entry.finalPixels,
+          remainder: entry.remainder,
+          scale: entry.scale
+        });
+      }
+    }
+
+    if (payload.percentTracks && payload.percentTracks.rows.length) {
+      for (const entry of payload.percentTracks.rows) {
+        logFn(`Percent rows (${entry.breakpoint}) raw:`, entry.raw);
+        const rows = entry.percents.map((percent, index) => ({
+          row: index + 1,
+          percent,
+          pixels: Number(entry.pixels[index].toFixed(3))
+        }));
+        if (tableFn) {
+          tableFn(rows);
+        } else {
+          logFn('Rows:', rows);
+        }
+        logFn('Row context:', {
+          available: entry.available,
+          baseHeight: entry.baseHeight,
+          rowGap: entry.rowGap,
+          verticalPadding: entry.verticalPadding,
+          totalPercent: entry.totalPercent,
+          requestedPixels: entry.requestedPixels,
+          scaledPixels: entry.scaledPixels,
+          finalPixels: entry.finalPixels,
+          remainder: entry.remainder,
+          scale: entry.scale
+        });
+      }
+    }
+
+    if (groupEndFn) {
+      groupEndFn();
+    }
+
+    return payload;
+  }
+
   function applyLayoutOverrides(metadata) {
     const root = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-root');
     const dash = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash');
@@ -520,6 +1013,7 @@
       return;
     }
 
+    const hostElement = getDisplayTileHostElement();
     const rawLayout = metadata ? (metadata.layout != null ? metadata.layout : metadata.layoutOverride) : null;
     const override = rawLayout ? extractLayoutOverride(rawLayout) : null;
     const overrideLayout = isPlainObject(override) ? override : null;
@@ -535,6 +1029,20 @@
       overrideSectionValues[key] = value;
       overrideSectionObjects[key] = sanitizeSectionObject(value);
     }
+
+    const measurement = resolveMeasuredBaseDimensions();
+    const measuredWidth = sanitizeDimension(measurement.width, DEFAULT_BASE_WIDTH);
+    const measuredHeight = sanitizeDimension(measurement.height, DEFAULT_BASE_HEIGHT);
+
+    const trackUnitToken = (
+      overrideLayout?.trackUnit
+        ?? overrideLayout?.unit
+        ?? overrideLayout?.units
+        ?? overrideLayout?.dimensionUnit
+        ?? null
+    );
+    const trackUnit = normalizeTrackUnit(trackUnitToken != null ? trackUnitToken : layoutState.trackUnit);
+    const trackUnitSource = trackUnitToken != null ? 'layout-override' : 'state';
 
     const layoutForCompile = {};
     let inheritedRows = null;
@@ -565,7 +1073,7 @@
       inheritedRows = defaultRows;
       layoutForCompile[key] = defaultRows;
     }
-    const compiled = compileLayoutTemplates(layoutForCompile);
+    const compiled = compileLayoutTemplates(layoutForCompile, { trackUnit });
     const normalizedAreas = {
       desktop: normalizeTemplateAreas(compiled.desktop.areas),
       tablet: normalizeTemplateAreas(compiled.tablet.areas),
@@ -579,24 +1087,21 @@
     const hasTabletOverride = Boolean(overrideLayout && hasOwn(overrideLayout, 'tablet'));
     const hasMobileOverride = Boolean(overrideLayout && hasOwn(overrideLayout, 'mobile'));
 
-    const desktopColumns = sanitizeColumns(desktopSection?.columns, DEFAULT_COLUMNS.desktop);
-    const tabletColumns = sanitizeColumns(
+    const desktopColumnsRaw = sanitizeColumns(desktopSection?.columns, DEFAULT_COLUMNS.desktop, trackUnit);
+    const tabletColumnsRaw = sanitizeColumns(
       tabletSection?.columns,
-      hasTabletOverride ? desktopColumns : hasDesktopOverride ? desktopColumns : DEFAULT_COLUMNS.tablet
+      hasTabletOverride ? desktopColumnsRaw : hasDesktopOverride ? desktopColumnsRaw : DEFAULT_COLUMNS.tablet,
+      trackUnit
     );
-    const mobileColumns = sanitizeColumns(
+    const mobileColumnsRaw = sanitizeColumns(
       mobileSection?.columns,
       hasMobileOverride
-        ? tabletColumns
+        ? tabletColumnsRaw
         : hasTabletOverride || hasDesktopOverride
-          ? tabletColumns
-          : DEFAULT_COLUMNS.mobile
+          ? tabletColumnsRaw
+          : DEFAULT_COLUMNS.mobile,
+      trackUnit
     );
-    const columns = {
-      desktop: desktopColumns,
-      tablet: tabletColumns,
-      mobile: mobileColumns
-    };
 
     const desktopGap = sanitizeGap(desktopSection?.gap, DEFAULT_GAPS.desktop);
     const tabletGap = sanitizeGap(
@@ -617,8 +1122,8 @@
       mobile: mobileGap
     };
 
-    const fallbackWidth = sanitizeDimension(overrideLayout?.baseWidth, DEFAULT_BASE_WIDTH);
-    const fallbackHeight = sanitizeDimension(overrideLayout?.baseHeight, DEFAULT_BASE_HEIGHT);
+    const fallbackWidth = sanitizeDimension(overrideLayout?.baseWidth, measuredWidth);
+    const fallbackHeight = sanitizeDimension(overrideLayout?.baseHeight, measuredHeight);
     const desktopWidth = sanitizeDimension(desktopSection?.baseWidth, fallbackWidth);
     const desktopHeight = sanitizeDimension(desktopSection?.baseHeight, fallbackHeight);
     const tabletWidth = sanitizeDimension(tabletSection?.baseWidth, desktopWidth);
@@ -632,17 +1137,136 @@
       mobile: { width: mobileWidth, height: mobileHeight }
     };
 
+    const desktopBaseSource = {
+      width: determineDimensionSource({
+        sectionValue: desktopSection?.baseWidth,
+        fallbackValue: overrideLayout?.baseWidth,
+        measurementValue: measurement.width
+      }),
+      height: determineDimensionSource({
+        sectionValue: desktopSection?.baseHeight,
+        fallbackValue: overrideLayout?.baseHeight,
+        measurementValue: measurement.height
+      })
+    };
+
+    const tabletBaseSource = {
+      width: parseDimensionValue(tabletSection?.baseWidth) != null
+        ? 'section-override'
+        : `inherit-${desktopBaseSource.width}`,
+      height: parseDimensionValue(tabletSection?.baseHeight) != null
+        ? 'section-override'
+        : `inherit-${desktopBaseSource.height}`
+    };
+
+    const mobileBaseSource = {
+      width: parseDimensionValue(mobileSection?.baseWidth) != null
+        ? 'section-override'
+        : `inherit-${tabletBaseSource.width}`,
+      height: parseDimensionValue(mobileSection?.baseHeight) != null
+        ? 'section-override'
+        : `inherit-${tabletBaseSource.height}`
+    };
+
+    const baseSourceMap = {
+      desktop: desktopBaseSource,
+      tablet: tabletBaseSource,
+      mobile: mobileBaseSource
+    };
+
     const baseWidth = desktopWidth;
     const baseHeight = desktopHeight;
 
+    let desktopColumns = desktopColumnsRaw;
+    let tabletColumns = tabletColumnsRaw;
+    let mobileColumns = mobileColumnsRaw;
+
+    let desktopRows = compiled.desktop.rows;
+    let tabletRows = compiled.tablet.rows;
+    let mobileRows = compiled.mobile.rows;
+
+    const percentCollector = trackUnit === 'percent' ? createPercentDiagnosticsCollector() : null;
+
+    if (trackUnit === 'percent') {
+      const adjustedDesktopColumns = adjustPercentColumnTracks(
+        desktopColumns,
+        baseDimensions.desktop.width,
+        desktopGap,
+        desktopGap,
+        percentCollector && { collector: percentCollector, breakpoint: 'desktop' }
+      );
+      if (adjustedDesktopColumns) desktopColumns = adjustedDesktopColumns;
+
+      const adjustedTabletColumns = adjustPercentColumnTracks(
+        tabletColumns,
+        baseDimensions.tablet.width,
+        tabletGap,
+        tabletGap,
+        percentCollector && { collector: percentCollector, breakpoint: 'tablet' }
+      );
+      if (adjustedTabletColumns) tabletColumns = adjustedTabletColumns;
+
+      const adjustedMobileColumns = adjustPercentColumnTracks(
+        mobileColumns,
+        baseDimensions.mobile.width,
+        mobileGap,
+        mobileGap,
+        percentCollector && { collector: percentCollector, breakpoint: 'mobile' }
+      );
+      if (adjustedMobileColumns) mobileColumns = adjustedMobileColumns;
+
+      const adjustedDesktopRows = adjustPercentRowTracks(
+        desktopRows,
+        compiled.desktop.rowCount,
+        baseDimensions.desktop.height,
+        desktopGap,
+        desktopGap,
+        percentCollector && { collector: percentCollector, breakpoint: 'desktop' }
+      );
+      if (adjustedDesktopRows) desktopRows = adjustedDesktopRows;
+
+      const adjustedTabletRows = adjustPercentRowTracks(
+        tabletRows,
+        compiled.tablet.rowCount,
+        baseDimensions.tablet.height,
+        tabletGap,
+        tabletGap,
+        percentCollector && { collector: percentCollector, breakpoint: 'tablet' }
+      );
+      if (adjustedTabletRows) tabletRows = adjustedTabletRows;
+
+      const adjustedMobileRows = adjustPercentRowTracks(
+        mobileRows,
+        compiled.mobile.rowCount,
+        baseDimensions.mobile.height,
+        mobileGap,
+        mobileGap,
+        percentCollector && { collector: percentCollector, breakpoint: 'mobile' }
+      );
+      if (adjustedMobileRows) mobileRows = adjustedMobileRows;
+    }
+
+    const columns = {
+      desktop: desktopColumns,
+      tablet: tabletColumns,
+      mobile: mobileColumns
+    };
+
+    const finalTemplates = {
+      desktop: { ...compiled.desktop, rows: desktopRows },
+      tablet: { ...compiled.tablet, rows: tabletRows },
+      mobile: { ...compiled.mobile, rows: mobileRows }
+    };
+
     const signature = JSON.stringify({
+      trackUnit,
       baseDimensions,
       columns,
       gaps,
       templates: {
-        desktop: { rows: compiled.desktop.rows, areas: compiled.desktop.areas },
-        tablet: { rows: compiled.tablet.rows, areas: compiled.tablet.areas },
-        mobile: { rows: compiled.mobile.rows, areas: compiled.mobile.areas }
+        desktop: { rows: finalTemplates.desktop.rows, areas: finalTemplates.desktop.areas },
+        tablet: { rows: finalTemplates.tablet.rows, areas: finalTemplates.tablet.areas },
+        mobile: { rows: finalTemplates.mobile.rows, areas: finalTemplates.mobile.areas }
       }
     });
 
@@ -655,7 +1279,8 @@
       layoutState.baseDimensions = baseDimensions;
       layoutState.columns = columns;
       layoutState.gaps = gaps;
-      layoutState.templates = compiled;
+      layoutState.templates = finalTemplates;
+      layoutState.trackUnit = trackUnit;
       layoutState.pendingApply = true;
     }
 
@@ -671,12 +1296,12 @@
     dash.style.setProperty('--wdash-grid-columns-desktop', columns.desktop);
     dash.style.setProperty('--wdash-grid-columns-tablet', columns.tablet);
     dash.style.setProperty('--wdash-grid-columns-mobile', columns.mobile);
-    dash.style.setProperty('--wdash-grid-rows-desktop', compiled.desktop.rows);
-    dash.style.setProperty('--wdash-grid-rows-tablet', compiled.tablet.rows);
-    dash.style.setProperty('--wdash-grid-rows-mobile', compiled.mobile.rows);
-    dash.style.setProperty('--wdash-grid-areas-desktop', compiled.desktop.areas);
-    dash.style.setProperty('--wdash-grid-areas-tablet', compiled.tablet.areas);
-    dash.style.setProperty('--wdash-grid-areas-mobile', compiled.mobile.areas);
+    dash.style.setProperty('--wdash-grid-rows-desktop', finalTemplates.desktop.rows);
+    dash.style.setProperty('--wdash-grid-rows-tablet', finalTemplates.tablet.rows);
+    dash.style.setProperty('--wdash-grid-rows-mobile', finalTemplates.mobile.rows);
+    dash.style.setProperty('--wdash-grid-areas-desktop', finalTemplates.desktop.areas);
+    dash.style.setProperty('--wdash-grid-areas-tablet', finalTemplates.tablet.areas);
+    dash.style.setProperty('--wdash-grid-areas-mobile', finalTemplates.mobile.areas);
     dash.style.setProperty('--wdash-grid-gap-desktop', gaps.desktop);
     dash.style.setProperty('--wdash-grid-gap-tablet', gaps.tablet);
     dash.style.setProperty('--wdash-grid-gap-mobile', gaps.mobile);
@@ -690,7 +1315,7 @@
       baseDimensions,
       columns,
       gaps,
-      templates: compiled
+      templates: finalTemplates
     });
 
     applyScale(root);
@@ -702,9 +1327,49 @@
       layoutState.pendingApply = true;
     }
 
-    const hasLightningArea = templateHasArea(compiled.desktop, 'lightning')
-      || templateHasArea(compiled.tablet, 'lightning')
-      || templateHasArea(compiled.mobile, 'lightning');
+    const diagnosticsContext = buildLayoutDiagnosticsContext({
+      hostElement,
+      measurement,
+      measuredWidth,
+      measuredHeight,
+      baseWidth,
+      baseHeight,
+      baseDimensions,
+      baseSourceMap,
+      trackUnit,
+      trackUnitSource,
+      gaps,
+      columnsRaw: {
+        desktop: desktopColumnsRaw,
+        tablet: tabletColumnsRaw,
+        mobile: mobileColumnsRaw
+      },
+      columnsApplied: columns,
+      rowsRaw: {
+        desktop: compiled.desktop.rows,
+        tablet: compiled.tablet.rows,
+        mobile: compiled.mobile.rows
+      },
+      rowsApplied: {
+        desktop: finalTemplates.desktop.rows,
+        tablet: finalTemplates.tablet.rows,
+        mobile: finalTemplates.mobile.rows
+      },
+      rowCounts: {
+        desktop: compiled.desktop.rowCount,
+        tablet: compiled.tablet.rowCount,
+        mobile: compiled.mobile.rowCount
+      },
+      percentCollector,
+      activeBreakpoint: getActiveBreakpoint()
+    });
+
+    layoutState.lastDiagnostics = diagnosticsContext;
+    logLayoutDiagnostics(diagnosticsContext);
+
+    const hasLightningArea = templateHasArea(finalTemplates.desktop, 'lightning')
+      || templateHasArea(finalTemplates.tablet, 'lightning')
+      || templateHasArea(finalTemplates.mobile, 'lightning');
     if (hasLightningArea) {
       dash.dataset.layoutHasLightning = 'true';
     } else if (dash.dataset.layoutHasLightning) {
@@ -758,7 +1423,14 @@
     if (scaleObserver) {
       scaleObserver.disconnect();
     }
-    scaleObserver = new ResizeObserver(() => applyScale(root));
+    scaleObserver = new ResizeObserver(() => {
+      const measurement = resolveMeasuredBaseDimensions();
+      if (measurement.changed) {
+        layoutState.pendingApply = true;
+        applyLayoutOverrides(lastSuccessfulPayload?.metadata);
+      }
+      applyScale(root);
+    });
     scaleObserver.observe(displayTile);
   }
 
@@ -1012,20 +1684,59 @@
     };
   }
 
-  function buildMarkup(data, options = {}) {
-    const opts = options && typeof options === 'object' ? options : {};
-    return `
-      ${[
-        buildTempWindCard(data),
-        buildAmbientSensorCard(data, opts.ambientSeed),
-        buildLightningCard(data),
-        buildPressureCard(data),
-        buildRainCard(data),
-        buildSolarSunCard(data),
-        buildAirQualityCard(data)
-      ].join('')}
-    `;
-  }
+    function buildCardMarkupList(data, options) {
+      const opts = options && typeof options === 'object' ? options : {};
+      return CARD_RENDERERS.map(card => ({
+        key: card.key,
+        selector: card.selector,
+        markup: card.build(data, opts)
+      }));
+    }
+
+    function createElementFromMarkup(markup) {
+      if (typeof markup !== 'string' || !markup.trim().length) return null;
+      const template = document.createElement('div');
+      template.innerHTML = markup.trim();
+      return template.firstElementChild || null;
+    }
+
+    function ensureCardPresence(grid, card, cardMarkupList) {
+      if (!grid || !card) return null;
+      let existing = grid.querySelector(card.selector);
+      if (existing) return existing;
+
+      const element = createElementFromMarkup(card.markup);
+      if (!element) return null;
+
+      const insertionIndex = renderState.order.indexOf(card.key);
+      let anchor = null;
+      for (let idx = insertionIndex + 1; idx < renderState.order.length; idx += 1) {
+        const nextKey = renderState.order[idx];
+        const nextCard = cardMarkupList.find(item => item.key === nextKey);
+        if (!nextCard) continue;
+        const node = grid.querySelector(nextCard.selector);
+        if (node) {
+          anchor = node;
+          break;
+        }
+      }
+
+      if (anchor) {
+        grid.insertBefore(element, anchor);
+      } else {
+        grid.appendChild(element);
+      }
+
+      return element;
+    }
+
+    function replaceCardMarkup(grid, card, cardMarkupList) {
+      const existing = ensureCardPresence(grid, card, cardMarkupList);
+      if (!existing) return;
+      const replacement = createElementFromMarkup(card.markup);
+      if (!replacement) return;
+      existing.replaceWith(replacement);
+    }
 
   function buildTempWindCard(data) {
     const outdoor = data.outdoor || {};
@@ -2556,6 +3267,171 @@
     tempWindGaugeLastSizes.set(host, normalized);
   }
 
+  function updateTempWindCard() {
+    const card = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-card--temp-wind');
+    if (!card) return;
+
+    const data = tempWindState.data;
+    const outdoor = data?.outdoor || {};
+    const wind = data?.wind || {};
+    const avg = wind.average || {};
+
+    const temp = toNumber(outdoor.temperatureF);
+    const high = toNumber(outdoor.dailyHighF);
+    const low = toNumber(outdoor.dailyLowF);
+    const feels = toNumber(outdoor.feelsLikeF);
+    const dew = toNumber(outdoor.dewPointF);
+    const humidity = toNumber(outdoor.humidity);
+    const trend = toNumber(outdoor.trendFPerHour);
+    const batteryLevel = toNumber(outdoor.battery);
+
+    const speed = toNumber(wind.speedMph);
+    const gust = toNumber(wind.gustMph);
+    const dirDegrees = toNumber(wind.directionDegrees);
+    const dirText = wind.directionCardinal || null;
+    const avgSpeed = toNumber(avg.speedMph);
+    const avgDir = toNumber(avg.directionDegrees);
+    const avgDirText = avg.directionCardinal || (Number.isFinite(avgDir) ? degreesToCardinal(avgDir) : null);
+    const windowMins = wind.averageMinutes || avg.minutes || 10;
+    const dailyMaxGust = toNumber(wind.dailyMaxGustMph);
+
+    const bearingLabel = dirText || (Number.isFinite(dirDegrees) ? degreesToCardinal(dirDegrees) : '--');
+    const headingText = Number.isFinite(dirDegrees) ? formatDegrees(dirDegrees) : '--°';
+    const gustText = Number.isFinite(gust) ? `${formatNumber(gust, 1)} mph` : '--';
+    const avgSpeedText = Number.isFinite(avgSpeed) ? `${formatNumber(avgSpeed, 1)} mph` : '--';
+    const avgCombinedText = `${avgDirText || '--'} ${avgSpeedText}`.trim();
+    const dailyMaxGustText = Number.isFinite(dailyMaxGust) ? `${formatNumber(dailyMaxGust, 1)} mph` : '--';
+
+    const tempColor = colorForTemp(temp);
+    const gaugeIndicatorValue = gaugeIndicator(temp);
+    const gauge = card.querySelector('.wdash-gauge');
+    if (gauge && gauge.style) {
+      gauge.style.setProperty('--gauge-indicator', gaugeIndicatorValue);
+      if (Array.isArray(tempColor.colors)) {
+        if (tempColor.colors[0]) gauge.style.setProperty('--gauge-color-a', tempColor.colors[0]);
+        if (tempColor.colors[1]) gauge.style.setProperty('--gauge-color-b', tempColor.colors[1]);
+      }
+      if (tempColor.mid) gauge.style.setProperty('--gauge-color-mid', tempColor.mid);
+      if (tempColor.progress != null) {
+        gauge.style.setProperty('--gauge-band-progress', String(tempColor.progress));
+      }
+    }
+
+    setTextContent(card.querySelector('.wdash-gauge-value'), formatTemperature(temp));
+    setTextContent(card.querySelector('.wdash-temp-extrema--high .wdash-temp-extrema-value'), formatTemperature(high));
+    setTextContent(card.querySelector('.wdash-temp-extrema--low .wdash-temp-extrema-value'), formatTemperature(low));
+
+    const detailValues = [
+      formatTemperature(feels),
+      formatTemperature(dew),
+      formatPercent(humidity, 0),
+      formatSigned(trend, 1, '°/hr'),
+      avgCombinedText,
+      dailyMaxGustText
+    ];
+    const detailNodes = card.querySelectorAll('.wdash-temp-wind-details .wdash-metric-value');
+    detailNodes.forEach((node, index) => {
+      setTextContent(node, detailValues[index] != null ? detailValues[index] : '--');
+    });
+
+    const generatedAt = data?.metadata?.generatedAt;
+    const stationReportedAt = data?.metadata?.weatherStationTime || generatedAt;
+    const stationLabel = stationReportedAt ? formatHubClock(stationReportedAt, { includeSeconds: false }) : null;
+    const updatedLabel = stationLabel ? `Updated ${stationLabel}` : '';
+    setTextContent(card.querySelector('.wdash-updated-line--primary'), updatedLabel);
+
+    const battery = card.querySelector('.wdash-temp-wind-battery');
+    if (battery) {
+      updateBatterySlot(battery, batteryLevel, {
+        orientation: 'landscape',
+        label: 'Outdoor sensor',
+        titlePrefix: 'Outdoor sensor battery'
+      });
+    }
+
+    const compass = card.querySelector('.wdash-wind-compass');
+    const normalizedBearing = bearingLabel || '--';
+    const ariaHeading = headingText || '--°';
+    if (compass) {
+      compass.setAttribute('aria-label', `Wind direction ${normalizedBearing} ${ariaHeading}`.trim());
+    }
+    setTextContent(card.querySelector('.wdash-wind-bearing'), normalizedBearing);
+    const headingEl = card.querySelector('.wdash-wind-heading');
+    if (headingEl) {
+      const text = headingText ? ` ${headingText}` : ' --°';
+      if (headingEl.textContent !== text) headingEl.textContent = text;
+    }
+    setTextContent(card.querySelector('.wdash-wind-speed-value'), Number.isFinite(speed) ? formatNumber(speed, 1) : '--');
+    setTextContent(card.querySelector('.wdash-wind-gust-value'), gustText);
+
+    if (compass) {
+      const currentArrow = compass.querySelector('.wdash-compass-arrow--current');
+      if (currentArrow && currentArrow.style) {
+        const normalized = normalizeDegrees(dirDegrees);
+        currentArrow.style.transform = `rotate(${normalized}deg)`;
+      }
+      const avgArrow = Number.isFinite(avgDir) ? ensureCompassAverageArrow(compass) : compass.querySelector('.wdash-compass-arrow--avg');
+      if (avgArrow && avgArrow.style) {
+        if (Number.isFinite(avgDir)) {
+          avgArrow.style.display = '';
+          avgArrow.style.transform = `rotate(${normalizeDegrees(avgDir)}deg)`;
+        } else {
+          avgArrow.style.display = 'none';
+        }
+      } else if (!Number.isFinite(avgDir)) {
+        const existingAvg = compass.querySelector('.wdash-compass-arrow--avg');
+        if (existingAvg && existingAvg.style) existingAvg.style.display = 'none';
+      }
+    }
+
+    const detailsHeader = card.querySelector('.wdash-temp-wind-details');
+    if (detailsHeader) {
+      if (Number.isFinite(windowMins)) {
+        detailsHeader.dataset.window = String(windowMins);
+      } else if (detailsHeader.dataset) {
+        delete detailsHeader.dataset.window;
+      }
+    }
+  }
+
+  function ensureCompassAverageArrow(compass) {
+    if (!compass) return null;
+    let avgArrow = compass.querySelector('.wdash-compass-arrow--avg');
+    if (avgArrow) return avgArrow;
+    const svg = compass.querySelector('svg');
+    if (!svg) return null;
+    const currentArrow = svg.querySelector('.wdash-compass-arrow--current');
+    if (!currentArrow) return null;
+    const clone = currentArrow.cloneNode(true);
+    clone.classList.remove('wdash-compass-arrow--current');
+    clone.classList.add('wdash-compass-arrow--avg');
+    const path = clone.querySelector('.wdash-compass-current');
+    if (path) {
+      path.classList.remove('wdash-compass-current');
+      path.classList.add('wdash-compass-avg');
+      path.setAttribute('fill', 'none');
+      path.setAttribute('stroke', 'rgba(208,213,220,0.95)');
+      path.setAttribute('stroke-width', '1.0');
+    }
+    svg.appendChild(clone);
+    return clone;
+  }
+
+  function normalizeDegrees(value) {
+    if (!Number.isFinite(value)) return 0;
+    let normalized = value % 360;
+    if (normalized < 0) normalized += 360;
+    return normalized;
+  }
+
+  function setTextContent(element, value) {
+    if (!element) return;
+    const text = value == null ? '' : String(value);
+    if (element.textContent !== text) {
+      element.textContent = text;
+    }
+  }
+
   function setupPressureToggle(container) {
     const card = container.querySelector('.wdash-card--pressure');
     if (!card) return;
@@ -3295,8 +4171,9 @@
     return match ? `#${match[1]}` : null;
   }
 
-  function compileLayoutTemplates(layoutConfig) {
+  function compileLayoutTemplates(layoutConfig, options = {}) {
     const breakpoints = ['desktop', 'tablet', 'mobile'];
+    const trackUnit = normalizeTrackUnit(options.trackUnit ?? layoutConfig?.trackUnit);
     const result = {};
     for (const key of breakpoints) {
       const section = layoutConfig && layoutConfig[key];
@@ -3305,7 +4182,7 @@
         : Array.isArray(section?.rows)
           ? section.rows
           : [];
-      result[key] = compileGridTemplate(rows);
+      result[key] = compileGridTemplate(rows, trackUnit);
     }
     return result;
   }
@@ -3405,7 +4282,20 @@
     return token;
   }
 
-  function compileGridTemplate(layout) {
+  function normalizeTrackUnit(value) {
+    if (typeof value !== 'string') return DEFAULT_TRACK_UNIT;
+    const token = value.trim().toLowerCase();
+    if (!token) return DEFAULT_TRACK_UNIT;
+    if (token === '%' || token === 'percent' || token === 'percentage' || token === 'percents') {
+      return 'percent';
+    }
+    if (token === 'px' || token === 'pixel' || token === 'pixels') {
+      return 'px';
+    }
+    return DEFAULT_TRACK_UNIT;
+  }
+
+  function compileGridTemplate(layout, trackUnit = DEFAULT_TRACK_UNIT) {
     if (!Array.isArray(layout)) {
       return { areas: '"."', rows: 'repeat(1, minmax(0, 1fr))', rowCount: 1 };
     }
@@ -3420,7 +4310,7 @@
             .filter(col => typeof col === 'string' && col.length)
         : [];
       if (!columns.length) continue;
-      const track = normalizeTrackSize(entry?.height ?? entry?.rowHeight ?? entry?.size);
+      const track = normalizeTrackSize(entry?.height ?? entry?.rowHeight ?? entry?.size, trackUnit);
       for (let i = 0; i < repeat; i += 1) {
         areaLines.push(`"${columns.join(' ')}"`);
         rowTracks.push(track);
@@ -3439,11 +4329,12 @@
     return { areas: areaLines.join('\n  '), rows: rowsValue, rowCount: safeRowCount };
   }
 
-  function normalizeTrackSize(value) {
+  function normalizeTrackSize(value, trackUnit = DEFAULT_TRACK_UNIT) {
     const defaultTrack = 'minmax(0, 1fr)';
     if (value == null) return defaultTrack;
     if (typeof value === 'number' && Number.isFinite(value)) {
-      return `${Math.max(0, value)}px`;
+      const safe = Math.max(0, value);
+      return trackUnit === 'percent' ? `${safe}%` : `${safe}px`;
     }
     if (typeof value === 'string') {
       const trimmed = value.trim();
@@ -3456,10 +4347,10 @@
     return defaultTrack;
   }
 
-  function sanitizeColumns(value, fallback) {
+  function sanitizeColumns(value, fallback, trackUnit = DEFAULT_TRACK_UNIT) {
     if (Array.isArray(value)) {
       const tracks = value
-        .map(item => normalizeTrackSize(item))
+        .map(item => normalizeTrackSize(item, trackUnit))
         .filter(Boolean);
       if (tracks.length) {
         return tracks.join(' ');
@@ -3482,6 +4373,227 @@
       if (trimmed.length) return trimmed;
     }
     return fallback;
+  }
+
+  function resolvePercentPixelDistribution(percents, totalPercent, available) {
+    if (!Array.isArray(percents) || !percents.length) {
+      return {
+        values: [],
+        requestedSum: 0,
+        scaledSum: 0,
+        finalSum: 0,
+        remainder: Math.max(0, Number(available) || 0),
+        scale: 1
+      };
+    }
+
+    const safeAvailable = Number.isFinite(available) && available > 0 ? available : 0;
+    const requestedValues = percents.map(percent => (percent / totalPercent) * safeAvailable);
+    const requestedSum = requestedValues.reduce((sum, value) => sum + value, 0);
+
+    let scale = 1;
+    if (safeAvailable > 0 && requestedSum > safeAvailable) {
+      scale = safeAvailable / requestedSum;
+    }
+
+    const scaledValues = requestedValues.map(value => value * scale);
+    const result = [];
+    let running = 0;
+
+    for (let i = 0; i < scaledValues.length; i += 1) {
+      const remaining = safeAvailable - running;
+      let next = Math.max(0, scaledValues[i]);
+      if (remaining <= 0) {
+        next = 0;
+      } else if (i === scaledValues.length - 1) {
+        next = remaining;
+      } else if (next > remaining) {
+        next = remaining;
+      }
+      result.push(next);
+      running += next;
+    }
+
+    const finalSum = result.reduce((sum, value) => sum + value, 0);
+    const scaledSum = scaledValues.reduce((sum, value) => sum + value, 0);
+    const remainder = Math.max(0, safeAvailable - finalSum);
+
+    return {
+      values: result,
+      requestedSum,
+      scaledSum,
+      finalSum,
+      remainder,
+      scale
+    };
+  }
+
+  function adjustPercentRowTracks(rowsValue, rowCount, baseHeight, gapValue, frameGapValue, options = {}) {
+    if (typeof rowsValue !== 'string' || !rowsValue.trim()) return null;
+    if (!Number.isFinite(baseHeight) || baseHeight <= 0) return null;
+    if (!Number.isFinite(rowCount) || rowCount <= 0) return null;
+
+    const percents = extractPercentTracks(rowsValue);
+    if (!percents || percents.length !== rowCount) return null;
+
+    const rowGap = parseGapAxisPixels(gapValue, 'row');
+    const verticalPadding = parsePaddingAxisTotal(frameGapValue, 'vertical');
+    if (rowGap == null || verticalPadding == null) return null;
+
+    const totalPercent = percents.reduce((sum, value) => sum + value, 0);
+    if (!Number.isFinite(totalPercent) || totalPercent <= 0) return null;
+
+    const available = baseHeight - verticalPadding - rowGap * Math.max(0, rowCount - 1);
+    if (!Number.isFinite(available) || available <= 0) return null;
+
+    const distribution = resolvePercentPixelDistribution(percents, totalPercent, available);
+    const pixelValues = distribution.values;
+
+    if (options && options.collector && typeof options.collector.recordRow === 'function') {
+      options.collector.recordRow({
+        breakpoint: options.breakpoint || 'desktop',
+        raw: rowsValue,
+        percents: percents.slice(),
+        pixels: pixelValues.slice(),
+        available,
+        baseHeight,
+        rowGap,
+        verticalPadding,
+        totalPercent,
+        rowCount,
+        requestedPixels: distribution.requestedSum,
+        scaledPixels: distribution.scaledSum,
+        finalPixels: distribution.finalSum,
+        remainder: distribution.remainder,
+        scale: distribution.scale
+      });
+    }
+
+    return pixelValues.map(formatPixelTrack).join(' ');
+  }
+
+  function adjustPercentColumnTracks(columnsValue, baseWidth, gapValue, frameGapValue, options = {}) {
+    if (typeof columnsValue !== 'string' || !columnsValue.trim()) return null;
+    if (!Number.isFinite(baseWidth) || baseWidth <= 0) return null;
+
+    const percents = extractPercentTracks(columnsValue);
+    if (!percents || !percents.length) return null;
+
+    const columnGap = parseGapAxisPixels(gapValue, 'column');
+    const horizontalPadding = parsePaddingAxisTotal(frameGapValue, 'horizontal');
+    if (columnGap == null || horizontalPadding == null) return null;
+
+    const totalPercent = percents.reduce((sum, value) => sum + value, 0);
+    if (!Number.isFinite(totalPercent) || totalPercent <= 0) return null;
+
+    const columnCount = percents.length;
+    const available = baseWidth - horizontalPadding - columnGap * Math.max(0, columnCount - 1);
+    if (!Number.isFinite(available) || available <= 0) return null;
+
+    const distribution = resolvePercentPixelDistribution(percents, totalPercent, available);
+    const pixelValues = distribution.values;
+
+    if (options && options.collector && typeof options.collector.recordColumn === 'function') {
+      options.collector.recordColumn({
+        breakpoint: options.breakpoint || 'desktop',
+        raw: columnsValue,
+        percents: percents.slice(),
+        pixels: pixelValues.slice(),
+        available,
+        baseWidth,
+        columnGap,
+        horizontalPadding,
+        totalPercent,
+        columnCount,
+        requestedPixels: distribution.requestedSum,
+        scaledPixels: distribution.scaledSum,
+        finalPixels: distribution.finalSum,
+        remainder: distribution.remainder,
+        scale: distribution.scale
+      });
+    }
+
+    return pixelValues.map(formatPixelTrack).join(' ');
+  }
+
+  function extractPercentTracks(value) {
+    if (typeof value !== 'string') return null;
+    const tokens = value
+      .trim()
+      .replace(/\s+/g, ' ')
+      .split(' ')
+      .filter(Boolean);
+    if (!tokens.length) return null;
+    const percents = tokens.map(token => {
+      const match = token.match(/^(-?\d+(?:\.\d+)?)%$/);
+      if (!match) return null;
+      const numeric = Number(match[1]);
+      return Number.isFinite(numeric) ? Math.max(0, numeric) : null;
+    });
+    if (percents.some(value => value == null)) return null;
+    return percents;
+  }
+
+  function parseGapAxisPixels(value, axis) {
+    if (typeof value !== 'string') return null;
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const tokens = trimmed.split(/\s+/);
+    if (!tokens.length) return null;
+    const index = axis === 'column' && tokens.length > 1 ? 1 : 0;
+    const token = tokens[index];
+    return parsePixelToken(token);
+  }
+
+  function parsePaddingAxisTotal(value, axis) {
+    if (typeof value !== 'string') return null;
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const tokens = trimmed.split(/\s+/);
+    if (!tokens.length) return null;
+    let components;
+    if (tokens.length === 1) {
+      const parsed = parsePixelToken(tokens[0]);
+      if (parsed == null) return null;
+      components = [parsed, parsed, parsed, parsed];
+    } else if (tokens.length === 2) {
+      const vertical = parsePixelToken(tokens[0]);
+      const horizontal = parsePixelToken(tokens[1]);
+      if (vertical == null || horizontal == null) return null;
+      components = [vertical, horizontal, vertical, horizontal];
+    } else if (tokens.length === 3) {
+      const top = parsePixelToken(tokens[0]);
+      const horizontal = parsePixelToken(tokens[1]);
+      const bottom = parsePixelToken(tokens[2]);
+      if (top == null || horizontal == null || bottom == null) return null;
+      components = [top, horizontal, bottom, horizontal];
+    } else {
+      const top = parsePixelToken(tokens[0]);
+      const right = parsePixelToken(tokens[1]);
+      const bottom = parsePixelToken(tokens[2]);
+      const left = parsePixelToken(tokens[3]);
+      if (top == null || right == null || bottom == null || left == null) return null;
+      components = [top, right, bottom, left];
+    }
+    if (axis === 'vertical') {
+      return components[0] + components[2];
+    }
+    return components[1] + components[3];
+  }
+
+  function parsePixelToken(token) {
+    if (typeof token !== 'string') return null;
+    const match = token.match(/^(-?\d+(?:\.\d+)?)px$/i);
+    if (!match) return null;
+    const numeric = Number(match[1]);
+    if (!Number.isFinite(numeric)) return null;
+    return Math.max(0, numeric);
+  }
+
+  function formatPixelTrack(value) {
+    if (!Number.isFinite(value) || value < 0) return '0px';
+    const rounded = Number(value.toFixed(4));
+    return `${rounded}px`;
   }
 
   function sanitizeDimension(value, fallback) {
@@ -4467,5 +5579,27 @@
       clearTimeout(frame);
       frame = setTimeout(() => fn(...args), delay);
     };
+  }
+
+  if (!IS_TEST_ENV && typeof window !== 'undefined') {
+    window.weatherDashboard = window.weatherDashboard || {};
+    window.weatherDashboard.logLayoutDiagnostics = () => logLayoutDiagnostics(null, { force: true });
+    window.weatherDashboard.captureLayoutDiagnostics = () => layoutState.lastDiagnostics;
+  }
+
+  if (IS_TEST_ENV) {
+    const target = typeof window !== 'undefined' ? window : globalThis;
+    target.__WDASH_TEST_HOOKS__ = target.__WDASH_TEST_HOOKS__ || {};
+    Object.assign(target.__WDASH_TEST_HOOKS__, {
+      updateTempWindCard,
+      tempWindState,
+      applyLayoutOverrides,
+      layoutState,
+      resolveMeasuredBaseDimensions,
+      measureDisplayTileBaseDimensions,
+      resetTileMeasurement,
+      logLayoutDiagnostics,
+      buildLayoutDiagnosticsContext
+    });
   }
 })();
