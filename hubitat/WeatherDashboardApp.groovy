@@ -1192,6 +1192,32 @@ private Map updateDailyTrackerMaintenance(Map readings, long timestamp, TimeZone
     return maintenance
 }
 
+private Map updateTimeSeriesMaintenance(Map readings, long timestamp, TimeZone tz) {
+    Map source = readings ?: [:]
+
+    BigDecimal outdoorTemp = toBigDecimal(source.outdoorTemp)
+    updateTemperatureHistory(outdoorTemp, timestamp)
+
+    BigDecimal windSpeed = toBigDecimal(source.windSpeed)
+    BigDecimal windDirection = toBigDecimal(source.windDirectionDegrees)
+    updateWindHistory(windSpeed, windDirection, timestamp)
+
+    Map relSample = (source.pressureRelative instanceof Map) ? (source.pressureRelative as Map) : [:]
+    Map absSample = (source.pressureAbsolute instanceof Map) ? (source.pressureAbsolute as Map) : [:]
+    BigDecimal relPressure = toBigDecimal(relSample.value)
+    BigDecimal absPressure = toBigDecimal(absSample.value)
+    BigDecimal referencePressure = relPressure != null ? relPressure : absPressure
+    String pressureUnit = relSample.unit ?: absSample.unit ?: state.pressureBaseline?.lastUnit ?: "inHg"
+
+    updatePressureHistory(referencePressure, timestamp)
+    updatePressureBaseline(referencePressure, pressureUnit, timestamp, tz)
+
+    return [
+        referencePressure: referencePressure,
+        pressureUnit     : pressureUnit
+    ]
+}
+
 private String normalizeStationTimestamp(Object raw) {
     if (!(raw instanceof CharSequence)) {
         return null
@@ -1236,13 +1262,19 @@ def refreshWeatherData() {
         long timestamp = startedAt
         TimeZone tz = location?.timeZone ?: UTC_ZONE
         boolean force = state.remove('forceRefresh') == true
+        String dayKey = dayKeyFor(timestamp, tz)
 
         Map readings = captureRawReadings() ?: [:]
         Map dailyMaintenance = updateDailyTrackerMaintenance(readings, timestamp, tz) ?: [:]
+        Map timeSeriesMaintenance = updateTimeSeriesMaintenance(readings, timestamp, tz) ?: [:]
+        BigDecimal maintainedReferencePressure = timeSeriesMaintenance.referencePressure
+        String maintainedPressureUnit = timeSeriesMaintenance.pressureUnit
+        String lastPayloadDayKey = state.lastPayloadDayKey
+        boolean dayRolled = (dayKey != null && lastPayloadDayKey != null && dayKey != lastPayloadDayKey)
+
         String fingerprint = JsonOutput.toJson(readings)
 
-        if (!force && fingerprint && fingerprint == state.lastSourceFingerprint) {
-            pruneHistoriesForUnchanged(timestamp)
+        if (!force && !dayRolled && fingerprint && fingerprint == state.lastSourceFingerprint) {
             suppressed = true
             return
         }
@@ -1258,7 +1290,6 @@ def refreshWeatherData() {
     if (tempF != null) {
         outdoor.temperatureF = round(tempF, 1)
         outdoor.temperatureC = round(fahrenheitToCelsius(tempF), 1)
-        updateTemperatureHistory(tempF, timestamp)
         def trend = computeTemperatureTrend()
         if (trend != null) {
             outdoor.trendFPerHour = round(trend, 2)
@@ -1340,7 +1371,6 @@ def refreshWeatherData() {
         wind.directionCardinal = directionText
     }
 
-    updateWindHistory(windSpeed, directionDegrees, timestamp)
     def avgWind = computeWindAverage(timestamp)
     if (avgWind) {
         wind.averageMinutes = (settings.windAverageMinutes ?: 10) as Integer
@@ -1361,10 +1391,8 @@ def refreshWeatherData() {
     if (absPressure != null) {
         pressure.absoluteInHg = round(absPressure, 2)
     }
-    String pressureUnit = relSample.unit ?: absSample.unit ?: state.pressureBaseline?.lastUnit ?: "inHg"
-    BigDecimal referencePressure = relPressure ?: absPressure
-    updatePressureHistory(referencePressure, timestamp)
-    updatePressureBaseline(referencePressure, pressureUnit, timestamp, tz)
+    String pressureUnit = maintainedPressureUnit ?: relSample.unit ?: absSample.unit ?: state.pressureBaseline?.lastUnit ?: "inHg"
+    BigDecimal referencePressure = maintainedReferencePressure != null ? maintainedReferencePressure : (relPressure ?: absPressure)
     def trend = computePressureTrend(timestamp)
     if (trend) {
         pressure.trendInHgPerHour = round(trend.ratePerHour, 3)
@@ -1544,6 +1572,7 @@ def refreshWeatherData() {
     state.lastPayload = payload
     state.lastPayloadJson = json
     state.remove('lastPrettyPayload')
+    state.lastPayloadDayKey = dayKey
     payloadUpdated = true
 
     def child = getChildDevice(childDeviceDni())
@@ -1553,12 +1582,6 @@ def refreshWeatherData() {
     } finally {
         recordRefreshMetrics(source, startedAt, now(), suppressed, payloadUpdated)
     }
-}
-
-private void pruneHistoriesForUnchanged(long timestamp) {
-    updateWindHistory(null, null, timestamp)
-    updateTemperatureHistory(null, timestamp)
-    updatePressureHistory(null, timestamp)
 }
 
 
