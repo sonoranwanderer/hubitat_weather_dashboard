@@ -5,6 +5,25 @@
 
 import groovy.json.JsonOutput
 import java.math.RoundingMode
+import java.math.BigDecimal
+
+private static final BigDecimal HPA_PER_INHG = 33.8638866667G
+private static final BigDecimal RAPID_RATE_INHG = 0.03G
+private static final BigDecimal MODERATE_RATE_INHG = 0.01G
+private static final BigDecimal RAPID_RISE_HPA = HPA_PER_INHG * RAPID_RATE_INHG
+private static final BigDecimal MODERATE_RISE_HPA = HPA_PER_INHG * MODERATE_RATE_INHG
+private static final BigDecimal RAPID_FALL_HPA = RAPID_RISE_HPA.negate()
+private static final BigDecimal MODERATE_FALL_HPA = MODERATE_RISE_HPA.negate()
+private static final long ONE_HOUR_MS = 3_600_000L
+private static final long TWENTY_FOUR_HOURS_MS = 24L * ONE_HOUR_MS
+private static final List ICON_ORDER = ['stormy', 'rainy', 'cloudy', 'partly', 'sunny']
+private static final Map ICON_LABELS = [
+    sunny : 'Sunny',
+    partly: 'Partly Cloudy',
+    cloudy: 'Cloudy',
+    rainy : 'Rainy',
+    stormy: 'Stormy'
+]
 
 definition(
     name: "Pressure Tendency App",
@@ -37,6 +56,8 @@ def mainPage() {
         }
         section("Advanced options") {
             input name: "historyLength", type: "number", title: "Days to keep in 30-day history", required: true, defaultValue: 30
+            input name: "pressureTrendHours", type: "number", title: "Short-term trend window (hours)", required: true, defaultValue: 3
+            input name: "humidityAttribute", type: "text", title: "Humidity attribute name", required: false, defaultValue: "humidity"
         }
         section("About") {
             paragraph "Updates run when new pressure events are received. The 30-day history is built opportunistically from live data."
@@ -59,6 +80,7 @@ def initialize() {
     state.currentDay = state.currentDay ?: currentDay()
     state.dailyCount = state.dailyCount ?: 0
     state.dailySum = state.dailySum ?: 0.0G
+    state.pressureHistory = (state.pressureHistory instanceof List) ? state.pressureHistory : []
     subscribeToPressure()
 }
 
@@ -95,6 +117,7 @@ private void processPressure() {
     BigDecimal relative = readings.relative as BigDecimal
     BigDecimal absolute = readings.absolute as BigDecimal
     String unit = resolveUnit(readings.unit)
+    long timestamp = now()
 
     updateDailyStats(reference)
 
@@ -102,8 +125,11 @@ private void processPressure() {
     BigDecimal avg30 = computeThirtyDayAverage(dailyAverage)
     BigDecimal tendency = (dailyAverage != null && avg30 != null) ? (dailyAverage - avg30) : 0.0G
 
-    Map forecast = determineForecast(tendency, unit)
-    Map summary = buildSummary(relative, absolute, unit, tendency, dailyAverage, avg30, forecast)
+    Map trend = updateShortTermTrend(reference, unit, timestamp)
+    BigDecimal humidity = readCurrentHumidity()
+    Map baselineForecast = determineBaselineForecast(tendency, unit)
+    Map combinedForecast = combineForecasts(baselineForecast, trend, humidity)
+    Map summary = buildSummary(relative, absolute, unit, tendency, dailyAverage, avg30, humidity, baselineForecast, trend, combinedForecast)
 
     if (targetDevice?.hasCommand("updatePressure")) {
         BigDecimal tendencyValue = convertFromHpa(summary.tendencyHpa, unit)
@@ -115,7 +141,7 @@ private void processPressure() {
 
         targetDevice.updatePressure(relative, absolute, unit, tendencyValue,
             summary.tendencyText, dailyRounded, avg30Rounded,
-            forecast.key, forecast.text, JsonOutput.toJson(summary.publicData))
+            combinedForecast.key, combinedForecast.summary, JsonOutput.toJson(summary.publicData))
     }
 }
 
@@ -137,6 +163,14 @@ private Map readCurrentPressures() {
         result.reference = result.relative ?: result.absolute
     }
     return result
+}
+
+private BigDecimal readCurrentHumidity() {
+    if (!humidityAttribute) {
+        return null
+    }
+    def state = sourceDevice?.currentState(humidityAttribute)
+    return parseBigDecimal(state?.value)
 }
 
 private String resolveUnit(String eventUnit) {
@@ -199,7 +233,7 @@ private BigDecimal computeThirtyDayAverage(BigDecimal todayAvg) {
     return todayAvg
 }
 
-private Map determineForecast(BigDecimal tendency, String unit) {
+private Map determineBaselineForecast(BigDecimal tendency, String unit) {
     BigDecimal tendencyHpa = convertToHpa(tendency ?: 0.0G, unit)
     String trendText
     if (tendencyHpa > 1.0G) {
@@ -229,19 +263,204 @@ private Map determineForecast(BigDecimal tendency, String unit) {
         text = "Pressure rapidly decreasing"
     }
 
-    return [key: key, text: text, tendencyHpa: tendencyHpa, trendText: trendText]
+    return [
+        key       : key,
+        text      : text,
+        trendText : trendText,
+        tendencyHpa: tendencyHpa,
+        label     : ICON_LABELS[key] ?: key?.capitalize()
+    ]
+}
+
+private Map updateShortTermTrend(BigDecimal reference, String unit, long timestamp) {
+    if (reference == null) {
+        return null
+    }
+
+    BigDecimal pressureHpa = convertToHpa(reference, unit)
+    if (pressureHpa == null) {
+        return null
+    }
+
+    List history = (state.pressureHistory ?: []) as List
+    long cutoff = timestamp - TWENTY_FOUR_HOURS_MS
+    history = history.findAll { it?.time instanceof Long && it.time >= cutoff }
+    history << [time: timestamp, pressureHpa: pressureHpa]
+    state.pressureHistory = history
+
+    if (history.size() < 2) {
+        return null
+    }
+
+    Integer hours = (pressureTrendHours ?: 3) as Integer
+    if (hours == null || hours <= 0) {
+        hours = 3
+    }
+    long windowMs = hours * ONE_HOUR_MS
+    Map comparison = history.find { it?.time instanceof Long && it.time >= (timestamp - windowMs) }
+    if (!comparison) {
+        comparison = history.first()
+    }
+    if (!comparison?.pressureHpa) {
+        return null
+    }
+
+    BigDecimal comparisonPressure = comparison.pressureHpa as BigDecimal
+    BigDecimal changeHpa = pressureHpa - comparisonPressure
+    BigDecimal elapsedHours = BigDecimal.valueOf((timestamp - (comparison.time as Long)) / 3600000.0D)
+    if (elapsedHours.compareTo(BigDecimal.ZERO) <= 0) {
+        elapsedHours = BigDecimal.valueOf(hours)
+    }
+    BigDecimal rateHpa = changeHpa.divide(elapsedHours, 6, RoundingMode.HALF_UP)
+
+    String label
+    if (rateHpa.compareTo(RAPID_RISE_HPA) >= 0) {
+        label = "Rising Rapidly"
+    } else if (rateHpa.compareTo(MODERATE_RISE_HPA) >= 0) {
+        label = "Rising"
+    } else if (rateHpa.compareTo(RAPID_FALL_HPA) <= 0) {
+        label = "Falling Rapidly"
+    } else if (rateHpa.compareTo(MODERATE_FALL_HPA) <= 0) {
+        label = "Falling"
+    } else {
+        label = "Steady"
+    }
+
+    BigDecimal rateNative = convertFromHpa(rateHpa, unit)
+    if (rateNative != null) {
+        rateNative = rateNative.setScale(3, RoundingMode.HALF_UP)
+    }
+    BigDecimal changeNative = convertFromHpa(changeHpa, unit)
+    if (changeNative != null) {
+        changeNative = changeNative.setScale(3, RoundingMode.HALF_UP)
+    }
+
+    return [
+        label           : label,
+        rateHpaPerHour  : rateHpa.setScale(3, RoundingMode.HALF_UP),
+        changeHpa       : changeHpa.setScale(3, RoundingMode.HALF_UP),
+        windowHours     : hours,
+        ratePerHour     : rateNative,
+        change          : changeNative
+    ]
+}
+
+private Map combineForecasts(Map baseline, Map trend, BigDecimal humidity) {
+    if (!baseline) {
+        baseline = [key: "cloudy", text: "Pressure steady", label: ICON_LABELS.cloudy, trendText: "Steady", tendencyHpa: 0.0G]
+    }
+
+    BigDecimal rate = trend?.rateHpaPerHour as BigDecimal
+    int adjustment = 0
+    String adjustmentReason = null
+    String adjustmentDirection = null
+    if (rate != null) {
+        if (rate.compareTo(RAPID_RISE_HPA) >= 0) {
+            adjustment = 2
+            adjustmentReason = "Rapid pressure rise"
+            adjustmentDirection = "improved"
+        } else if (rate.compareTo(MODERATE_RISE_HPA) >= 0) {
+            adjustment = 1
+            adjustmentReason = "Pressure rising"
+            adjustmentDirection = "improved"
+        } else if (rate.compareTo(RAPID_FALL_HPA) <= 0) {
+            adjustment = -2
+            adjustmentReason = "Rapid pressure drop"
+            adjustmentDirection = "degraded"
+        } else if (rate.compareTo(MODERATE_FALL_HPA) <= 0) {
+            adjustment = -1
+            adjustmentReason = "Pressure falling"
+            adjustmentDirection = "degraded"
+        }
+    }
+
+    int baselineIndex = ICON_ORDER.indexOf(baseline.key)
+    if (baselineIndex < 0) {
+        baselineIndex = ICON_ORDER.indexOf("cloudy")
+    }
+    int targetIndex = Math.max(0, Math.min(ICON_ORDER.size() - 1, baselineIndex + adjustment))
+    String finalKey = ICON_ORDER[targetIndex]
+    String finalLabel = ICON_LABELS[finalKey] ?: finalKey.capitalize()
+
+    String humidityNote = buildHumidityNote(humidity)
+    String trendLabel = trend?.label
+    Integer windowHours = trend?.windowHours
+    String summaryText
+    if (trendLabel && trendLabel != "Steady" && windowHours) {
+        summaryText = "${trendLabel} over last ${windowHours}h. ${baseline.text}".trim()
+    } else if (trendLabel && trendLabel != "Steady") {
+        summaryText = "${trendLabel}. ${baseline.text}".trim()
+    } else {
+        summaryText = baseline.text
+    }
+    if (humidityNote) {
+        summaryText = "${summaryText} ${humidityNote}".trim()
+    }
+
+    String shortSummary = finalLabel
+    if (trendLabel && trendLabel != "Steady") {
+        shortSummary = "${trendLabel} • ${finalLabel}".trim()
+    }
+    shortSummary = shortenText(shortSummary, 32)
+
+    Map adjustmentInfo = null
+    if (adjustment != 0 && adjustmentReason) {
+        adjustmentInfo = [direction: adjustmentDirection, reason: adjustmentReason, steps: adjustment]
+    }
+
+    return [
+        key          : finalKey,
+        label        : finalLabel,
+        summary      : summaryText,
+        shortSummary : shortSummary,
+        humidityNote : humidityNote,
+        adjustment   : adjustmentInfo,
+        baselineKey  : baseline.key,
+        baselineLabel: baseline.label
+    ]
 }
 
 private Map buildSummary(BigDecimal relative, BigDecimal absolute, String unit, BigDecimal tendency,
-                         BigDecimal dailyAverage, BigDecimal avg30, Map forecast) {
+                         BigDecimal dailyAverage, BigDecimal avg30, BigDecimal humidity,
+                         Map baseline, Map trend, Map combined) {
     BigDecimal tendencyHpa = convertToHpa(tendency ?: 0.0G, unit)
-    String tendencyText = forecast.trendText ?: "Steady"
+    String tendencyText = baseline?.trendText ?: "Steady"
     BigDecimal tendencyValue = convertFromHpa(tendencyHpa, unit)
     if (tendencyValue != null) {
         tendencyValue = tendencyValue.setScale(3, RoundingMode.HALF_UP)
     }
     BigDecimal dailyRounded = dailyAverage != null ? dailyAverage.setScale(3, RoundingMode.HALF_UP) : null
     BigDecimal avg30Rounded = avg30 != null ? avg30.setScale(3, RoundingMode.HALF_UP) : null
+    BigDecimal humidityRounded = humidity != null ? humidity.setScale(1, RoundingMode.HALF_UP) : null
+
+    Map trendData = null
+    if (trend) {
+        trendData = [
+            label          : trend.label,
+            windowHours    : trend.windowHours,
+            rateHpaPerHour : trend.rateHpaPerHour,
+            changeHpa      : trend.changeHpa,
+            ratePerHour    : trend.ratePerHour,
+            change         : trend.change
+        ]
+    }
+
+    Map forecastData = [
+        key         : combined?.key,
+        label       : combined?.label,
+        summary     : combined?.summary,
+        shortSummary: combined?.shortSummary,
+        humidityNote: combined?.humidityNote,
+        adjustment  : combined?.adjustment,
+        baseline    : [
+            key       : baseline?.key,
+            label     : baseline?.label,
+            text      : baseline?.text,
+            trendText : baseline?.trendText,
+            tendencyHpa: baseline?.tendencyHpa
+        ],
+        shortTerm   : trendData
+    ]
 
     Map publicData = [
         relative: relative,
@@ -250,7 +469,8 @@ private Map buildSummary(BigDecimal relative, BigDecimal absolute, String unit, 
         tendency: [value: tendencyValue, text: tendencyText],
         dailyAverage: dailyRounded,
         thirtyDayAverage: avg30Rounded,
-        forecast: [key: forecast.key, text: forecast.text]
+        humidity: humidityRounded,
+        forecast: forecastData
     ]
 
     return [
@@ -258,6 +478,38 @@ private Map buildSummary(BigDecimal relative, BigDecimal absolute, String unit, 
         tendencyText: tendencyText,
         tendencyHpa: tendencyHpa
     ]
+}
+
+private String buildHumidityNote(BigDecimal humidity) {
+    if (humidity == null) {
+        return null
+    }
+    if (humidity >= 85.0G) {
+        return "High humidity favors fog or drizzle."
+    }
+    if (humidity <= 35.0G) {
+        return "Dry air may limit clouds."
+    }
+    return null
+}
+
+private static String shortenText(String value, int maxLength) {
+    if (value == null) {
+        return null
+    }
+    String text = value.toString().trim()
+    if (!text) {
+        return text
+    }
+    if (text.length() <= maxLength) {
+        return text
+    }
+    int limit = Math.max(0, maxLength - 1)
+    String clipped = text.substring(0, limit)
+    if (clipped.endsWith(" ")) {
+        clipped = clipped.trim()
+    }
+    return clipped + "…"
 }
 
 private BigDecimal parseBigDecimal(Object value) {
