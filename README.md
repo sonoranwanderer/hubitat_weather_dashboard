@@ -84,6 +84,23 @@ To size tracks as percentages of the measured base dimensions, set `"trackUnit":
 
 Values you omit fall back to the defaults compiled into `weather-dashboard.js`, so you only need to supply the parts you want to adjust.
 
+### Viewing layout diagnostics
+
+The renderer snapshots every successful layout pass and keeps the latest values on `window.weatherDashboard`. Open the Hubitat dashboard in a browser, launch the developer tools console, and run:
+
+```javascript
+weatherDashboard.logLayoutDiagnostics();
+```
+
+The helper prints the host element, its measured size, the resolved base dimensions, the source of each base value, and any percent-to-pixel conversions that were applied to rows or columns. The function returns the raw diagnostics object, so you can also inspect it programmatically:
+
+```javascript
+const info = weatherDashboard.captureLayoutDiagnostics();
+console.log(info.base, info.percentTracks);
+```
+
+Set `window.__WDASH_DEBUG_LAYOUT__ = true` before the dashboard script runs (for example via the browser console and a refresh) to have the diagnostics logged automatically after each layout application.
+
 ### Controlling individual card heights and vertical placement
 
 Rows define the vertical tracks of the grid. Every card listed in the same row shares that track’s height, expressed in pixels or percentages depending on `trackUnit`. To make one card taller than another in the same column, split the column into multiple rows and repeat the card name in each row you want it to span. Cards only occupy the rows where their name appears, so you can leave a gap for the other column by using `"."` as a placeholder.
