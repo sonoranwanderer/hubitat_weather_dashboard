@@ -2458,7 +2458,7 @@
                   <stop offset="0%" stop-color="#ffd45a" />
                   <stop offset="100%" stop-color="#ff9445" />
                 </linearGradient>
-                <radialGradient id="wdash-sun-glow-gradient" cx="50%" cy="50%" r="50%">
+                <radialGradient id="wdash-sun-glow-gradient" cx="50%" cy="50%" r="37.5%">
                   <stop offset="0%" stop-color="#ffd45a" stop-opacity="0.8" />
                   <stop offset="55%" stop-color="#ffb347" stop-opacity="0.45" />
                   <stop offset="100%" stop-color="#ff9445" stop-opacity="0" />
