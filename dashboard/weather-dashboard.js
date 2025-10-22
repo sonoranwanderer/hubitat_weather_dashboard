@@ -121,6 +121,13 @@
     air: 'Air Quality'
   };
 
+  const SUN_CARD_GEOMETRY = { cx: 100, cy: 100, r: 85, startAngle: 210, endAngle: 330 };
+  const SUN_CARD_METRIC_POSITIONS = {
+    uv: { left: 35 / 2, top: 28 },
+    solar: { left: 100 / 2, top: 45 },
+    moon: { left: 165 / 2, top: 28 }
+  };
+
   const AIR_QUALITY_METRIC_ORDER = [
     'aqi',
     'aqi24h',
@@ -298,6 +305,7 @@
   let tempWindGaugeHosts = [];
   const tempWindGaugeLastSizes = new WeakMap();
   const tempWindState = { data: null };
+  const solarState = { data: null };
   let rainDropObserver = null;
   let rainDropResizeHandler = null;
   let rainDropRaf = null;
@@ -523,7 +531,7 @@
     } else {
       cardMarkupList.forEach(card => {
         const previousMarkup = renderState.markupByKey.get(card.key) || null;
-        if (card.key === 'ambient' || card.key === 'tempWind') {
+        if (card.key === 'ambient' || card.key === 'tempWind' || card.key === 'solar') {
           const ensured = ensureCardPresence(grid, card, cardMarkupList);
           if (ensured) {
             renderState.markupByKey.set(card.key, card.markup);
@@ -548,6 +556,8 @@
 
     tempWindState.data = payload;
     updateTempWindCard();
+    solarState.data = payload;
+    updateSolarSunCard();
     setupAmbientRotation(payload);
     setupAirQualityRotation(payload);
     setupInteractiveComponents(grid);
@@ -2372,80 +2382,100 @@
     return `<span class="wdash-pressure-outlook-label">${escapeHtml(fallbackText)}</span>`;
   }
 
-  function buildSolarSunCard(data) {
-    const solar = data.solar || {};
+  let solarStaticLayoutCache = null;
+
+  function getSolarStaticLayout() {
+    if (solarStaticLayoutCache) return solarStaticLayoutCache;
+    const arc = SUN_CARD_GEOMETRY;
+    const startPoint = getPointOnArc(arc, 0);
+    const endPoint = getPointOnArc(arc, 1);
+    solarStaticLayoutCache = {
+      arcPath: `M ${startPoint.x} ${startPoint.y} A ${arc.r} ${arc.r} 0 0 1 ${endPoint.x} ${endPoint.y}`,
+      uvStyle: `left: ${SUN_CARD_METRIC_POSITIONS.uv.left}%; top: ${SUN_CARD_METRIC_POSITIONS.uv.top}%;`,
+      solarStyle: `left: ${SUN_CARD_METRIC_POSITIONS.solar.left}%; top: ${SUN_CARD_METRIC_POSITIONS.solar.top}%;`,
+      moonStyle: `left: ${SUN_CARD_METRIC_POSITIONS.moon.left}%; top: ${SUN_CARD_METRIC_POSITIONS.moon.top}%;`,
+      sunriseStyle: `left: ${startPoint.x / 2}%; top: ${startPoint.y}%`,
+      sunsetStyle: `left: ${endPoint.x / 2}%; top: ${endPoint.y}%`
+    };
+    return solarStaticLayoutCache;
+  }
+
+  function resolveSolarSunViewModel(data) {
+    const solar = data?.solar || {};
     const moon = solar.moon || {};
     const uvIndex = toNumber(solar.uvIndex);
-    const solarRadiation = toNumber(solar.solarRadiationWm2); // Support multiple keys
-
-    const now = parseDateTime(data.metadata?.generatedAt);
-    const stationReportedAt = data.metadata?.weatherStationTime || data.metadata?.generatedAt;
-    const stationLabel = stationReportedAt ? formatHubDateTime(stationReportedAt) : null;
-    const stationZoneLabel = (() => {
-      const zone = data.metadata?.weatherStationTimezone;
-      if (!zone) return '';
-      const text = typeof zone === 'string' ? zone.trim() : String(zone);
-      return text;
-    })();
-    const sunrise = parseDateTime(solar.sunrise);
-    const sunset = parseDateTime(solar.sunset);
-
+    const solarRadiation = toNumber(solar.solarRadiationWm2);
+    const now = parseDateTime(data?.metadata?.generatedAt);
     const progress = sunProgress(solar, now);
     const isDay = progress >= 0 && progress <= 1;
-    const dayNightClass = isDay ? 'is-day' : 'is-night';
+    const sunPoint = getPointOnArc(SUN_CARD_GEOMETRY, progress);
+    const layout = getSolarStaticLayout();
+
+    let illuminationPercent = toNumber(moon.illuminationPercent);
+    if (!Number.isFinite(illuminationPercent)) {
+      const fraction = toNumber(moon.illuminationFraction);
+      if (Number.isFinite(fraction)) illuminationPercent = fraction * 100;
+    }
+    const illuminationText = Number.isFinite(illuminationPercent) ? formatPercent(illuminationPercent, 0) : '--';
 
     const moonPhaseKey = normalizeMoonPhaseKey(moon) || DEFAULT_MOON_PHASE_KEY;
     const moonPhaseName = moon.phase || 'Unknown';
     const moonHemisphere = (moon.hemisphere || '').toLowerCase() === 'southern' ? 'southern' : 'northern';
-    const illuminationPercent = (() => {
-      const percent = toNumber(moon.illuminationPercent);
-      if (Number.isFinite(percent)) return percent;
-      const fraction = toNumber(moon.illuminationFraction);
-      if (Number.isFinite(fraction)) return fraction * 100;
-      return NaN;
-    })();
-    const illuminationText = Number.isFinite(illuminationPercent) ? formatPercent(illuminationPercent, 0) : '--';
     const moonAriaParts = [];
     if (moonPhaseName && moonPhaseName !== 'Unknown') moonAriaParts.push(moonPhaseName);
-    if (Number.isFinite(illuminationPercent)) moonAriaParts.push(`${illuminationPercent.toFixed(0)}% illuminated`);
+    if (Number.isFinite(illuminationPercent)) {
+      moonAriaParts.push(`${illuminationPercent.toFixed(0)}% illuminated`);
+    }
     const moonAriaLabel = moonAriaParts.length ? `Moon phase: ${moonAriaParts.join(', ')}` : 'Moon phase unavailable';
 
-    const moonIconClass = `wdash-moon-icon${moonHemisphere === 'southern' ? ' is-southern' : ''}`;
+    const stationReportedAt = data?.metadata?.weatherStationTime || data?.metadata?.generatedAt;
+    const stationLabel = stationReportedAt ? formatHubDateTime(stationReportedAt) : null;
+    const stationZoneLabel = (() => {
+      const zone = data?.metadata?.weatherStationTimezone;
+      if (!zone) return '';
+      const text = typeof zone === 'string' ? zone.trim() : String(zone);
+      return text;
+    })();
 
-    // Unified geometry for the arc and sun path, all within the SVG's viewBox
-    // A 150-degree arc (210 to 330) with padding so the sun marker doesn't clip.
-    const arc = { cx: 100, cy: 100, r: 85, startAngle: 210, endAngle: 330 };
-    const startPoint = getPointOnArc(arc, 0);
-    const endPoint = getPointOnArc(arc, 1);
-    const arcPath = `M ${startPoint.x} ${startPoint.y} A ${arc.r} ${arc.r} 0 0 1 ${endPoint.x} ${endPoint.y}`;
+    return {
+      layout,
+      uvDisplay: Number.isFinite(uvIndex) ? formatNumber(uvIndex, 1) : '--',
+      solarDisplay: Number.isFinite(solarRadiation) ? formatNumber(solarRadiation, 0) : '--',
+      solarUnit: 'W/m²',
+      moonPhaseKey,
+      moonPhaseName,
+      moonHemisphere,
+      moonAriaLabel,
+      illuminationText,
+      sunriseText: formatTime(solar.sunrise),
+      sunsetText: formatTime(solar.sunset),
+      sunPoint,
+      isDay,
+      arcPath: layout.arcPath,
+      stationLabel,
+      stationZoneLabel,
+      stationReportedAt
+    };
+  }
 
-    // Calculate the sun's position using the same geometry so we can position the marker directly
-    const sunPoint = getPointOnArc(arc, progress);
-
-    // --- Metric Positioning ---
-    // UV Index (upper left)
-    const uvStyle = `left: ${35 / 2}%; top: ${28}%;`;
-    // Solar (center)
-    const solarStyle = `left: ${100 / 2}%; top: ${45}%;`;
-    // Moon phase (upper right)
-    const moonStyle = `left: ${165 / 2}%; top: ${28}%;`;
-
-    // --- Time Label Positioning ---
-    const sunriseStyle = `left: ${startPoint.x / 2}%; top: ${startPoint.y}%`;
-    const sunsetStyle = `left: ${endPoint.x / 2}%; top: ${endPoint.y}%`;
+  function buildSolarSunCard(data) {
+    const view = resolveSolarSunViewModel(data);
+    const layout = view.layout;
+    const dayNightClass = view.isDay ? 'is-day' : 'is-night';
+    const moonIconClass = `wdash-moon-icon${view.moonHemisphere === 'southern' ? ' is-southern' : ''}`;
 
     return `
       <section class="wdash-card wdash-card--solar">
         ${cardHeader(
           CARD_TITLES.sunMoon,
           data,
-          stationLabel,
+          view.stationLabel,
           {
             fallbackToRelative: false,
             clock: {
               mode: 'datetime',
-              source: stationReportedAt,
-              timezoneLabel: stationZoneLabel
+              source: view.stationReportedAt,
+              timezoneLabel: view.stationZoneLabel
             }
           }
         )}
@@ -2463,34 +2493,34 @@
                   <stop offset="100%" stop-color="#ff9445" stop-opacity="0" />
                 </radialGradient>
               </defs>
-              <path class="wdash-sun-arc" d="${arcPath}" />
+              <path class="wdash-sun-arc" d="${view.arcPath}" />
               <g class="wdash-sun-marker ${dayNightClass}">
-                <circle class="wdash-sun-marker-glow" r="18" cx="${sunPoint.x}" cy="${sunPoint.y}" fill="url(#wdash-sun-glow-gradient)" />
-                <circle class="wdash-sun-marker-core" r="8" cx="${sunPoint.x}" cy="${sunPoint.y}" fill="url(#wdash-sun-gradient)" />
+                <circle class="wdash-sun-marker-glow" r="18" cx="${view.sunPoint.x}" cy="${view.sunPoint.y}" fill="url(#wdash-sun-glow-gradient)" />
+                <circle class="wdash-sun-marker-core" r="8" cx="${view.sunPoint.x}" cy="${view.sunPoint.y}" fill="url(#wdash-sun-gradient)" />
               </g>
             </svg>
             <!-- Metric Labels (HTML) -->
-            <div class="wdash-sun-html-metric" style="${uvStyle}">
+            <div class="wdash-sun-html-metric wdash-sun-html-metric--uv" style="${layout.uvStyle}">
               <div class="wdash-sun-metric-label">UV Index</div>
-              <div class="wdash-sun-metric-value">${Number.isFinite(uvIndex) ? formatNumber(uvIndex, 1) : '--'}</div>
+              <div class="wdash-sun-metric-value">${escapeHtml(view.uvDisplay)}</div>
             </div>
-            <div class="wdash-sun-html-metric" style="${solarStyle}">
+            <div class="wdash-sun-html-metric wdash-sun-html-metric--solar" style="${layout.solarStyle}">
               <div class="wdash-sun-metric-label">Solar</div>
-              <div class="wdash-sun-metric-value">${Number.isFinite(solarRadiation) ? formatNumber(solarRadiation, 0) : '--'} <span class="wdash-sun-metric-unit">W/m²</span></div>
+              <div class="wdash-sun-metric-value">${escapeHtml(view.solarDisplay)} <span class="wdash-sun-metric-unit">${escapeHtml(view.solarUnit)}</span></div>
             </div>
-            <div class="wdash-sun-html-metric wdash-sun-html-metric--moon" style="${moonStyle}">
-              <div class="${moonIconClass}" data-phase="${moonPhaseKey}" role="img" aria-label="${escapeHtml(moonAriaLabel)}"></div>
+            <div class="wdash-sun-html-metric wdash-sun-html-metric--moon" style="${layout.moonStyle}">
+              <div class="${moonIconClass}" data-phase="${escapeHtml(view.moonPhaseKey)}" role="img" aria-label="${escapeHtml(view.moonAriaLabel)}"></div>
               <div class="wdash-moon-label">
-                <div class="wdash-moon-phase-name">${escapeHtml(moonPhaseName)}</div>
-                <div class="wdash-moon-illumination">${illuminationText}</div>
+                <div class="wdash-moon-phase-name">${escapeHtml(view.moonPhaseName)}</div>
+                <div class="wdash-moon-illumination">${escapeHtml(view.illuminationText)}</div>
               </div>
             </div>
             <!-- Time Labels (HTML) -->
-            <div class="wdash-sun-time wdash-sun-time--rise" style="${sunriseStyle}">
-              <span class="wdash-value">${formatTime(solar.sunrise)}</span>
+            <div class="wdash-sun-time wdash-sun-time--rise" style="${layout.sunriseStyle}">
+              <span class="wdash-value">${escapeHtml(view.sunriseText)}</span>
             </div>
-            <div class="wdash-sun-time wdash-sun-time--set" style="${sunsetStyle}">
-              <span class="wdash-value">${formatTime(solar.sunset)}</span>
+            <div class="wdash-sun-time wdash-sun-time--set" style="${layout.sunsetStyle}">
+              <span class="wdash-value">${escapeHtml(view.sunsetText)}</span>
             </div>
           </div>
         </div>
@@ -3475,6 +3505,88 @@
         delete detailsHeader.dataset.window;
       }
     }
+  }
+
+  function updateSolarSunCard() {
+    const card = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-card--solar');
+    if (!card || !solarState.data) return;
+
+    const data = solarState.data;
+    const view = resolveSolarSunViewModel(data);
+
+    const headerMarkup = cardHeader(
+      CARD_TITLES.sunMoon,
+      data,
+      view.stationLabel,
+      {
+        fallbackToRelative: false,
+        clock: {
+          mode: 'datetime',
+          source: view.stationReportedAt,
+          timezoneLabel: view.stationZoneLabel
+        }
+      }
+    );
+    const currentHeader = card.querySelector('.wdash-card-header');
+    if (currentHeader) {
+      const nextHeader = createElementFromMarkup(headerMarkup);
+      if (nextHeader) {
+        currentHeader.replaceWith(nextHeader);
+      }
+    }
+
+    const arcPath = card.querySelector('.wdash-sun-arc');
+    if (arcPath && view.arcPath) {
+      arcPath.setAttribute('d', view.arcPath);
+    }
+
+    const marker = card.querySelector('.wdash-sun-marker');
+    if (marker) {
+      marker.classList.toggle('is-day', view.isDay);
+      marker.classList.toggle('is-night', !view.isDay);
+      const cx = String(view.sunPoint.x);
+      const cy = String(view.sunPoint.y);
+      const glow = marker.querySelector('.wdash-sun-marker-glow');
+      if (glow) {
+        glow.setAttribute('cx', cx);
+        glow.setAttribute('cy', cy);
+      }
+      const core = marker.querySelector('.wdash-sun-marker-core');
+      if (core) {
+        core.setAttribute('cx', cx);
+        core.setAttribute('cy', cy);
+      }
+    }
+
+    const uvValue = card.querySelector('.wdash-sun-html-metric--uv .wdash-sun-metric-value');
+    if (uvValue) setTextContent(uvValue, view.uvDisplay);
+
+    const solarMetric = card.querySelector('.wdash-sun-html-metric--solar .wdash-sun-metric-value');
+    if (solarMetric) {
+      const html = `${escapeHtml(view.solarDisplay)} <span class="wdash-sun-metric-unit">${escapeHtml(view.solarUnit)}</span>`;
+      if (solarMetric.innerHTML !== html) {
+        solarMetric.innerHTML = html;
+      }
+    }
+
+    const moonMetric = card.querySelector('.wdash-sun-html-metric--moon');
+    if (moonMetric) {
+      const icon = moonMetric.querySelector('.wdash-moon-icon');
+      if (icon) {
+        icon.classList.toggle('is-southern', view.moonHemisphere === 'southern');
+        if (view.moonPhaseKey) {
+          icon.setAttribute('data-phase', view.moonPhaseKey);
+        } else {
+          icon.removeAttribute('data-phase');
+        }
+        icon.setAttribute('aria-label', view.moonAriaLabel);
+      }
+      setTextContent(moonMetric.querySelector('.wdash-moon-phase-name'), view.moonPhaseName);
+      setTextContent(moonMetric.querySelector('.wdash-moon-illumination'), view.illuminationText);
+    }
+
+    setTextContent(card.querySelector('.wdash-sun-time--rise .wdash-value'), view.sunriseText);
+    setTextContent(card.querySelector('.wdash-sun-time--set .wdash-value'), view.sunsetText);
   }
 
   function ensureCompassAverageArrow(compass) {
