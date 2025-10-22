@@ -123,27 +123,44 @@ def mainPage() {
         }
 
         section("Refresh scheduling") {
-            input name: "refreshTriggerMode", type: "enum", title: "Refresh trigger", options: [
-                "all": "Subscribe to all selected attributes",
-                "single": "Subscribe to a single attribute update"
-            ], defaultValue: "all", required: true, submitOnChange: true
+            paragraph "Use cron and event triggers to balance update frequency with hub load."
+            paragraph "Set the cron interval to 0 to disable the timer. Disable event triggers when a noisy device generates too many refreshes. At least one option must stay enabled."
 
-            if ((settings.refreshTriggerMode ?: "all") == "single") {
-                input name: "singleTriggerDevice", type: "enum", title: "Trigger device", options: subscriptionDeviceOptions(deviceOptions), required: true, submitOnChange: true, width: 6
+            input name: "refreshCronMinutes", type: "number", title: "Cron refresh interval (minutes)", defaultValue: 1, range: "0..60", submitOnChange: true, width: 6
+            input name: "enableEventTriggers", type: "bool", title: "Enable event-driven refreshes", defaultValue: true, submitOnChange: true, width: 6
 
-                def triggerAttributeOptions = singleTriggerAttributeOptions()
-                if (triggerAttributeOptions) {
-                    input name: "singleTriggerAttribute", type: "enum", title: "Trigger attribute", options: triggerAttributeOptions, required: true, width: 6
-                } else {
-                    input name: "singleTriggerAttribute", type: "text", title: "Trigger attribute", required: true, width: 6
-                    if (settings.singleTriggerDevice) {
-                        paragraph "The selected device did not provide a list of supported attributes. Enter the attribute name manually."
+            boolean cronEnabled = cronIntervalMinutes() > 0
+            boolean eventEnabled = eventTriggersEnabled()
+
+            if (!cronEnabled && !eventEnabled) {
+                paragraph "<b>Enable at least one refresh option</b> to keep the dashboard up to date."
+            }
+
+            if (eventEnabled) {
+                input name: "refreshTriggerMode", type: "enum", title: "Event subscription scope", options: [
+                    "all": "Subscribe to all selected attributes",
+                    "single": "Subscribe to a single attribute update"
+                ], defaultValue: "all", required: true, submitOnChange: true
+
+                if ((settings.refreshTriggerMode ?: "all") == "single") {
+                    input name: "singleTriggerDevice", type: "enum", title: "Trigger device", options: subscriptionDeviceOptions(deviceOptions), required: true, submitOnChange: true, width: 6
+
+                    def triggerAttributeOptions = singleTriggerAttributeOptions()
+                    if (triggerAttributeOptions) {
+                        input name: "singleTriggerAttribute", type: "enum", title: "Trigger attribute", options: triggerAttributeOptions, required: true, width: 6
+                    } else {
+                        input name: "singleTriggerAttribute", type: "text", title: "Trigger attribute", required: true, width: 6
+                        if (settings.singleTriggerDevice) {
+                            paragraph "The selected device did not provide a list of supported attributes. Enter the attribute name manually."
+                        }
                     }
-                }
 
-                paragraph "Only the selected attribute change will trigger dashboard refreshes."
+                    paragraph "Only the selected attribute change will trigger dashboard refreshes."
+                } else {
+                    paragraph "The app will subscribe to all configured attributes."
+                }
             } else {
-                paragraph "The app will subscribe to all configured attributes."
+                paragraph "Event subscriptions are disabled. The dashboard will refresh solely on the cron schedule."
             }
         }
 
@@ -206,6 +223,43 @@ private Map subscriptionDeviceOptions(Map weatherOptions) {
     options
 }
 
+private Integer cronIntervalMinutes() {
+    Integer minutes = safeToInt(settings.refreshCronMinutes, 1)
+    if (minutes < 0) {
+        minutes = 0
+    }
+    if (minutes == 0 && state?.cronFallbackMinutes) {
+        minutes = safeToInt(state.cronFallbackMinutes, minutes)
+    }
+    minutes
+}
+
+private boolean cronSchedulingEnabled() {
+    cronIntervalMinutes() > 0
+}
+
+private boolean eventTriggersEnabled() {
+    settings.enableEventTriggers != false
+}
+
+private Integer safeToInt(def value, Integer defaultValue) {
+    if (value == null) {
+        return defaultValue
+    }
+    if (value instanceof Number) {
+        return (value as Number).intValue()
+    }
+    String text = value.toString()?.trim()
+    if (!text) {
+        return defaultValue
+    }
+    try {
+        return Integer.parseInt(text, 10)
+    } catch (NumberFormatException ignored) {
+        return defaultValue
+    }
+}
+
 def appButtonHandler(String buttonName) {
     switch (buttonName) {
         case 'saveAndPreview':
@@ -251,14 +305,44 @@ def initialize() {
     state.dailyOutdoorAQ = state.dailyOutdoorAQ ?: [:]
     state.dailyIndoorAQ = state.dailyIndoorAQ ?: [:]
     state.lastSourceFingerprint = null
+    state.eventDebounceActive = false
+    state.eventRefreshActive = false
+    state.lastEventTriggerAt = state.lastEventTriggerAt ?: 0L
+    state.lastEventRefreshAt = state.lastEventRefreshAt ?: 0L
+    state.cronFallbackMinutes = null
 
-    subscribeToSource()
-    runEvery1Minute("refreshWeatherData")
+    boolean eventEnabled = eventTriggersEnabled()
+    Integer cronMinutes = cronIntervalMinutes()
+    boolean cronEnabled = cronMinutes > 0
+
+    if (!cronEnabled && !eventEnabled) {
+        Integer fallbackMinutes = 1
+        log.warn "Weather Dashboard App requires at least one refresh trigger. Restoring the cron schedule to ${fallbackMinutes} minute."
+        app.updateSetting("refreshCronMinutes", [value: fallbackMinutes, type: "number"])
+        state.cronFallbackMinutes = fallbackMinutes
+        cronMinutes = fallbackMinutes
+        cronEnabled = true
+    }
+
+    if (eventEnabled) {
+        subscribeToSource()
+    } else {
+        log.info "Weather Dashboard App event-driven refreshes are disabled."
+    }
+
+    if (cronEnabled) {
+        scheduleCronRefresh(cronMinutes)
+    } else {
+        log.info "Weather Dashboard App cron-based refreshes are disabled."
+    }
     state.forceRefresh = true
     runIn(5, "refreshWeatherData")
 }
 
 private void subscribeToSource() {
+    if (!eventTriggersEnabled()) {
+        return
+    }
     if (useSingleTriggerMode()) {
         if (subscribeToSingleTrigger()) {
             return
@@ -301,6 +385,63 @@ private boolean subscribeToSingleTrigger() {
     } catch (Throwable t) {
         log.warn "Weather Dashboard App: Unable to subscribe to ${config.device?.displayName ?: 'Unknown device'}.${config.attribute}: ${t.message}"
         return false
+    }
+}
+
+private void scheduleCronRefresh(Integer minutes = null) {
+    Integer interval = minutes != null ? minutes : cronIntervalMinutes()
+    if (interval == null || interval <= 0) {
+        return
+    }
+    int seconds = Math.max(1, interval.intValue() * 60)
+    runIn(seconds, "scheduledCronRefresh", [overwrite: true])
+}
+
+def scheduledCronRefresh() {
+    try {
+        if (!cronSchedulingEnabled()) {
+            return
+        }
+
+        if (state.eventDebounceActive || state.eventRefreshActive) {
+            log.debug "Skipping cron refresh because an event-driven refresh is pending or running."
+            return
+        }
+
+        Integer intervalMinutes = cronIntervalMinutes()
+        if (intervalMinutes <= 0) {
+            return
+        }
+
+        Long lastEventRefresh = (state.lastEventRefreshAt ?: 0L) as Long
+        Long intervalMillis = intervalMinutes * 60_000L
+        Long elapsed = lastEventRefresh ? (now() - lastEventRefresh) : null
+        if (elapsed != null && elapsed < intervalMillis) {
+            log.debug "Skipping cron refresh because an event-driven refresh completed ${elapsed} ms ago (< ${intervalMillis} ms interval)."
+            return
+        }
+
+        refreshWeatherData()
+    } finally {
+        if (cronSchedulingEnabled()) {
+            scheduleCronRefresh()
+        }
+    }
+}
+
+def refreshFromEvent() {
+    if (!eventTriggersEnabled()) {
+        state.eventDebounceActive = false
+        return
+    }
+
+    state.eventRefreshActive = true
+    try {
+        refreshWeatherData()
+    } finally {
+        state.eventRefreshActive = false
+        state.eventDebounceActive = false
+        state.lastEventRefreshAt = now()
     }
 }
 
@@ -677,8 +818,13 @@ private String currentLayoutOverrideText() {
 }
 
 def handleWeatherEvent(evt) {
+    if (!eventTriggersEnabled()) {
+        return
+    }
+    state.lastEventTriggerAt = now()
+    state.eventDebounceActive = true
     // Debounce frequent events by scheduling a refresh shortly after the last update.
-    runIn(2, "refreshWeatherData", [overwrite: true])
+    runIn(2, "refreshFromEvent", [overwrite: true])
 }
 
 def refreshWeatherData() {
