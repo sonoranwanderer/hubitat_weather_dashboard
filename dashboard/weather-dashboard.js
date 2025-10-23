@@ -481,6 +481,7 @@
       renderFromData();
     } catch (err) {
       console.error('[WeatherDashboard] Unable to render dashboard payload', err);
+      renderFallbackState();
     }
   }
 
@@ -491,88 +492,111 @@
     const grid = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-grid');
     if (!grid) return;
 
-    applyLayoutOverrides(payload?.metadata);
-    applyScale();
+    let maskMode = null;
 
-    if (!payload) {
-      grid.dataset.empty = 'true';
-      grid.innerHTML = `<div class="wdash-empty">Waiting for weather data…</div>`;
-      renderState.mounted = false;
-      renderState.markupByKey.clear();
-      tempWindState.data = null;
-      clearAmbientRotation();
-      toggleSourceTileMask(false);
-      stopHubClock();
-      teardownTempWindGaugeSizing();
-      return;
-    }
-
-    lastSuccessfulPayload = payload;
-
-    grid.dataset.empty = 'false';
-    const ambientSeed = resolveAmbientSeedState(payload);
-    if (ambientSeed && Number.isInteger(ambientSeed.index)) {
-      ambientRotation.index = ambientSeed.index;
-    }
-    const cardMarkupList = buildCardMarkupList(payload, { ambientSeed });
-    let cardsChanged = false;
-
-    if (!renderState.mounted) {
-      grid.innerHTML = cardMarkupList.map(card => card.markup).join('');
-      renderState.mounted = true;
-      renderState.markupByKey.clear();
-      cardMarkupList.forEach(card => {
-        renderState.markupByKey.set(card.key, card.markup);
-      });
-      cardsChanged = true;
-      try {
-        const ambientContainer = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-ambient');
-        if (ambientContainer) initAmbientLastHum(ambientContainer);
-      } catch (e) { /* ignore */ }
-    } else {
-      cardMarkupList.forEach(card => {
-        const previousMarkup = renderState.markupByKey.get(card.key) || null;
-        if (card.key === 'ambient' || card.key === 'tempWind' || card.key === 'solar') {
-          const ensured = ensureCardPresence(grid, card, cardMarkupList);
-          if (ensured) {
-            renderState.markupByKey.set(card.key, card.markup);
-          }
-          return;
-        }
-
-        if (previousMarkup !== card.markup) {
-          replaceCardMarkup(grid, card, cardMarkupList);
-          renderState.markupByKey.set(card.key, card.markup);
-          cardsChanged = true;
-        }
-      });
-    }
-
-    if (cardsChanged) {
-      layoutState.pendingApply = true;
+    try {
       applyLayoutOverrides(payload?.metadata);
-    } else if (layoutState.pendingApply) {
-      layoutState.pendingApply = false;
-    }
+      applyScale();
 
-    tempWindState.data = payload;
-    updateTempWindCard();
-    solarState.data = payload;
-    updateSolarSunCard();
-    setupAmbientRotation(payload);
-    setupAirQualityRotation(payload);
-    setupInteractiveComponents(grid);
-    setupHubClock(payload);
-    // observe ambient container for size changes to keep ring geometry synchronized
-    const ambientContainer = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-ambient');
-    if (ambientContainer && typeof ResizeObserver !== 'undefined') {
-      const ro = new ResizeObserver(() => { applyAmbientRingSizing(); applyOutdoorRingSizing(); });
-      ro.observe(ambientContainer);
-    } else {
-      // fallback: window resize
-      window.addEventListener('resize', () => { applyAmbientRingSizing(); applyOutdoorRingSizing(); });
+      if (!payload) {
+        maskMode = 'show';
+        resetDashboardToWaiting(grid);
+        stopHubClock();
+        teardownTempWindGaugeSizing();
+        return;
+      }
+
+      maskMode = 'hide';
+      lastSuccessfulPayload = payload;
+
+      grid.dataset.empty = 'false';
+      const ambientSeed = resolveAmbientSeedState(payload);
+      if (ambientSeed && Number.isInteger(ambientSeed.index)) {
+        ambientRotation.index = ambientSeed.index;
+      }
+      const cardMarkupList = buildCardMarkupList(payload, { ambientSeed });
+      let cardsChanged = false;
+
+      if (!renderState.mounted) {
+        grid.innerHTML = cardMarkupList.map(card => card.markup).join('');
+        renderState.mounted = true;
+        renderState.markupByKey.clear();
+        cardMarkupList.forEach(card => {
+          renderState.markupByKey.set(card.key, card.markup);
+        });
+        cardsChanged = true;
+        try {
+          const ambientContainer = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-ambient');
+          if (ambientContainer) initAmbientLastHum(ambientContainer);
+        } catch (e) { /* ignore */ }
+      } else {
+        cardMarkupList.forEach(card => {
+          const previousMarkup = renderState.markupByKey.get(card.key) || null;
+          if (card.key === 'ambient' || card.key === 'tempWind' || card.key === 'solar') {
+            const ensured = ensureCardPresence(grid, card, cardMarkupList);
+            if (ensured) {
+              renderState.markupByKey.set(card.key, card.markup);
+            }
+            return;
+          }
+
+          if (previousMarkup !== card.markup) {
+            replaceCardMarkup(grid, card, cardMarkupList);
+            renderState.markupByKey.set(card.key, card.markup);
+            cardsChanged = true;
+          }
+        });
+      }
+
+      if (cardsChanged) {
+        layoutState.pendingApply = true;
+        applyLayoutOverrides(payload?.metadata);
+      } else if (layoutState.pendingApply) {
+        layoutState.pendingApply = false;
+      }
+
+      tempWindState.data = payload;
+      updateTempWindCard();
+      solarState.data = payload;
+      updateSolarSunCard();
+      setupAmbientRotation(payload);
+      setupAirQualityRotation(payload);
+      setupInteractiveComponents(grid);
+      setupHubClock(payload);
+      // observe ambient container for size changes to keep ring geometry synchronized
+      const ambientContainer = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-ambient');
+      if (ambientContainer && typeof ResizeObserver !== 'undefined') {
+        const ro = new ResizeObserver(() => { applyAmbientRingSizing(); applyOutdoorRingSizing(); });
+        ro.observe(ambientContainer);
+      } else {
+        // fallback: window resize
+        window.addEventListener('resize', () => { applyAmbientRingSizing(); applyOutdoorRingSizing(); });
+      }
+    } finally {
+      if (maskMode === 'hide') {
+        toggleSourceTileMask(true);
+      } else if (maskMode === 'show') {
+        toggleSourceTileMask(false);
+      }
     }
-    toggleSourceTileMask(true);
+  }
+
+  function renderFallbackState() {
+    const grid = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-grid');
+    if (!grid) return;
+    resetDashboardToWaiting(grid);
+    stopHubClock();
+    teardownTempWindGaugeSizing();
+    toggleSourceTileMask(false);
+  }
+
+  function resetDashboardToWaiting(grid) {
+    grid.dataset.empty = 'true';
+    grid.innerHTML = `<div class="wdash-empty">Waiting for weather data…</div>`;
+    renderState.mounted = false;
+    renderState.markupByKey.clear();
+    tempWindState.data = null;
+    clearAmbientRotation();
   }
 
   function readPayloads() {
