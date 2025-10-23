@@ -1970,10 +1970,9 @@
                 </div>
                 <div class="wdash-gauge-current">
                   <span class="wdash-gauge-value">
-                    <span class="wdash-temp-unit-indicator wdash-temp-unit-placeholder" aria-hidden="true">${escapeHtml(currentDisplayUnit)}</span>
                     <span class="wdash-gauge-value-number">${mainTempText}</span>
-                    <button type="button" class="wdash-temp-unit-indicator" data-temp-unit-indicator="true" aria-label="${escapeHtml(indicatorLabel)}" title="${escapeHtml(indicatorLabel)}">${escapeHtml(currentDisplayUnit)}</button>
                   </span>
+                  <button type="button" class="wdash-temp-unit-indicator wdash-temp-unit-indicator--gauge" data-temp-unit-indicator="true" aria-label="${escapeHtml(indicatorLabel)}" title="${escapeHtml(indicatorLabel)}">${escapeHtml(currentDisplayUnit)}</button>
                 </div>
                 <div class="wdash-temp-extrema wdash-temp-extrema--low">
                   <span class="wdash-temp-extrema-label">Low</span>
@@ -5469,11 +5468,11 @@
 .wdash-gauge, .wdash-wind-compass { position: relative; width: 100%; height: 100%; margin: 0 auto; }
   .wdash-gauge-svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .wdash-gauge-center { position: absolute; inset: var(--temp-wind-gauge-center-inset, 26%); border-radius: 50%; background: rgba(5,10,20,0.85); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 12px 10px; gap: 6px; text-align: center; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04); }
-.wdash-gauge-current { display: flex; flex-direction: column; gap: 4px; align-items: stretch; width: 100%; }
-.wdash-gauge-value { font-size: 2.32rem; font-weight: 800; letter-spacing: -0.02em; display: grid; grid-template-columns: auto 1fr auto; align-items: center; column-gap: 12px; width: 100%; }
-.wdash-gauge-value-number { display: block; text-align: center; justify-self: center; }
+.wdash-gauge-current { position: relative; display: flex; align-items: center; justify-content: center; width: 100%; }
+.wdash-gauge-value { font-size: 2.32rem; font-weight: 800; letter-spacing: -0.02em; display: block; width: 100%; text-align: center; }
+.wdash-gauge-value-number { display: block; text-align: center; }
 .wdash-temp-unit-indicator { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.24); border-radius: 999px; color: #f5f9ff; font-size: 0.78rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; padding: 2px 8px; cursor: pointer; transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease; line-height: 1.2; display: inline-flex; align-items: center; justify-content: center; min-width: 44px; }
-.wdash-temp-unit-placeholder { visibility: hidden; pointer-events: none; cursor: default; }
+.wdash-temp-unit-indicator--gauge { position: absolute; top: 50%; right: 0; transform: translate(50%, -50%); }
 .wdash-temp-unit-indicator:hover { background: rgba(255,255,255,0.16); border-color: rgba(255,255,255,0.35); }
 .wdash-temp-unit-indicator:active { background: rgba(77,167,255,0.28); border-color: rgba(77,167,255,0.6); }
 .wdash-gauge-label { font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.12em; color: #9badcf; }
