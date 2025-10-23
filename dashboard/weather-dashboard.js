@@ -5472,7 +5472,7 @@
 .wdash-gauge-current { display: flex; flex-direction: column; gap: 4px; align-items: stretch; width: 100%; }
 .wdash-gauge-value { font-size: 2.32rem; font-weight: 800; letter-spacing: -0.02em; display: grid; grid-template-columns: auto 1fr auto; align-items: center; column-gap: 12px; width: 100%; }
 .wdash-gauge-value-number { display: block; text-align: center; justify-self: center; }
-.wdash-temp-unit-indicator { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.24); border-radius: 999px; color: #f5f9ff; font-size: 0.78rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; padding: 2px 8px; cursor: pointer; transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease; line-height: 1.2; display: inline-flex; align-items: center; justify-content: center; }
+.wdash-temp-unit-indicator { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.24); border-radius: 999px; color: #f5f9ff; font-size: 0.78rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; padding: 2px 8px; cursor: pointer; transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease; line-height: 1.2; display: inline-flex; align-items: center; justify-content: center; min-width: 44px; }
 .wdash-temp-unit-placeholder { visibility: hidden; pointer-events: none; cursor: default; }
 .wdash-temp-unit-indicator:hover { background: rgba(255,255,255,0.16); border-color: rgba(255,255,255,0.35); }
 .wdash-temp-unit-indicator:active { background: rgba(77,167,255,0.28); border-color: rgba(77,167,255,0.6); }
