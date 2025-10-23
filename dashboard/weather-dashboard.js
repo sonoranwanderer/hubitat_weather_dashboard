@@ -2404,6 +2404,9 @@
     const moon = solar.moon || {};
     const uvIndex = toNumber(solar.uvIndex);
     const solarRadiation = toNumber(solar.solarRadiationWm2);
+    const uvDangerRaw = typeof solar.uvDanger === 'string' ? solar.uvDanger.trim() : null;
+    const uvDangerDisplay = uvDangerRaw ? uvDangerRaw : '--';
+    const uvDangerColor = sanitizeHexColor(solar.uvColor);
     const now = parseDateTime(data?.metadata?.generatedAt);
     const progress = sunProgress(solar, now);
     const isDay = progress >= 0 && progress <= 1;
@@ -2439,6 +2442,8 @@
     return {
       layout,
       uvDisplay: Number.isFinite(uvIndex) ? formatNumber(uvIndex, 1) : '--',
+      uvDangerDisplay,
+      uvDangerColor,
       solarDisplay: Number.isFinite(solarRadiation) ? formatNumber(solarRadiation, 0) : '--',
       solarUnit: 'W/m²',
       moonPhaseKey,
@@ -2549,6 +2554,7 @@
             <div class="wdash-sun-html-metric wdash-sun-html-metric--uv" style="${layout.uvStyle}">
               <div class="wdash-sun-metric-label">UV Index</div>
               <div class="wdash-sun-metric-value">${escapeHtml(view.uvDisplay)}</div>
+              <div class="wdash-sun-metric-subvalue"${view.uvDangerColor ? ` style="color: ${escapeHtml(view.uvDangerColor)};"` : ''}>${escapeHtml(view.uvDangerDisplay)}</div>
             </div>
             <div class="wdash-sun-html-metric wdash-sun-html-metric--solar" style="${layout.solarStyle}">
               <div class="wdash-sun-metric-label">Solar</div>
@@ -3621,6 +3627,16 @@
 
     const uvValue = card.querySelector('.wdash-sun-html-metric--uv .wdash-sun-metric-value');
     if (uvValue) setTextContent(uvValue, view.uvDisplay);
+
+    const uvDanger = card.querySelector('.wdash-sun-html-metric--uv .wdash-sun-metric-subvalue');
+    if (uvDanger) {
+      setTextContent(uvDanger, view.uvDangerDisplay);
+      if (view.uvDangerColor) {
+        uvDanger.style.color = view.uvDangerColor;
+      } else {
+        uvDanger.style.removeProperty('color');
+      }
+    }
 
     const solarMetric = card.querySelector('.wdash-sun-html-metric--solar .wdash-sun-metric-value');
     if (solarMetric) {
@@ -5095,6 +5111,7 @@
 .wdash-sun-html-metric { position: absolute; display: flex; flex-direction: column; align-items: center; gap: 2px; transform: translate(-50%, -50%); text-align: center; }
 .wdash-sun-metric-label { font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #8ea0c8; }
 .wdash-sun-metric-value { font-size: 0.8rem; font-weight: 600; color: #f4f6ff; }
+.wdash-sun-metric-subvalue { font-size: 0.75rem; font-weight: 600; margin-top: 0.15rem; color: #f4f6ff; }
 .wdash-sun-metric-unit { opacity: 0.8; }
 .wdash-sun-html-metric--moon { gap: 6px; }
 .wdash-moon-icon { width: 16px; height: 16px; border-radius: 50%; background: #050913; box-shadow: 0 0 0 4px rgba(176,183,198,0.22), inset 0 0 6px rgba(0,0,0,0.65); position: relative; display: inline-block; transform-origin: center; }
