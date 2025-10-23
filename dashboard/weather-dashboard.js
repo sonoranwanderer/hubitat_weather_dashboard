@@ -481,6 +481,7 @@
       renderFromData();
     } catch (err) {
       console.error('[WeatherDashboard] Unable to render dashboard payload', err);
+      renderFallbackState();
     }
   }
 
@@ -491,88 +492,111 @@
     const grid = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-grid');
     if (!grid) return;
 
-    applyLayoutOverrides(payload?.metadata);
-    applyScale();
+    let maskMode = null;
 
-    if (!payload) {
-      grid.dataset.empty = 'true';
-      grid.innerHTML = `<div class="wdash-empty">Waiting for weather data…</div>`;
-      renderState.mounted = false;
-      renderState.markupByKey.clear();
-      tempWindState.data = null;
-      clearAmbientRotation();
-      toggleSourceTileMask(false);
-      stopHubClock();
-      teardownTempWindGaugeSizing();
-      return;
-    }
-
-    lastSuccessfulPayload = payload;
-
-    grid.dataset.empty = 'false';
-    const ambientSeed = resolveAmbientSeedState(payload);
-    if (ambientSeed && Number.isInteger(ambientSeed.index)) {
-      ambientRotation.index = ambientSeed.index;
-    }
-    const cardMarkupList = buildCardMarkupList(payload, { ambientSeed });
-    let cardsChanged = false;
-
-    if (!renderState.mounted) {
-      grid.innerHTML = cardMarkupList.map(card => card.markup).join('');
-      renderState.mounted = true;
-      renderState.markupByKey.clear();
-      cardMarkupList.forEach(card => {
-        renderState.markupByKey.set(card.key, card.markup);
-      });
-      cardsChanged = true;
-      try {
-        const ambientContainer = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-ambient');
-        if (ambientContainer) initAmbientLastHum(ambientContainer);
-      } catch (e) { /* ignore */ }
-    } else {
-      cardMarkupList.forEach(card => {
-        const previousMarkup = renderState.markupByKey.get(card.key) || null;
-        if (card.key === 'ambient' || card.key === 'tempWind' || card.key === 'solar') {
-          const ensured = ensureCardPresence(grid, card, cardMarkupList);
-          if (ensured) {
-            renderState.markupByKey.set(card.key, card.markup);
-          }
-          return;
-        }
-
-        if (previousMarkup !== card.markup) {
-          replaceCardMarkup(grid, card, cardMarkupList);
-          renderState.markupByKey.set(card.key, card.markup);
-          cardsChanged = true;
-        }
-      });
-    }
-
-    if (cardsChanged) {
-      layoutState.pendingApply = true;
+    try {
       applyLayoutOverrides(payload?.metadata);
-    } else if (layoutState.pendingApply) {
-      layoutState.pendingApply = false;
-    }
+      applyScale();
 
-    tempWindState.data = payload;
-    updateTempWindCard();
-    solarState.data = payload;
-    updateSolarSunCard();
-    setupAmbientRotation(payload);
-    setupAirQualityRotation(payload);
-    setupInteractiveComponents(grid);
-    setupHubClock(payload);
-    // observe ambient container for size changes to keep ring geometry synchronized
-    const ambientContainer = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-ambient');
-    if (ambientContainer && typeof ResizeObserver !== 'undefined') {
-      const ro = new ResizeObserver(() => { applyAmbientRingSizing(); applyOutdoorRingSizing(); });
-      ro.observe(ambientContainer);
-    } else {
-      // fallback: window resize
-      window.addEventListener('resize', () => { applyAmbientRingSizing(); applyOutdoorRingSizing(); });
+      if (!payload) {
+        maskMode = 'show';
+        resetDashboardToWaiting(grid);
+        stopHubClock();
+        teardownTempWindGaugeSizing();
+        return;
+      }
+
+      maskMode = 'hide';
+      lastSuccessfulPayload = payload;
+
+      grid.dataset.empty = 'false';
+      const ambientSeed = resolveAmbientSeedState(payload);
+      if (ambientSeed && Number.isInteger(ambientSeed.index)) {
+        ambientRotation.index = ambientSeed.index;
+      }
+      const cardMarkupList = buildCardMarkupList(payload, { ambientSeed });
+      let cardsChanged = false;
+
+      if (!renderState.mounted) {
+        grid.innerHTML = cardMarkupList.map(card => card.markup).join('');
+        renderState.mounted = true;
+        renderState.markupByKey.clear();
+        cardMarkupList.forEach(card => {
+          renderState.markupByKey.set(card.key, card.markup);
+        });
+        cardsChanged = true;
+        try {
+          const ambientContainer = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-ambient');
+          if (ambientContainer) initAmbientLastHum(ambientContainer);
+        } catch (e) { /* ignore */ }
+      } else {
+        cardMarkupList.forEach(card => {
+          const previousMarkup = renderState.markupByKey.get(card.key) || null;
+          if (card.key === 'ambient' || card.key === 'tempWind' || card.key === 'solar') {
+            const ensured = ensureCardPresence(grid, card, cardMarkupList);
+            if (ensured) {
+              renderState.markupByKey.set(card.key, card.markup);
+            }
+            return;
+          }
+
+          if (previousMarkup !== card.markup) {
+            replaceCardMarkup(grid, card, cardMarkupList);
+            renderState.markupByKey.set(card.key, card.markup);
+            cardsChanged = true;
+          }
+        });
+      }
+
+      if (cardsChanged) {
+        layoutState.pendingApply = true;
+        applyLayoutOverrides(payload?.metadata);
+      } else if (layoutState.pendingApply) {
+        layoutState.pendingApply = false;
+      }
+
+      tempWindState.data = payload;
+      updateTempWindCard();
+      solarState.data = payload;
+      updateSolarSunCard();
+      setupAmbientRotation(payload);
+      setupAirQualityRotation(payload);
+      setupInteractiveComponents(grid);
+      setupHubClock(payload);
+      // observe ambient container for size changes to keep ring geometry synchronized
+      const ambientContainer = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-ambient');
+      if (ambientContainer && typeof ResizeObserver !== 'undefined') {
+        const ro = new ResizeObserver(() => { applyAmbientRingSizing(); applyOutdoorRingSizing(); });
+        ro.observe(ambientContainer);
+      } else {
+        // fallback: window resize
+        window.addEventListener('resize', () => { applyAmbientRingSizing(); applyOutdoorRingSizing(); });
+      }
+    } finally {
+      if (maskMode === 'hide') {
+        toggleSourceTileMask(true);
+      } else if (maskMode === 'show') {
+        toggleSourceTileMask(false);
+      }
     }
-    toggleSourceTileMask(true);
+  }
+
+  function renderFallbackState() {
+    const grid = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-grid');
+    if (!grid) return;
+    resetDashboardToWaiting(grid);
+    stopHubClock();
+    teardownTempWindGaugeSizing();
+    toggleSourceTileMask(false);
+  }
+
+  function resetDashboardToWaiting(grid) {
+    grid.dataset.empty = 'true';
+    grid.innerHTML = `<div class="wdash-empty">Waiting for weather data…</div>`;
+    renderState.mounted = false;
+    renderState.markupByKey.clear();
+    tempWindState.data = null;
+    clearAmbientRotation();
   }
 
   function readPayloads() {
@@ -2404,9 +2428,20 @@
     const moon = solar.moon || {};
     const uvIndex = toNumber(solar.uvIndex);
     const solarRadiation = toNumber(solar.solarRadiationWm2);
+    const uvIndexDisplay = Number.isFinite(uvIndex) ? formatNumber(uvIndex, 1) : null;
+    const uvDangerRaw = (() => {
+      const raw = solar.uvDanger;
+      if (raw == null) return null;
+      const text = typeof raw === 'string' ? raw : String(raw);
+      const trimmed = text.trim();
+      return trimmed ? trimmed : null;
+    })();
+    const hasUvDanger = Boolean(uvDangerRaw);
+    const dayUvColor = sanitizeHexColor(solar.uvColor);
     const now = parseDateTime(data?.metadata?.generatedAt);
     const progress = sunProgress(solar, now);
-    const isDay = progress >= 0 && progress <= 1;
+    const isDay = Number.isFinite(progress) && progress >= 0 && progress <= 1;
+    const uvDangerTint = hasUvDanger ? (isDay ? (dayUvColor || null) : 'transparent') : null;
     const sunPoint = getPointOnArc(SUN_CARD_GEOMETRY, progress);
     const layout = getSolarStaticLayout();
 
@@ -2438,8 +2473,18 @@
 
     return {
       layout,
-      uvDisplay: Number.isFinite(uvIndex) ? formatNumber(uvIndex, 1) : '--',
-      solarDisplay: Number.isFinite(solarRadiation) ? formatNumber(solarRadiation, 0) : '--',
+      showUvMetric: Boolean(uvIndexDisplay || hasUvDanger),
+      uvValueDisplay: (() => {
+        if (uvIndexDisplay) return uvIndexDisplay;
+        if (hasUvDanger) return uvDangerRaw;
+        return '';
+      })(),
+      uvValueColor: uvIndexDisplay ? null : uvDangerTint,
+      showUvSubvalue: Boolean(uvIndexDisplay && hasUvDanger),
+      uvSubvalueDisplay: uvIndexDisplay && hasUvDanger ? uvDangerRaw : '',
+      uvSubvalueColor: uvIndexDisplay && hasUvDanger ? uvDangerTint : null,
+      solarDisplay: Number.isFinite(solarRadiation) ? formatNumber(solarRadiation, 0) : '',
+      showSolarMetric: Number.isFinite(solarRadiation),
       solarUnit: 'W/m²',
       moonPhaseKey,
       moonPhaseName,
@@ -2512,6 +2557,12 @@
     const layout = view.layout;
     const moonIconClass = `wdash-moon-icon${view.moonHemisphere === 'southern' ? ' is-southern' : ''}`;
     const markerMarkup = buildSunMarkerMarkup(view);
+    const uvValueStyleAttr = view.uvValueColor ? ` style='color: ${escapeHtml(view.uvValueColor)};'` : '';
+    const uvSubvalueStyleAttr = view.showUvSubvalue && view.uvSubvalueColor ? ` style='color: ${escapeHtml(view.uvSubvalueColor)};'` : '';
+    const uvSubvalueContent = view.showUvSubvalue ? escapeHtml(view.uvSubvalueDisplay) : '';
+    const solarValueHtml = view.showSolarMetric
+      ? `${escapeHtml(view.solarDisplay)} <span class="wdash-sun-metric-unit">${escapeHtml(view.solarUnit)}</span>`
+      : '';
 
     return `
       <section class="wdash-card wdash-card--solar">
@@ -2546,13 +2597,14 @@
               ${markerMarkup}
             </svg>
             <!-- Metric Labels (HTML) -->
-            <div class="wdash-sun-html-metric wdash-sun-html-metric--uv" style="${layout.uvStyle}">
+            <div class="wdash-sun-html-metric wdash-sun-html-metric--uv" style="${layout.uvStyle}"${view.showUvMetric ? '' : ' hidden'}>
               <div class="wdash-sun-metric-label">UV Index</div>
-              <div class="wdash-sun-metric-value">${escapeHtml(view.uvDisplay)}</div>
+              <div class="wdash-sun-metric-value"${uvValueStyleAttr}>${escapeHtml(view.uvValueDisplay)}</div>
+              <div class="wdash-sun-metric-subvalue"${view.showUvSubvalue ? '' : ' hidden'}${uvSubvalueStyleAttr}>${uvSubvalueContent}</div>
             </div>
-            <div class="wdash-sun-html-metric wdash-sun-html-metric--solar" style="${layout.solarStyle}">
+            <div class="wdash-sun-html-metric wdash-sun-html-metric--solar" style="${layout.solarStyle}"${view.showSolarMetric ? '' : ' hidden'}>
               <div class="wdash-sun-metric-label">Solar</div>
-              <div class="wdash-sun-metric-value">${escapeHtml(view.solarDisplay)} <span class="wdash-sun-metric-unit">${escapeHtml(view.solarUnit)}</span></div>
+              <div class="wdash-sun-metric-value">${solarValueHtml}</div>
             </div>
             <div class="wdash-sun-html-metric wdash-sun-html-metric--moon" style="${layout.moonStyle}">
               <div class="${moonIconClass}" data-phase="${escapeHtml(view.moonPhaseKey)}" role="img" aria-label="${escapeHtml(view.moonAriaLabel)}"></div>
@@ -3619,14 +3671,48 @@
       }
     }
 
-    const uvValue = card.querySelector('.wdash-sun-html-metric--uv .wdash-sun-metric-value');
-    if (uvValue) setTextContent(uvValue, view.uvDisplay);
+    const uvMetric = card.querySelector('.wdash-sun-html-metric--uv');
+    if (uvMetric) {
+      uvMetric.hidden = !view.showUvMetric;
+      const uvValue = uvMetric.querySelector('.wdash-sun-metric-value');
+      if (uvValue) {
+        setTextContent(uvValue, view.showUvMetric ? view.uvValueDisplay : '');
+        if (view.showUvMetric && view.uvValueColor) {
+          uvValue.style.color = view.uvValueColor;
+        } else {
+          uvValue.style.removeProperty('color');
+        }
+      }
+      const uvDanger = uvMetric.querySelector('.wdash-sun-metric-subvalue');
+      if (uvDanger) {
+        uvDanger.hidden = !view.showUvSubvalue;
+        if (view.showUvSubvalue) {
+          setTextContent(uvDanger, view.uvSubvalueDisplay);
+          if (view.uvSubvalueColor) {
+            uvDanger.style.color = view.uvSubvalueColor;
+          } else {
+            uvDanger.style.removeProperty('color');
+          }
+        } else {
+          setTextContent(uvDanger, '');
+          uvDanger.style.removeProperty('color');
+        }
+      }
+    }
 
-    const solarMetric = card.querySelector('.wdash-sun-html-metric--solar .wdash-sun-metric-value');
-    if (solarMetric) {
-      const html = `${escapeHtml(view.solarDisplay)} <span class="wdash-sun-metric-unit">${escapeHtml(view.solarUnit)}</span>`;
-      if (solarMetric.innerHTML !== html) {
-        solarMetric.innerHTML = html;
+    const solarMetricContainer = card.querySelector('.wdash-sun-html-metric--solar');
+    if (solarMetricContainer) {
+      solarMetricContainer.hidden = !view.showSolarMetric;
+      const solarMetric = solarMetricContainer.querySelector('.wdash-sun-metric-value');
+      if (solarMetric) {
+        if (view.showSolarMetric) {
+          const html = `${escapeHtml(view.solarDisplay)} <span class="wdash-sun-metric-unit">${escapeHtml(view.solarUnit)}</span>`;
+          if (solarMetric.innerHTML !== html) {
+            solarMetric.innerHTML = html;
+          }
+        } else if (solarMetric.innerHTML !== '') {
+          solarMetric.innerHTML = '';
+        }
       }
     }
 
@@ -5095,6 +5181,7 @@
 .wdash-sun-html-metric { position: absolute; display: flex; flex-direction: column; align-items: center; gap: 2px; transform: translate(-50%, -50%); text-align: center; }
 .wdash-sun-metric-label { font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #8ea0c8; }
 .wdash-sun-metric-value { font-size: 0.8rem; font-weight: 600; color: #f4f6ff; }
+.wdash-sun-metric-subvalue { font-size: 0.75rem; font-weight: 600; margin-top: 0.15rem; color: #f4f6ff; }
 .wdash-sun-metric-unit { opacity: 0.8; }
 .wdash-sun-html-metric--moon { gap: 6px; }
 .wdash-moon-icon { width: 16px; height: 16px; border-radius: 50%; background: #050913; box-shadow: 0 0 0 4px rgba(176,183,198,0.22), inset 0 0 6px rgba(0,0,0,0.65); position: relative; display: inline-block; transform-origin: center; }
