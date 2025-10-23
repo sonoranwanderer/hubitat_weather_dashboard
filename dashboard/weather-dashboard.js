@@ -4135,7 +4135,7 @@
     const sensorName = sensor && typeof sensor.name === 'string' ? sensor.name.trim() : '';
     if (tempEl) tempEl.textContent = formatAmbientValue(sensor.temperatureF, ambientRotation.tempUnit, 1);
     if (humidityEl) humidityEl.textContent = formatAmbientValue(sensor.humidity, ambientRotation.humidityUnit, 0);
-    if (nameEl) nameEl.textContent = sensor.name || 'Sensor';
+    if (nameEl) nameEl.textContent = sensorName.length ? sensorName : 'Ambient Sensor';
     if (rotationEl) {
       rotationEl.textContent = ambientRotation.sensors.length > 1
         ? `Sensor ${ambientRotation.index + 1} of ${ambientRotation.sensors.length}`
@@ -4167,7 +4167,7 @@
         // If the temp fill uses a gradient, attempt to update its stops; otherwise fall back to mid color
         const svg = tempFill.ownerSVGElement;
         if (svg) {
-    const grad = svg.querySelector('#wdash-ambient-temp-gradient') || svg.querySelector('linearGradient');
+          const grad = svg.querySelector('#wdash-ambient-temp-gradient') || svg.querySelector('linearGradient');
           if (grad) {
             const stops = grad.querySelectorAll('stop');
             if (stops[0]) stops[0].setAttribute('stop-color', tempColors.colors[0]);
@@ -5278,7 +5278,7 @@
 .wdash-moon-label { display: flex; flex-direction: column; align-items: center; gap: 2px; }
 .wdash-moon-phase-name { font-size: 0.74rem; font-weight: 600; color: #f4f6ff; white-space: nowrap; }
 .wdash-moon-illumination { font-size: 0.64rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: #8ea0c8; }
-.wdash-sun-time { position: absolute; font-size: 0.8rem; font-weight: 600; color: #c9d8ff; transform: translate(-50%, 8px); white-space: nowrap; }
+.wdash-sun-time { position: absolute; font-size: 0.8rem; font-weight: 600; color: #c9d8ff; transform: translate(-50%, -100%); line-height: 1; white-space: nowrap; }
 .wdash-sun-time--rise { /* Positioned by inline style */ }
 .wdash-sun-time--set { /* Positioned by inline style */ }
 .wdash-metric-row--compact .wdash-metric { flex: unset; min-height: 0; width: 100%; height: 100%; padding: 4px 6px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 2px 6px; text-align: left; }
