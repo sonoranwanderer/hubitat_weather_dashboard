@@ -2404,13 +2404,20 @@
     const moon = solar.moon || {};
     const uvIndex = toNumber(solar.uvIndex);
     const solarRadiation = toNumber(solar.solarRadiationWm2);
-    const uvDangerRaw = typeof solar.uvDanger === 'string' ? solar.uvDanger.trim() : null;
-    const uvDangerDisplay = uvDangerRaw ? uvDangerRaw : '--';
+    const uvIndexDisplay = Number.isFinite(uvIndex) ? formatNumber(uvIndex, 1) : null;
+    const uvDangerRaw = (() => {
+      const raw = solar.uvDanger;
+      if (raw == null) return null;
+      const text = typeof raw === 'string' ? raw : String(raw);
+      const trimmed = text.trim();
+      return trimmed ? trimmed : null;
+    })();
+    const hasUvDanger = Boolean(uvDangerRaw);
     const dayUvColor = sanitizeHexColor(solar.uvColor);
     const now = parseDateTime(data?.metadata?.generatedAt);
     const progress = sunProgress(solar, now);
     const isDay = Number.isFinite(progress) && progress >= 0 && progress <= 1;
-    const uvDangerColor = isDay ? dayUvColor : 'transparent';
+    const uvDangerTint = hasUvDanger ? (isDay ? (dayUvColor || null) : 'transparent') : null;
     const sunPoint = getPointOnArc(SUN_CARD_GEOMETRY, progress);
     const layout = getSolarStaticLayout();
 
@@ -2442,10 +2449,18 @@
 
     return {
       layout,
-      uvDisplay: Number.isFinite(uvIndex) ? formatNumber(uvIndex, 1) : '--',
-      uvDangerDisplay,
-      uvDangerColor,
-      solarDisplay: Number.isFinite(solarRadiation) ? formatNumber(solarRadiation, 0) : '--',
+      showUvMetric: Boolean(uvIndexDisplay || hasUvDanger),
+      uvValueDisplay: (() => {
+        if (uvIndexDisplay) return uvIndexDisplay;
+        if (hasUvDanger) return uvDangerRaw;
+        return '';
+      })(),
+      uvValueColor: uvIndexDisplay ? null : uvDangerTint,
+      showUvSubvalue: Boolean(uvIndexDisplay && hasUvDanger),
+      uvSubvalueDisplay: uvIndexDisplay && hasUvDanger ? uvDangerRaw : '',
+      uvSubvalueColor: uvIndexDisplay && hasUvDanger ? uvDangerTint : null,
+      solarDisplay: Number.isFinite(solarRadiation) ? formatNumber(solarRadiation, 0) : '',
+      showSolarMetric: Number.isFinite(solarRadiation),
       solarUnit: 'W/m²',
       moonPhaseKey,
       moonPhaseName,
@@ -2518,6 +2533,12 @@
     const layout = view.layout;
     const moonIconClass = `wdash-moon-icon${view.moonHemisphere === 'southern' ? ' is-southern' : ''}`;
     const markerMarkup = buildSunMarkerMarkup(view);
+    const uvValueStyleAttr = view.uvValueColor ? ` style='color: ${escapeHtml(view.uvValueColor)};'` : '';
+    const uvSubvalueStyleAttr = view.showUvSubvalue && view.uvSubvalueColor ? ` style='color: ${escapeHtml(view.uvSubvalueColor)};'` : '';
+    const uvSubvalueContent = view.showUvSubvalue ? escapeHtml(view.uvSubvalueDisplay) : '';
+    const solarValueHtml = view.showSolarMetric
+      ? `${escapeHtml(view.solarDisplay)} <span class="wdash-sun-metric-unit">${escapeHtml(view.solarUnit)}</span>`
+      : '';
 
     return `
       <section class="wdash-card wdash-card--solar">
@@ -2552,14 +2573,14 @@
               ${markerMarkup}
             </svg>
             <!-- Metric Labels (HTML) -->
-            <div class="wdash-sun-html-metric wdash-sun-html-metric--uv" style="${layout.uvStyle}">
+            <div class="wdash-sun-html-metric wdash-sun-html-metric--uv" style="${layout.uvStyle}"${view.showUvMetric ? '' : ' hidden'}>
               <div class="wdash-sun-metric-label">UV Index</div>
-              <div class="wdash-sun-metric-value">${escapeHtml(view.uvDisplay)}</div>
-              <div class="wdash-sun-metric-subvalue"${view.uvDangerColor ? ` style="color: ${escapeHtml(view.uvDangerColor)};"` : ''}>${escapeHtml(view.uvDangerDisplay)}</div>
+              <div class="wdash-sun-metric-value"${uvValueStyleAttr}>${escapeHtml(view.uvValueDisplay)}</div>
+              <div class="wdash-sun-metric-subvalue"${view.showUvSubvalue ? '' : ' hidden'}${uvSubvalueStyleAttr}>${uvSubvalueContent}</div>
             </div>
-            <div class="wdash-sun-html-metric wdash-sun-html-metric--solar" style="${layout.solarStyle}">
+            <div class="wdash-sun-html-metric wdash-sun-html-metric--solar" style="${layout.solarStyle}"${view.showSolarMetric ? '' : ' hidden'}>
               <div class="wdash-sun-metric-label">Solar</div>
-              <div class="wdash-sun-metric-value">${escapeHtml(view.solarDisplay)} <span class="wdash-sun-metric-unit">${escapeHtml(view.solarUnit)}</span></div>
+              <div class="wdash-sun-metric-value">${solarValueHtml}</div>
             </div>
             <div class="wdash-sun-html-metric wdash-sun-html-metric--moon" style="${layout.moonStyle}">
               <div class="${moonIconClass}" data-phase="${escapeHtml(view.moonPhaseKey)}" role="img" aria-label="${escapeHtml(view.moonAriaLabel)}"></div>
@@ -3626,24 +3647,48 @@
       }
     }
 
-    const uvValue = card.querySelector('.wdash-sun-html-metric--uv .wdash-sun-metric-value');
-    if (uvValue) setTextContent(uvValue, view.uvDisplay);
-
-    const uvDanger = card.querySelector('.wdash-sun-html-metric--uv .wdash-sun-metric-subvalue');
-    if (uvDanger) {
-      setTextContent(uvDanger, view.uvDangerDisplay);
-      if (view.uvDangerColor) {
-        uvDanger.style.color = view.uvDangerColor;
-      } else {
-        uvDanger.style.removeProperty('color');
+    const uvMetric = card.querySelector('.wdash-sun-html-metric--uv');
+    if (uvMetric) {
+      uvMetric.hidden = !view.showUvMetric;
+      const uvValue = uvMetric.querySelector('.wdash-sun-metric-value');
+      if (uvValue) {
+        setTextContent(uvValue, view.showUvMetric ? view.uvValueDisplay : '');
+        if (view.showUvMetric && view.uvValueColor) {
+          uvValue.style.color = view.uvValueColor;
+        } else {
+          uvValue.style.removeProperty('color');
+        }
+      }
+      const uvDanger = uvMetric.querySelector('.wdash-sun-metric-subvalue');
+      if (uvDanger) {
+        uvDanger.hidden = !view.showUvSubvalue;
+        if (view.showUvSubvalue) {
+          setTextContent(uvDanger, view.uvSubvalueDisplay);
+          if (view.uvSubvalueColor) {
+            uvDanger.style.color = view.uvSubvalueColor;
+          } else {
+            uvDanger.style.removeProperty('color');
+          }
+        } else {
+          setTextContent(uvDanger, '');
+          uvDanger.style.removeProperty('color');
+        }
       }
     }
 
-    const solarMetric = card.querySelector('.wdash-sun-html-metric--solar .wdash-sun-metric-value');
-    if (solarMetric) {
-      const html = `${escapeHtml(view.solarDisplay)} <span class="wdash-sun-metric-unit">${escapeHtml(view.solarUnit)}</span>`;
-      if (solarMetric.innerHTML !== html) {
-        solarMetric.innerHTML = html;
+    const solarMetricContainer = card.querySelector('.wdash-sun-html-metric--solar');
+    if (solarMetricContainer) {
+      solarMetricContainer.hidden = !view.showSolarMetric;
+      const solarMetric = solarMetricContainer.querySelector('.wdash-sun-metric-value');
+      if (solarMetric) {
+        if (view.showSolarMetric) {
+          const html = `${escapeHtml(view.solarDisplay)} <span class="wdash-sun-metric-unit">${escapeHtml(view.solarUnit)}</span>`;
+          if (solarMetric.innerHTML !== html) {
+            solarMetric.innerHTML = html;
+          }
+        } else if (solarMetric.innerHTML !== '') {
+          solarMetric.innerHTML = '';
+        }
       }
     }
 
