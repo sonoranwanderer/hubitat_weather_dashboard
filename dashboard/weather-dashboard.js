@@ -35,7 +35,10 @@
 
   const temperatureUnitState = {
     input: readStoredTemperatureUnit('input') || 'F',
-    display: readStoredTemperatureUnit('display') || 'F'
+    display: readStoredTemperatureUnit('display') || 'F',
+    metadataInput: null,
+    metadataDisplay: null,
+    displayOverride: false
   };
 
   const tileMeasurementState = {
@@ -470,7 +473,6 @@
     content.innerHTML = `
       <div class="wdash-root" style="--wdash-base-width:${DEFAULT_BASE_WIDTH}px;--wdash-base-height:${DEFAULT_BASE_HEIGHT}px;">
         <div class="wdash-frame">
-          ${buildTemperatureUnitControlsMarkup()}
           <div class="wdash" role="presentation">
             <div class="wdash-grid" data-empty="true"></div>
           </div>
@@ -481,7 +483,6 @@
     applyLayoutOverrides();
     setupScaling(displayTile, content);
 
-    setupTemperatureUnitControls(content);
     refreshTemperatureUnitUI();
 
     ensureDataTileObservers();
@@ -510,6 +511,7 @@
     let maskMode = null;
 
     try {
+      applyTemperatureUnitsFromMetadata(payload?.metadata);
       applyLayoutOverrides(payload?.metadata);
       applyScale();
 
@@ -1806,36 +1808,6 @@
     };
   }
 
-  function buildTemperatureUnitControlsMarkup() {
-    const inputUnit = getInputTemperatureUnit();
-    const displayUnit = getDisplayTemperatureUnit();
-    const buildButtons = group => TEMPERATURE_UNITS.map(unit => {
-      const isActive = (group === 'input' ? inputUnit : displayUnit) === unit;
-      const label = group === 'input' ? `Set input temperature to ${describeTemperatureUnit(unit)}` : `Set display temperature to ${describeTemperatureUnit(unit)}`;
-      const safeLabel = label ? escapeHtml(label) : '';
-      return `
-        <button type="button" class="wdash-unit-toggle${isActive ? ' is-active' : ''}" data-temp-unit-control="${group}" data-unit="${unit}" aria-pressed="${isActive ? 'true' : 'false'}" title="${safeLabel}">${unit}</button>
-      `;
-    }).join('');
-
-    return `
-      <div class="wdash-unit-controls" role="group" aria-label="Temperature unit settings">
-        <div class="wdash-unit-control" data-temp-unit-scope="input">
-          <span class="wdash-unit-control-label">Input</span>
-          <div class="wdash-unit-control-buttons" data-temp-unit-group="input">
-            ${buildButtons('input')}
-          </div>
-        </div>
-        <div class="wdash-unit-control" data-temp-unit-scope="display">
-          <span class="wdash-unit-control-label">Display</span>
-          <div class="wdash-unit-control-buttons" data-temp-unit-group="display">
-            ${buildButtons('display')}
-          </div>
-        </div>
-      </div>
-    `;
-  }
-
     function buildCardMarkupList(data, options) {
       const opts = options && typeof options === 'object' ? options : {};
       return CARD_RENDERERS.map(card => ({
@@ -3047,37 +3019,6 @@
     applyOutdoorRingSizing();
   }
 
-  function setupTemperatureUnitControls(root) {
-    const scope = root || document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-root');
-    if (!scope) return;
-    const controls = scope.querySelector('.wdash-unit-controls');
-    if (!controls) return;
-    if (controls.dataset.tempUnitListenerBound === 'true') {
-      syncTemperatureUnitControls();
-      return;
-    }
-
-    controls.addEventListener('click', handleTemperatureUnitControlClick);
-    controls.dataset.tempUnitListenerBound = 'true';
-    syncTemperatureUnitControls();
-  }
-
-  function handleTemperatureUnitControlClick(event) {
-    const button = event.target?.closest('.wdash-unit-toggle[data-temp-unit-control]');
-    if (!button) return;
-    event.preventDefault();
-
-    const group = button.dataset.tempUnitControl === 'display' ? 'display' : 'input';
-    const unit = normalizeTemperatureUnit(button.dataset.unit);
-    if (!unit) return;
-
-    if (group === 'input') {
-      setTemperatureInputUnit(unit);
-    } else {
-      setTemperatureDisplayUnit(unit);
-    }
-  }
-
   function setupTemperatureUnitIndicator(container) {
     if (!container) return;
     const indicator = container.querySelector('.wdash-temp-unit-indicator');
@@ -3103,39 +3044,7 @@
   }
 
   function refreshTemperatureUnitUI() {
-    syncTemperatureUnitControls();
     syncTemperatureUnitIndicators();
-  }
-
-  function syncTemperatureUnitControls() {
-    const root = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-root');
-    if (!root) return;
-    const controls = root.querySelector('.wdash-unit-controls');
-    if (!controls) return;
-
-    const inputUnit = getInputTemperatureUnit();
-    const displayUnit = getDisplayTemperatureUnit();
-
-    const updateGroup = (group, activeUnit) => {
-      const buttons = controls.querySelectorAll(`.wdash-unit-toggle[data-temp-unit-control="${group}"]`);
-      buttons.forEach(button => {
-        const unit = normalizeTemperatureUnit(button.dataset.unit);
-        const isActive = unit === activeUnit;
-        button.classList.toggle('is-active', isActive);
-        button.setAttribute('aria-pressed', String(!!isActive));
-        const label = group === 'input'
-          ? `Set input temperature to ${describeTemperatureUnit(unit)}`
-          : `Set display temperature to ${describeTemperatureUnit(unit)}`;
-        if (label) {
-          button.setAttribute('title', label);
-        } else {
-          button.removeAttribute('title');
-        }
-      });
-    };
-
-    updateGroup('input', inputUnit);
-    updateGroup('display', displayUnit);
   }
 
   function syncTemperatureUnitIndicators() {
@@ -3157,6 +3066,47 @@
     });
   }
 
+  function applyTemperatureUnitsFromMetadata(metadata) {
+    if (!metadata || typeof metadata !== 'object') return;
+
+    const unitsSource = isPlainObject(metadata.temperatureUnits) ? metadata.temperatureUnits : null;
+    const inputCandidate = unitsSource?.input ?? unitsSource?.source ?? unitsSource?.sensor ?? metadata.temperatureInputUnit;
+    const displayCandidate = unitsSource?.display ?? unitsSource?.default ?? unitsSource?.output ?? metadata.temperatureDisplayUnit;
+
+    const normalizedInput = normalizeTemperatureUnit(inputCandidate);
+    const normalizedDisplay = normalizeTemperatureUnit(displayCandidate);
+
+    let changed = false;
+
+    if (normalizedInput) {
+      temperatureUnitState.metadataInput = normalizedInput;
+      if (normalizedInput !== temperatureUnitState.input) {
+        temperatureUnitState.input = normalizedInput;
+        persistTemperatureUnit('input', normalizedInput);
+        changed = true;
+      }
+    }
+
+    if (normalizedDisplay) {
+      const previousMetadataDisplay = temperatureUnitState.metadataDisplay;
+      const metadataChanged = normalizedDisplay !== previousMetadataDisplay;
+      temperatureUnitState.metadataDisplay = normalizedDisplay;
+      if (metadataChanged) {
+        temperatureUnitState.displayOverride = false;
+      }
+      const overrideActive = temperatureUnitState.displayOverride === true;
+      if ((!overrideActive || metadataChanged) && normalizedDisplay !== temperatureUnitState.display) {
+        temperatureUnitState.display = normalizedDisplay;
+        persistTemperatureUnit('display', normalizedDisplay);
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      refreshTemperatureUnitUI();
+    }
+  }
+
   function setTemperatureInputUnit(unit) {
     const normalized = normalizeTemperatureUnit(unit);
     if (!normalized || normalized === temperatureUnitState.input) {
@@ -3173,11 +3123,21 @@
 
   function setTemperatureDisplayUnit(unit) {
     const normalized = normalizeTemperatureUnit(unit);
-    if (!normalized || normalized === temperatureUnitState.display) {
+    if (!normalized) {
       refreshTemperatureUnitUI();
       return;
     }
+
+    if (normalized === temperatureUnitState.display) {
+      const metadataDefault = temperatureUnitState.metadataDisplay;
+      temperatureUnitState.displayOverride = metadataDefault ? normalized !== metadataDefault : temperatureUnitState.displayOverride;
+      refreshTemperatureUnitUI();
+      return;
+    }
+
+    const metadataDefault = temperatureUnitState.metadataDisplay;
     temperatureUnitState.display = normalized;
+    temperatureUnitState.displayOverride = metadataDefault ? normalized !== metadataDefault : true;
     persistTemperatureUnit('display', normalized);
     refreshTemperatureUnitUI();
     if (!IS_TEST_ENV) {
@@ -5452,15 +5412,7 @@
 .wdash-source-tile { opacity: 0 !important; pointer-events: none !important; }
 .wdash-root { position: relative; width: 100%; height: 100%; --wdash-base-width: 1200px; --wdash-base-height: 900px; --wdash-scale: 1; --wdash-render-width: var(--wdash-base-width); --wdash-render-height: var(--wdash-base-height); background: rgba(4, 9, 20, 0.85); border-radius: 12px; overflow: hidden; box-sizing: border-box; display: flex; align-items: center; justify-content: center; }
 .wdash-frame { position: relative; width: var(--wdash-render-width); height: var(--wdash-render-height); overflow: hidden; box-sizing: border-box; }
-.wdash-unit-controls { display: flex; justify-content: flex-end; gap: 10px; margin: 0 0 12px; flex-wrap: wrap; align-items: center; color: #e0e8ff; }
-.wdash-unit-control { display: inline-flex; align-items: center; gap: 8px; background: rgba(8,16,32,0.55); padding: 6px 10px; border-radius: 999px; box-shadow: 0 8px 18px rgba(0,0,0,0.25); }
-.wdash-unit-control-label { font-size: 0.62rem; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.72; }
-.wdash-unit-control-buttons { display: inline-flex; gap: 6px; }
-.wdash-unit-toggle { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.2); border-radius: 999px; color: #f5f9ff; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; padding: 4px 10px; cursor: pointer; transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease; }
-.wdash-unit-toggle:hover { background: rgba(255,255,255,0.16); border-color: rgba(255,255,255,0.35); }
-.wdash-unit-toggle.is-active { background: rgba(77,167,255,0.22); border-color: rgba(77,167,255,0.7); color: #ffffff; }
-.wdash-unit-toggle.is-active:hover { background: rgba(77,167,255,0.32); }
-.wdash-unit-toggle:focus-visible, .wdash-temp-unit-indicator:focus-visible { outline: 2px solid rgba(90,170,255,0.9); outline-offset: 2px; }
+.wdash-temp-unit-indicator:focus-visible { outline: 2px solid rgba(90,170,255,0.9); outline-offset: 2px; }
   .wdash { width: var(--wdash-base-width); height: var(--wdash-base-height); font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif; color: #f4f6ff; background: linear-gradient(145deg, rgba(27,35,58,0.95), rgba(13,18,32,0.95)); backdrop-filter: blur(4px); border-radius: 12px; --wdash-frame-gap-desktop: 14px; --wdash-frame-gap-tablet: 14px; --wdash-frame-gap-mobile: 14px; --wdash-frame-gap: var(--wdash-frame-gap-desktop); padding: var(--wdash-frame-gap, 18px); box-sizing: border-box; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05); transform-origin: top left; transform: scale(var(--wdash-scale)); }
 .wdash-grid { display: grid; gap: var(--wdash-grid-gap-desktop, ${DEFAULT_GAPS.desktop}); height: 100%; width: 100%; grid-template-columns: var(--wdash-grid-columns-desktop, ${DEFAULT_COLUMNS.desktop}); grid-template-rows: var(--wdash-grid-rows-desktop, ${DEFAULT_TEMPLATES.desktop.rows}); grid-template-areas: var(--wdash-grid-areas-desktop, ${DEFAULT_TEMPLATES.desktop.areas}); }
 .wdash-grid[data-empty="true"] { display: flex; align-items: center; justify-content: center; }
@@ -6465,6 +6417,7 @@
       resetTileMeasurement,
       logLayoutDiagnostics,
       buildLayoutDiagnosticsContext,
+      applyTemperatureUnitsFromMetadata,
       setTemperatureDisplayUnit,
       setTemperatureInputUnit,
       getDisplayTemperatureUnit,

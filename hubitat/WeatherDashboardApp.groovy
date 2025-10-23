@@ -78,6 +78,12 @@ def mainPage() {
             attributeInputs("Weather station update time", "attrStationUpdatedAt", "lastUpdateTime", deviceOptions)
         }
 
+        section("Temperature units") {
+            paragraph "Tell the app which unit your weather devices report and choose the dashboard's default display."
+            input name: "temperatureInputUnit", type: "enum", title: "Weather device temperature unit", options: temperatureUnitOptions(), defaultValue: "F", required: true, submitOnChange: true, width: 6
+            input name: "temperatureDisplayUnit", type: "enum", title: "Default dashboard temperature unit", options: temperatureUnitOptions(), defaultValue: "F", required: true, submitOnChange: true, width: 6
+        }
+
         section("Outdoor Air Quality (optional)") {
             attributeInputs("AQI", "attrOutdoorAQI", "aqi", deviceOptions)
             attributeInputs("AQI (24h Avg)", "attrOutdoorAQI24h", "aqi_avg_24h", deviceOptions)
@@ -256,6 +262,13 @@ private Map loggingLevelOptions() {
         info : 'Info',
         debug: 'Debug',
         trace: 'Trace'
+    ]
+}
+
+private Map temperatureUnitOptions() {
+    [
+        'F': 'Fahrenheit (°F)',
+        'C': 'Celsius (°C)'
     ]
 }
 
@@ -1083,13 +1096,16 @@ private String readStringFor(String attrSetting) {
 
 private Map captureRawReadings() {
     LinkedHashMap readings = new LinkedHashMap()
-    readings.outdoorTemp = readDecimalFor("attrOutdoorTemp")
-    readings.feelsLike = readDecimalFor("attrFeelsLike")
-    readings.dewPoint = readDecimalFor("attrDewPoint")
+    String tempUnit = temperatureInputUnitSetting()
+    boolean inputIsCelsius = tempUnit == 'C'
+
+    readings.outdoorTemp = convertInputTemperature(readDecimalFor("attrOutdoorTemp"), inputIsCelsius)
+    readings.feelsLike = convertInputTemperature(readDecimalFor("attrFeelsLike"), inputIsCelsius)
+    readings.dewPoint = convertInputTemperature(readDecimalFor("attrDewPoint"), inputIsCelsius)
     readings.outdoorHumidity = readDecimalFor("attrOutdoorHumidity")
     readings.outdoorBattery = readDecimalFor("attrOutdoorBattery")
 
-    readings.indoorTemp = readDecimalFor("attrIndoorTemp")
+    readings.indoorTemp = convertInputTemperature(readDecimalFor("attrIndoorTemp"), inputIsCelsius)
     readings.indoorHumidity = readDecimalFor("attrIndoorHumidity")
     readings.indoorBattery = readDecimalFor("attrIndoorBattery")
 
@@ -1633,6 +1649,20 @@ private Map buildMetadata(Date generated, TimeZone tz, String stationUpdatedAt, 
     if (layoutOverride) {
         metadata.layout = layoutOverride
     }
+    String inputUnit = temperatureInputUnitSetting()
+    String displayUnit = temperatureDisplayUnitSetting()
+    Map temperatureUnits = [:]
+    if (inputUnit) {
+        temperatureUnits.input = inputUnit
+        metadata.temperatureInputUnit = inputUnit
+    }
+    if (displayUnit) {
+        temperatureUnits.display = displayUnit
+        metadata.temperatureDisplayUnit = displayUnit
+    }
+    if (temperatureUnits) {
+        metadata.temperatureUnits = temperatureUnits
+    }
     metadata
 }
 
@@ -1649,6 +1679,7 @@ private Map buildAmbientSensorsPayload() {
     }
     def tempUnit = settings.ambientTemperatureUnit ?: "°F"
     def humidityUnit = settings.ambientHumidityUnit ?: "%"
+    boolean inputIsCelsius = temperatureInputUnitSetting() == 'C'
 
     def entries = []
     sensors.each { dev ->
@@ -1657,9 +1688,10 @@ private Map buildAmbientSensorsPayload() {
             name: dev.displayName
         ]
         def tempVal = tempAttr ? readDecimal(dev, tempAttr) : null
-        if (tempVal != null) {
-            entry.temperatureF = round(tempVal, 1)
-            entry.temperatureC = round(fahrenheitToCelsius(tempVal), 1)
+        def convertedTemp = convertInputTemperature(tempVal, inputIsCelsius)
+        if (convertedTemp != null) {
+            entry.temperatureF = round(convertedTemp, 1)
+            entry.temperatureC = round(fahrenheitToCelsius(convertedTemp), 1)
         }
         def humidityVal = humidityAttr ? readDecimal(dev, humidityAttr) : null
         if (humidityVal != null) {
@@ -1761,6 +1793,31 @@ private BigDecimal round(value, int scale) {
 
 private BigDecimal fahrenheitToCelsius(BigDecimal tempF) {
     ((tempF - 32) * 5 / 9) as BigDecimal
+}
+
+private BigDecimal celsiusToFahrenheit(BigDecimal tempC) {
+    ((tempC * 9 / 5) + 32) as BigDecimal
+}
+
+private BigDecimal convertInputTemperature(BigDecimal value, boolean inputIsCelsius) {
+    if (value == null) return null
+    inputIsCelsius ? celsiusToFahrenheit(value) : value
+}
+
+private String temperatureInputUnitSetting() {
+    normalizeTemperatureUnitSetting(settings.temperatureInputUnit) ?: 'F'
+}
+
+private String temperatureDisplayUnitSetting() {
+    normalizeTemperatureUnitSetting(settings.temperatureDisplayUnit) ?: 'F'
+}
+
+private String normalizeTemperatureUnitSetting(Object raw) {
+    if (!(raw instanceof CharSequence)) {
+        return null
+    }
+    String value = raw.toString().trim().toUpperCase()
+    return (value == 'F' || value == 'C') ? value : null
 }
 
 private void updateWindHistory(BigDecimal speed, BigDecimal direction, long timestamp) {
