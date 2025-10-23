@@ -27,6 +27,17 @@
   const DEFAULT_TRACK_UNIT = 'px';
   const TILE_MEASURE_TOLERANCE = 1;
 
+  const TEMPERATURE_UNITS = ['F', 'C'];
+  const TEMPERATURE_UNIT_STORAGE_KEYS = {
+    input: 'wdashTempInputUnit',
+    display: 'wdashTempDisplayUnit'
+  };
+
+  const temperatureUnitState = {
+    input: readStoredTemperatureUnit('input') || 'F',
+    display: readStoredTemperatureUnit('display') || 'F'
+  };
+
   const tileMeasurementState = {
     width: null,
     height: null
@@ -239,7 +250,7 @@
     sensors: [],
     index: 0,
     interval: DEFAULT_AMBIENT_ROTATION_INTERVAL_MS,
-    tempUnit: '°F',
+    tempUnit: `°${getDisplayTemperatureUnit()}`,
     humidityUnit: '%',
     countdownTimer: null,
     nextSwitchAt: null,
@@ -459,6 +470,7 @@
     content.innerHTML = `
       <div class="wdash-root" style="--wdash-base-width:${DEFAULT_BASE_WIDTH}px;--wdash-base-height:${DEFAULT_BASE_HEIGHT}px;">
         <div class="wdash-frame">
+          ${buildTemperatureUnitControlsMarkup()}
           <div class="wdash" role="presentation">
             <div class="wdash-grid" data-empty="true"></div>
           </div>
@@ -468,6 +480,9 @@
 
     applyLayoutOverrides();
     setupScaling(displayTile, content);
+
+    setupTemperatureUnitControls(content);
+    refreshTemperatureUnitUI();
 
     ensureDataTileObservers();
     watchForTileInsertions();
@@ -1791,6 +1806,36 @@
     };
   }
 
+  function buildTemperatureUnitControlsMarkup() {
+    const inputUnit = getInputTemperatureUnit();
+    const displayUnit = getDisplayTemperatureUnit();
+    const buildButtons = group => TEMPERATURE_UNITS.map(unit => {
+      const isActive = (group === 'input' ? inputUnit : displayUnit) === unit;
+      const label = group === 'input' ? `Set input temperature to ${describeTemperatureUnit(unit)}` : `Set display temperature to ${describeTemperatureUnit(unit)}`;
+      const safeLabel = label ? escapeHtml(label) : '';
+      return `
+        <button type="button" class="wdash-unit-toggle${isActive ? ' is-active' : ''}" data-temp-unit-control="${group}" data-unit="${unit}" aria-pressed="${isActive ? 'true' : 'false'}" title="${safeLabel}">${unit}</button>
+      `;
+    }).join('');
+
+    return `
+      <div class="wdash-unit-controls" role="group" aria-label="Temperature unit settings">
+        <div class="wdash-unit-control" data-temp-unit-scope="input">
+          <span class="wdash-unit-control-label">Input</span>
+          <div class="wdash-unit-control-buttons" data-temp-unit-group="input">
+            ${buildButtons('input')}
+          </div>
+        </div>
+        <div class="wdash-unit-control" data-temp-unit-scope="display">
+          <span class="wdash-unit-control-label">Display</span>
+          <div class="wdash-unit-control-buttons" data-temp-unit-group="display">
+            ${buildButtons('display')}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
     function buildCardMarkupList(data, options) {
       const opts = options && typeof options === 'object' ? options : {};
       return CARD_RENDERERS.map(card => ({
@@ -1847,13 +1892,13 @@
 
   function buildTempWindCard(data) {
     const outdoor = data.outdoor || {};
-    const temp = toNumber(outdoor.temperatureF);
-    const high = toNumber(outdoor.dailyHighF);
-    const low = toNumber(outdoor.dailyLowF);
-    const feels = toNumber(outdoor.feelsLikeF);
-    const dew = toNumber(outdoor.dewPointF);
+    const tempPair = resolveTemperaturePair(outdoor.temperatureF, outdoor.temperatureC);
+    const highPair = resolveTemperaturePair(outdoor.dailyHighF, outdoor.dailyHighC);
+    const lowPair = resolveTemperaturePair(outdoor.dailyLowF, outdoor.dailyLowC);
+    const feelsPair = resolveTemperaturePair(outdoor.feelsLikeF, outdoor.feelsLikeC);
+    const dewPair = resolveTemperaturePair(outdoor.dewPointF, outdoor.dewPointC);
     const humidity = toNumber(outdoor.humidity);
-    const trend = toNumber(outdoor.trendFPerHour);
+    const trendPair = resolveTemperatureDelta(outdoor.trendFPerHour, outdoor.trendCPerHour);
 
     const wind = data.wind || {};
     const avg = wind.average || {};
@@ -1869,18 +1914,28 @@
 
     const bearingLabel = dirText || (Number.isFinite(dirDegrees) ? degreesToCardinal(dirDegrees) : '--');
 
-    const tempColor = colorForTemp(temp);
-    const indicator = gaugeIndicator(temp);
-    const dewText = formatTemperature(dew);
+    const tempF = tempPair.f;
+    const tempColor = colorForTemp(tempF);
+    const indicator = gaugeIndicator(tempF);
+    const dewText = formatTemperature(dewPair.f);
     const humidityText = formatPercent(humidity, 0);
-    const trendText = formatSigned(trend, 1, '°/hr');
-    const feelsText = formatTemperature(feels);
-    const highText = formatTemperature(high);
-    const lowText = formatTemperature(low);
+    const trendSuffix = `°${getDisplayTemperatureUnit()}/hr`;
+    const trendText = formatSigned(convertTemperatureDelta(trendPair.f, 'F', getDisplayTemperatureUnit()), 1, trendSuffix);
+    const feelsText = formatTemperature(feelsPair.f);
+    const highText = formatTemperature(highPair.f);
+    const lowText = formatTemperature(lowPair.f);
     const gustText = Number.isFinite(gust) ? `${formatNumber(gust, 1)} mph` : '--';
     const avgSpeedText = Number.isFinite(avgSpeed) ? `${formatNumber(avgSpeed, 1)} mph` : '--';
     const avgCombinedText = `${avgDirText || '--'} ${avgSpeedText}`;
     const dailyMaxGustText = Number.isFinite(dailyMaxGust) ? `${formatNumber(dailyMaxGust, 1)} mph` : '--';
+
+    const mainTempText = formatTemperature(tempF);
+    const currentDisplayUnit = getDisplayTemperatureUnit();
+    const indicatorAltUnit = getOppositeTemperatureUnit(currentDisplayUnit);
+    const indicatorLabelUnit = describeTemperatureUnit(indicatorAltUnit) || indicatorAltUnit;
+    const indicatorLabel = indicatorLabelUnit
+      ? `Switch temperature display to ${indicatorLabelUnit}`
+      : 'Switch temperature display';
 
     const generatedAt = data.metadata?.generatedAt;
     const stationReportedAt = data.metadata?.weatherStationTime || generatedAt;
@@ -1942,7 +1997,10 @@
                   <span class="wdash-temp-extrema-value">${highText}</span>
                 </div>
                 <div class="wdash-gauge-current">
-                  <span class="wdash-gauge-value">${formatTemperature(temp)}</span>
+                  <span class="wdash-gauge-value">
+                    <span class="wdash-gauge-value-number">${mainTempText}</span>
+                    <button type="button" class="wdash-temp-unit-indicator" data-temp-unit-indicator="true" aria-label="${escapeHtml(indicatorLabel)}" title="${escapeHtml(indicatorLabel)}">${escapeHtml(currentDisplayUnit)}</button>
+                  </span>
                 </div>
                 <div class="wdash-temp-extrema wdash-temp-extrema--low">
                   <span class="wdash-temp-extrema-label">Low</span>
@@ -2110,7 +2168,7 @@
       index = Math.max(0, Math.min(sensors.length - 1, seed.index));
     }
     const sensor = index >= 0 ? sensors[index] || {} : {};
-    const tempUnit = data.ambientTemperatureUnit || '°F';
+    const tempPair = resolveTemperaturePair(sensor.temperatureF, sensor.temperatureC);
     const humidityUnit = data.ambientHumidityUnit || '%';
     const sensorName = typeof sensor.name === 'string' ? sensor.name.trim() : '';
     const nameDisplay = hasSensors
@@ -2119,7 +2177,7 @@
     const rotationText = hasSensors
       ? (sensors.length > 1 ? `Sensor ${index + 1} of ${sensors.length}` : '')
       : 'No sensors configured';
-    const tempDisplay = formatAmbientValue(sensor.temperatureF, tempUnit, 1);
+    const tempDisplay = formatTemperature(tempPair.f, { includeUnit: true });
     const humiditySource = Number.isFinite(sensor.humidity)
       ? sensor.humidity
       : (seed && Number.isFinite(seed.humidity) ? seed.humidity : null);
@@ -2982,10 +3040,306 @@
     setupPressureToggle(container);
     setupAmbientControls(container);
     setupTempWindGaugeSizing(container);
+    setupTemperatureUnitIndicator(container);
     // ensure ambient ring sizing is applied on setup
     applyAmbientRingSizing();
     // also size outdoor gauge/compass
     applyOutdoorRingSizing();
+  }
+
+  function setupTemperatureUnitControls(root) {
+    const scope = root || document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-root');
+    if (!scope) return;
+    const controls = scope.querySelector('.wdash-unit-controls');
+    if (!controls) return;
+    if (controls.dataset.tempUnitListenerBound === 'true') {
+      syncTemperatureUnitControls();
+      return;
+    }
+
+    controls.addEventListener('click', handleTemperatureUnitControlClick);
+    controls.dataset.tempUnitListenerBound = 'true';
+    syncTemperatureUnitControls();
+  }
+
+  function handleTemperatureUnitControlClick(event) {
+    const button = event.target?.closest('.wdash-unit-toggle[data-temp-unit-control]');
+    if (!button) return;
+    event.preventDefault();
+
+    const group = button.dataset.tempUnitControl === 'display' ? 'display' : 'input';
+    const unit = normalizeTemperatureUnit(button.dataset.unit);
+    if (!unit) return;
+
+    if (group === 'input') {
+      setTemperatureInputUnit(unit);
+    } else {
+      setTemperatureDisplayUnit(unit);
+    }
+  }
+
+  function setupTemperatureUnitIndicator(container) {
+    if (!container) return;
+    const indicator = container.querySelector('.wdash-temp-unit-indicator');
+    if (!indicator) return;
+    if (indicator.dataset.tempUnitListenerBound === 'true') {
+      syncTemperatureUnitIndicators();
+      return;
+    }
+
+    indicator.addEventListener('click', handleTemperatureIndicatorClick);
+    indicator.dataset.tempUnitListenerBound = 'true';
+    syncTemperatureUnitIndicators();
+  }
+
+  function handleTemperatureIndicatorClick(event) {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
+    const next = getOppositeTemperatureUnit(getDisplayTemperatureUnit());
+    setTemperatureDisplayUnit(next);
+  }
+
+  function refreshTemperatureUnitUI() {
+    syncTemperatureUnitControls();
+    syncTemperatureUnitIndicators();
+  }
+
+  function syncTemperatureUnitControls() {
+    const root = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-root');
+    if (!root) return;
+    const controls = root.querySelector('.wdash-unit-controls');
+    if (!controls) return;
+
+    const inputUnit = getInputTemperatureUnit();
+    const displayUnit = getDisplayTemperatureUnit();
+
+    const updateGroup = (group, activeUnit) => {
+      const buttons = controls.querySelectorAll(`.wdash-unit-toggle[data-temp-unit-control="${group}"]`);
+      buttons.forEach(button => {
+        const unit = normalizeTemperatureUnit(button.dataset.unit);
+        const isActive = unit === activeUnit;
+        button.classList.toggle('is-active', isActive);
+        button.setAttribute('aria-pressed', String(!!isActive));
+        const label = group === 'input'
+          ? `Set input temperature to ${describeTemperatureUnit(unit)}`
+          : `Set display temperature to ${describeTemperatureUnit(unit)}`;
+        if (label) {
+          button.setAttribute('title', label);
+        } else {
+          button.removeAttribute('title');
+        }
+      });
+    };
+
+    updateGroup('input', inputUnit);
+    updateGroup('display', displayUnit);
+  }
+
+  function syncTemperatureUnitIndicators() {
+    const buttons = document.querySelectorAll('#' + DISPLAY_TILE_ID + ' .wdash-temp-unit-indicator');
+    if (!buttons.length) return;
+    const current = getDisplayTemperatureUnit();
+    const next = getOppositeTemperatureUnit(current);
+    const label = `Switch temperature display to ${describeTemperatureUnit(next)}`;
+
+    buttons.forEach(button => {
+      button.textContent = current;
+      if (label) {
+        button.setAttribute('aria-label', label);
+        button.setAttribute('title', label);
+      } else {
+        button.removeAttribute('aria-label');
+        button.removeAttribute('title');
+      }
+    });
+  }
+
+  function setTemperatureInputUnit(unit) {
+    const normalized = normalizeTemperatureUnit(unit);
+    if (!normalized || normalized === temperatureUnitState.input) {
+      refreshTemperatureUnitUI();
+      return;
+    }
+    temperatureUnitState.input = normalized;
+    persistTemperatureUnit('input', normalized);
+    refreshTemperatureUnitUI();
+    if (!IS_TEST_ENV) {
+      safeRenderFromData();
+    }
+  }
+
+  function setTemperatureDisplayUnit(unit) {
+    const normalized = normalizeTemperatureUnit(unit);
+    if (!normalized || normalized === temperatureUnitState.display) {
+      refreshTemperatureUnitUI();
+      return;
+    }
+    temperatureUnitState.display = normalized;
+    persistTemperatureUnit('display', normalized);
+    refreshTemperatureUnitUI();
+    if (!IS_TEST_ENV) {
+      safeRenderFromData();
+    }
+  }
+
+  function getInputTemperatureUnit() {
+    const normalized = normalizeTemperatureUnit(temperatureUnitState.input);
+    return normalized || 'F';
+  }
+
+  function getDisplayTemperatureUnit() {
+    const normalized = normalizeTemperatureUnit(temperatureUnitState.display);
+    return normalized || 'F';
+  }
+
+  function getOppositeTemperatureUnit(unit) {
+    return normalizeTemperatureUnit(unit) === 'C' ? 'F' : 'C';
+  }
+
+  function normalizeTemperatureUnit(value) {
+    if (typeof value !== 'string') return null;
+    const normalized = value.trim().toUpperCase();
+    return TEMPERATURE_UNITS.includes(normalized) ? normalized : null;
+  }
+
+  function describeTemperatureUnit(unit) {
+    const normalized = normalizeTemperatureUnit(unit);
+    if (normalized === 'C') return 'Celsius';
+    if (normalized === 'F') return 'Fahrenheit';
+    return '';
+  }
+
+  function readStoredTemperatureUnit(type) {
+    const key = TEMPERATURE_UNIT_STORAGE_KEYS[type];
+    if (!key) return null;
+    try {
+      if (typeof window === 'undefined' || !window.localStorage) return null;
+    } catch (e) {
+      return null;
+    }
+    try {
+      const stored = window.localStorage.getItem(key);
+      return normalizeTemperatureUnit(stored);
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function persistTemperatureUnit(type, unit) {
+    const key = TEMPERATURE_UNIT_STORAGE_KEYS[type];
+    const normalized = normalizeTemperatureUnit(unit);
+    if (!key || !normalized) return;
+    try {
+      if (typeof window === 'undefined' || !window.localStorage) return;
+    } catch (e) {
+      return;
+    }
+    try {
+      window.localStorage.setItem(key, normalized);
+    } catch (err) { /* ignore */ }
+  }
+
+  function resolveTemperaturePair(valueF, valueC) {
+    const preferred = getInputTemperatureUnit();
+    const f = toNumber(valueF);
+    const c = toNumber(valueC);
+
+    if (preferred === 'C') {
+      if (Number.isFinite(c)) {
+        return { f: celsiusToFahrenheit(c), c };
+      }
+      if (Number.isFinite(f)) {
+        return { f, c: fahrenheitToCelsius(f) };
+      }
+    } else {
+      if (Number.isFinite(f)) {
+        return { f, c: fahrenheitToCelsius(f) };
+      }
+      if (Number.isFinite(c)) {
+        return { f: celsiusToFahrenheit(c), c };
+      }
+    }
+
+    if (Number.isFinite(f)) {
+      return { f, c: Number.isFinite(c) ? c : fahrenheitToCelsius(f) };
+    }
+    if (Number.isFinite(c)) {
+      return { f: celsiusToFahrenheit(c), c };
+    }
+
+    return { f: NaN, c: NaN };
+  }
+
+  function resolveTemperatureDelta(valueF, valueC) {
+    const preferred = getInputTemperatureUnit();
+    const f = toNumber(valueF);
+    const c = toNumber(valueC);
+
+    if (preferred === 'C') {
+      if (Number.isFinite(c)) {
+        return { f: celsiusDeltaToFahrenheit(c), c };
+      }
+      if (Number.isFinite(f)) {
+        return { f, c: fahrenheitDeltaToCelsius(f) };
+      }
+    } else {
+      if (Number.isFinite(f)) {
+        return { f, c: fahrenheitDeltaToCelsius(f) };
+      }
+      if (Number.isFinite(c)) {
+        return { f: celsiusDeltaToFahrenheit(c), c };
+      }
+    }
+
+    if (Number.isFinite(f)) {
+      return { f, c: fahrenheitDeltaToCelsius(f) };
+    }
+    if (Number.isFinite(c)) {
+      return { f: celsiusDeltaToFahrenheit(c), c };
+    }
+
+    return { f: NaN, c: NaN };
+  }
+
+  function convertTemperatureValue(value, fromUnit, toUnit) {
+    if (!Number.isFinite(value)) return NaN;
+    const from = normalizeTemperatureUnit(fromUnit) || 'F';
+    const to = normalizeTemperatureUnit(toUnit) || 'F';
+    if (from === to) return value;
+    if (from === 'F') {
+      return fahrenheitToCelsius(value);
+    }
+    return celsiusToFahrenheit(value);
+  }
+
+  function convertTemperatureDelta(value, fromUnit, toUnit) {
+    if (!Number.isFinite(value)) return NaN;
+    const from = normalizeTemperatureUnit(fromUnit) || 'F';
+    const to = normalizeTemperatureUnit(toUnit) || 'F';
+    if (from === to) return value;
+    if (from === 'F') {
+      return fahrenheitDeltaToCelsius(value);
+    }
+    return celsiusDeltaToFahrenheit(value);
+  }
+
+  function fahrenheitToCelsius(value) {
+    return (value - 32) * (5 / 9);
+  }
+
+  function celsiusToFahrenheit(value) {
+    return (value * (9 / 5)) + 32;
+  }
+
+  function fahrenheitDeltaToCelsius(value) {
+    return value * (5 / 9);
+  }
+
+  function celsiusDeltaToFahrenheit(value) {
+    return value * (9 / 5);
   }
 
   function setupHubClock(data) {
@@ -3544,13 +3898,13 @@
     const wind = data?.wind || {};
     const avg = wind.average || {};
 
-    const temp = toNumber(outdoor.temperatureF);
-    const high = toNumber(outdoor.dailyHighF);
-    const low = toNumber(outdoor.dailyLowF);
-    const feels = toNumber(outdoor.feelsLikeF);
-    const dew = toNumber(outdoor.dewPointF);
+    const tempPair = resolveTemperaturePair(outdoor.temperatureF, outdoor.temperatureC);
+    const highPair = resolveTemperaturePair(outdoor.dailyHighF, outdoor.dailyHighC);
+    const lowPair = resolveTemperaturePair(outdoor.dailyLowF, outdoor.dailyLowC);
+    const feelsPair = resolveTemperaturePair(outdoor.feelsLikeF, outdoor.feelsLikeC);
+    const dewPair = resolveTemperaturePair(outdoor.dewPointF, outdoor.dewPointC);
     const humidity = toNumber(outdoor.humidity);
-    const trend = toNumber(outdoor.trendFPerHour);
+    const trendPair = resolveTemperatureDelta(outdoor.trendFPerHour, outdoor.trendCPerHour);
     const batteryLevel = toNumber(outdoor.battery);
 
     const speed = toNumber(wind.speedMph);
@@ -3570,8 +3924,9 @@
     const avgCombinedText = `${avgDirText || '--'} ${avgSpeedText}`.trim();
     const dailyMaxGustText = Number.isFinite(dailyMaxGust) ? `${formatNumber(dailyMaxGust, 1)} mph` : '--';
 
-    const tempColor = colorForTemp(temp);
-    const gaugeIndicatorValue = gaugeIndicator(temp);
+    const tempF = tempPair.f;
+    const tempColor = colorForTemp(tempF);
+    const gaugeIndicatorValue = gaugeIndicator(tempF);
     const gauge = card.querySelector('.wdash-gauge');
     if (gauge && gauge.style) {
       gauge.style.setProperty('--gauge-indicator', gaugeIndicatorValue);
@@ -3585,15 +3940,27 @@
       }
     }
 
-    setTextContent(card.querySelector('.wdash-gauge-value'), formatTemperature(temp));
-    setTextContent(card.querySelector('.wdash-temp-extrema--high .wdash-temp-extrema-value'), formatTemperature(high));
-    setTextContent(card.querySelector('.wdash-temp-extrema--low .wdash-temp-extrema-value'), formatTemperature(low));
+    const gaugeValueEl = card.querySelector('.wdash-gauge-value-number');
+    if (gaugeValueEl) gaugeValueEl.textContent = formatTemperature(tempF);
+    setTextContent(card.querySelector('.wdash-temp-extrema--high .wdash-temp-extrema-value'), formatTemperature(highPair.f));
+    setTextContent(card.querySelector('.wdash-temp-extrema--low .wdash-temp-extrema-value'), formatTemperature(lowPair.f));
+
+    const indicatorButton = card.querySelector('.wdash-temp-unit-indicator');
+    if (indicatorButton) {
+      const currentUnit = getDisplayTemperatureUnit();
+      const altUnit = getOppositeTemperatureUnit(currentUnit);
+      const labelUnit = describeTemperatureUnit(altUnit) || altUnit;
+      const label = labelUnit ? `Switch temperature display to ${labelUnit}` : 'Switch temperature display';
+      if (indicatorButton.textContent !== currentUnit) indicatorButton.textContent = currentUnit;
+      indicatorButton.setAttribute('aria-label', label);
+      indicatorButton.setAttribute('title', label);
+    }
 
     const detailValues = [
-      formatTemperature(feels),
-      formatTemperature(dew),
+      formatTemperature(feelsPair.f),
+      formatTemperature(dewPair.f),
       formatPercent(humidity, 0),
-      formatSigned(trend, 1, '°/hr'),
+      formatSigned(convertTemperatureDelta(trendPair.f, 'F', getDisplayTemperatureUnit()), 1, `°${getDisplayTemperatureUnit()}/hr`),
       avgCombinedText,
       dailyMaxGustText
     ];
@@ -4062,7 +4429,7 @@
 
     const sensors = resolveAmbientSensors(data);
     ambientRotation.sensors = sensors;
-    ambientRotation.tempUnit = data?.ambientTemperatureUnit || '°F';
+    ambientRotation.tempUnit = `°${getDisplayTemperatureUnit()}`;
     ambientRotation.humidityUnit = data?.ambientHumidityUnit || '%';
     ambientRotation.interval = resolveAmbientRotationIntervalMs(data);
 
@@ -4140,7 +4507,7 @@
     const batteryEl = scope.querySelector('.wdash-ambient-battery');
 
     if (!sensor) {
-      if (tempEl) tempEl.textContent = formatAmbientValue(null, ambientRotation.tempUnit, 1);
+      if (tempEl) tempEl.textContent = formatTemperature(null, { includeUnit: true });
       if (humidityEl) humidityEl.textContent = formatAmbientValue(null, ambientRotation.humidityUnit, 0);
       if (nameEl) nameEl.textContent = 'No sensors configured';
       if (rotationEl) rotationEl.textContent = '';
@@ -4162,7 +4529,8 @@
     container.classList.remove('wdash-ambient--empty');
     if (card) card.classList.remove('wdash-ambient--empty');
     const sensorName = sensor && typeof sensor.name === 'string' ? sensor.name.trim() : '';
-    if (tempEl) tempEl.textContent = formatAmbientValue(sensor.temperatureF, ambientRotation.tempUnit, 1);
+    const tempPair = resolveTemperaturePair(sensor.temperatureF, sensor.temperatureC);
+    if (tempEl) tempEl.textContent = formatTemperature(tempPair.f, { includeUnit: true });
     if (humidityEl) humidityEl.textContent = formatAmbientValue(sensor.humidity, ambientRotation.humidityUnit, 0);
     if (nameEl) nameEl.textContent = sensorName.length ? sensorName : 'Ambient Sensor';
     if (rotationEl) {
@@ -4190,8 +4558,7 @@
 
       // Temperature: set stroke color to a blended mid color from the temperature band
       if (tempFill && tempTrack) {
-        const t = toNumber(sensor.temperatureF);
-        const tempColors = colorForTemp(t);
+        const tempColors = colorForTemp(tempPair.f);
         const mid = tempColors.mid || mixColors(tempColors.colors[0], tempColors.colors[1], 0.5);
         // If the temp fill uses a gradient, attempt to update its stops; otherwise fall back to mid color
         const svg = tempFill.ownerSVGElement;
@@ -5085,6 +5452,15 @@
 .wdash-source-tile { opacity: 0 !important; pointer-events: none !important; }
 .wdash-root { position: relative; width: 100%; height: 100%; --wdash-base-width: 1200px; --wdash-base-height: 900px; --wdash-scale: 1; --wdash-render-width: var(--wdash-base-width); --wdash-render-height: var(--wdash-base-height); background: rgba(4, 9, 20, 0.85); border-radius: 12px; overflow: hidden; box-sizing: border-box; display: flex; align-items: center; justify-content: center; }
 .wdash-frame { position: relative; width: var(--wdash-render-width); height: var(--wdash-render-height); overflow: hidden; box-sizing: border-box; }
+.wdash-unit-controls { display: flex; justify-content: flex-end; gap: 10px; margin: 0 0 12px; flex-wrap: wrap; align-items: center; color: #e0e8ff; }
+.wdash-unit-control { display: inline-flex; align-items: center; gap: 8px; background: rgba(8,16,32,0.55); padding: 6px 10px; border-radius: 999px; box-shadow: 0 8px 18px rgba(0,0,0,0.25); }
+.wdash-unit-control-label { font-size: 0.62rem; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.72; }
+.wdash-unit-control-buttons { display: inline-flex; gap: 6px; }
+.wdash-unit-toggle { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.2); border-radius: 999px; color: #f5f9ff; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; padding: 4px 10px; cursor: pointer; transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease; }
+.wdash-unit-toggle:hover { background: rgba(255,255,255,0.16); border-color: rgba(255,255,255,0.35); }
+.wdash-unit-toggle.is-active { background: rgba(77,167,255,0.22); border-color: rgba(77,167,255,0.7); color: #ffffff; }
+.wdash-unit-toggle.is-active:hover { background: rgba(77,167,255,0.32); }
+.wdash-unit-toggle:focus-visible, .wdash-temp-unit-indicator:focus-visible { outline: 2px solid rgba(90,170,255,0.9); outline-offset: 2px; }
   .wdash { width: var(--wdash-base-width); height: var(--wdash-base-height); font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif; color: #f4f6ff; background: linear-gradient(145deg, rgba(27,35,58,0.95), rgba(13,18,32,0.95)); backdrop-filter: blur(4px); border-radius: 12px; --wdash-frame-gap-desktop: 14px; --wdash-frame-gap-tablet: 14px; --wdash-frame-gap-mobile: 14px; --wdash-frame-gap: var(--wdash-frame-gap-desktop); padding: var(--wdash-frame-gap, 18px); box-sizing: border-box; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05); transform-origin: top left; transform: scale(var(--wdash-scale)); }
 .wdash-grid { display: grid; gap: var(--wdash-grid-gap-desktop, ${DEFAULT_GAPS.desktop}); height: 100%; width: 100%; grid-template-columns: var(--wdash-grid-columns-desktop, ${DEFAULT_COLUMNS.desktop}); grid-template-rows: var(--wdash-grid-rows-desktop, ${DEFAULT_TEMPLATES.desktop.rows}); grid-template-areas: var(--wdash-grid-areas-desktop, ${DEFAULT_TEMPLATES.desktop.areas}); }
 .wdash-grid[data-empty="true"] { display: flex; align-items: center; justify-content: center; }
@@ -5141,7 +5517,11 @@
   .wdash-gauge-svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .wdash-gauge-center { position: absolute; inset: var(--temp-wind-gauge-center-inset, 26%); border-radius: 50%; background: rgba(5,10,20,0.85); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 12px 10px; gap: 6px; text-align: center; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04); }
 .wdash-gauge-current { display: flex; flex-direction: column; gap: 4px; align-items: center; }
-.wdash-gauge-value { font-size: 2.32rem; font-weight: 800; letter-spacing: -0.02em; }
+.wdash-gauge-value { font-size: 2.32rem; font-weight: 800; letter-spacing: -0.02em; display: inline-flex; align-items: baseline; gap: 6px; }
+.wdash-gauge-value-number { display: inline-block; }
+.wdash-temp-unit-indicator { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.24); border-radius: 999px; color: #f5f9ff; font-size: 0.78rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; padding: 2px 8px; cursor: pointer; transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease; line-height: 1.2; }
+.wdash-temp-unit-indicator:hover { background: rgba(255,255,255,0.16); border-color: rgba(255,255,255,0.35); }
+.wdash-temp-unit-indicator:active { background: rgba(77,167,255,0.28); border-color: rgba(77,167,255,0.6); }
 .wdash-gauge-label { font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.12em; color: #9badcf; }
 .wdash-temp-extrema { display: flex; flex-direction: column; align-items: center; gap: 1px; }
 .wdash-temp-extrema-label { font-size: 0.6rem; letter-spacing: 0.12em; text-transform: uppercase; color: #8ea0c8; }
@@ -5470,9 +5850,22 @@
     return slice ? `${slice}…` : trimmed.slice(0, maxLength);
   }
 
-  function formatTemperature(value) {
-    if (!Number.isFinite(value)) return '--°';
-    return `${value.toFixed(1)}°`;
+  function formatTemperature(value, options = {}) {
+    const decimalsInput = Number(options.decimals);
+    const decimals = Number.isFinite(decimalsInput) ? decimalsInput : 1;
+    const includeUnit = options.includeUnit === true;
+    const sourceUnit = normalizeTemperatureUnit(options.sourceUnit) || 'F';
+    const targetUnit = normalizeTemperatureUnit(options.unit) || getDisplayTemperatureUnit();
+    const numeric = toNumber(value);
+    if (!Number.isFinite(numeric)) {
+      return includeUnit ? `--°${targetUnit}` : '--°';
+    }
+    const converted = convertTemperatureValue(numeric, sourceUnit, targetUnit);
+    if (!Number.isFinite(converted)) {
+      return includeUnit ? `--°${targetUnit}` : '--°';
+    }
+    const suffix = includeUnit ? `°${targetUnit}` : '°';
+    return `${converted.toFixed(decimals)}${suffix}`;
   }
 
   function parseDateTime(value) {
@@ -6071,7 +6464,11 @@
       measureDisplayTileBaseDimensions,
       resetTileMeasurement,
       logLayoutDiagnostics,
-      buildLayoutDiagnosticsContext
+      buildLayoutDiagnosticsContext,
+      setTemperatureDisplayUnit,
+      setTemperatureInputUnit,
+      getDisplayTemperatureUnit,
+      getInputTemperatureUnit
     });
   }
 })();
