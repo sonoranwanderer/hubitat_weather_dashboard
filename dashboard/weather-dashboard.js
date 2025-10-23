@@ -2406,10 +2406,11 @@
     const solarRadiation = toNumber(solar.solarRadiationWm2);
     const uvDangerRaw = typeof solar.uvDanger === 'string' ? solar.uvDanger.trim() : null;
     const uvDangerDisplay = uvDangerRaw ? uvDangerRaw : '--';
-    const uvDangerColor = sanitizeHexColor(solar.uvColor);
+    const dayUvColor = sanitizeHexColor(solar.uvColor);
     const now = parseDateTime(data?.metadata?.generatedAt);
     const progress = sunProgress(solar, now);
-    const isDay = progress >= 0 && progress <= 1;
+    const isDay = Number.isFinite(progress) && progress >= 0 && progress <= 1;
+    const uvDangerColor = isDay ? dayUvColor : 'transparent';
     const sunPoint = getPointOnArc(SUN_CARD_GEOMETRY, progress);
     const layout = getSolarStaticLayout();
 
