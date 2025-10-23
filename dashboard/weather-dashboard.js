@@ -1970,6 +1970,7 @@
                 </div>
                 <div class="wdash-gauge-current">
                   <span class="wdash-gauge-value">
+                    <span class="wdash-temp-unit-indicator wdash-temp-unit-placeholder" aria-hidden="true">${escapeHtml(currentDisplayUnit)}</span>
                     <span class="wdash-gauge-value-number">${mainTempText}</span>
                     <button type="button" class="wdash-temp-unit-indicator" data-temp-unit-indicator="true" aria-label="${escapeHtml(indicatorLabel)}" title="${escapeHtml(indicatorLabel)}">${escapeHtml(currentDisplayUnit)}</button>
                   </span>
@@ -3021,7 +3022,7 @@
 
   function setupTemperatureUnitIndicator(container) {
     if (!container) return;
-    const indicator = container.querySelector('.wdash-temp-unit-indicator');
+    const indicator = container.querySelector('[data-temp-unit-indicator="true"]');
     if (!indicator) return;
     if (indicator.dataset.tempUnitListenerBound === 'true') {
       syncTemperatureUnitIndicators();
@@ -3048,7 +3049,7 @@
   }
 
   function syncTemperatureUnitIndicators() {
-    const buttons = document.querySelectorAll('#' + DISPLAY_TILE_ID + ' .wdash-temp-unit-indicator');
+    const buttons = document.querySelectorAll('#' + DISPLAY_TILE_ID + ' [data-temp-unit-indicator="true"]');
     if (!buttons.length) return;
     const current = getDisplayTemperatureUnit();
     const next = getOppositeTemperatureUnit(current);
@@ -3905,7 +3906,7 @@
     setTextContent(card.querySelector('.wdash-temp-extrema--high .wdash-temp-extrema-value'), formatTemperature(highPair.f));
     setTextContent(card.querySelector('.wdash-temp-extrema--low .wdash-temp-extrema-value'), formatTemperature(lowPair.f));
 
-    const indicatorButton = card.querySelector('.wdash-temp-unit-indicator');
+    const indicatorButton = card.querySelector('[data-temp-unit-indicator="true"]');
     if (indicatorButton) {
       const currentUnit = getDisplayTemperatureUnit();
       const altUnit = getOppositeTemperatureUnit(currentUnit);
@@ -5469,10 +5470,10 @@
   .wdash-gauge-svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .wdash-gauge-center { position: absolute; inset: var(--temp-wind-gauge-center-inset, 26%); border-radius: 50%; background: rgba(5,10,20,0.85); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 12px 10px; gap: 6px; text-align: center; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04); }
 .wdash-gauge-current { display: flex; flex-direction: column; gap: 4px; align-items: stretch; width: 100%; }
-.wdash-gauge-value { font-size: 2.32rem; font-weight: 800; letter-spacing: -0.02em; position: relative; display: block; padding: 0 42px; width: 100%; }
-.wdash-gauge-value-number { display: block; text-align: center; }
-.wdash-gauge-current .wdash-temp-unit-indicator { position: absolute; top: 50%; right: 0; transform: translateY(-50%); }
-.wdash-temp-unit-indicator { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.24); border-radius: 999px; color: #f5f9ff; font-size: 0.78rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; padding: 2px 8px; cursor: pointer; transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease; line-height: 1.2; }
+.wdash-gauge-value { font-size: 2.32rem; font-weight: 800; letter-spacing: -0.02em; display: grid; grid-template-columns: auto 1fr auto; align-items: center; column-gap: 12px; width: 100%; }
+.wdash-gauge-value-number { display: block; text-align: center; justify-self: center; }
+.wdash-temp-unit-indicator { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.24); border-radius: 999px; color: #f5f9ff; font-size: 0.78rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; padding: 2px 8px; cursor: pointer; transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease; line-height: 1.2; display: inline-flex; align-items: center; justify-content: center; }
+.wdash-temp-unit-placeholder { visibility: hidden; pointer-events: none; cursor: default; }
 .wdash-temp-unit-indicator:hover { background: rgba(255,255,255,0.16); border-color: rgba(255,255,255,0.35); }
 .wdash-temp-unit-indicator:active { background: rgba(77,167,255,0.28); border-color: rgba(77,167,255,0.6); }
 .wdash-gauge-label { font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.12em; color: #9badcf; }
