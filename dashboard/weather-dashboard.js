@@ -5469,7 +5469,7 @@
   .wdash-gauge-svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .wdash-gauge-center { position: absolute; inset: var(--temp-wind-gauge-center-inset, 26%); border-radius: 50%; background: rgba(5,10,20,0.85); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 12px 10px; gap: 6px; text-align: center; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04); }
 .wdash-gauge-current { display: flex; flex-direction: column; gap: 4px; align-items: stretch; width: 100%; }
-.wdash-gauge-value { font-size: 2.32rem; font-weight: 800; letter-spacing: -0.02em; position: relative; display: block; padding-right: 42px; }
+.wdash-gauge-value { font-size: 2.32rem; font-weight: 800; letter-spacing: -0.02em; position: relative; display: block; padding: 0 42px; width: 100%; }
 .wdash-gauge-value-number { display: block; text-align: center; }
 .wdash-gauge-current .wdash-temp-unit-indicator { position: absolute; top: 50%; right: 0; transform: translateY(-50%); }
 .wdash-temp-unit-indicator { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.24); border-radius: 999px; color: #f5f9ff; font-size: 0.78rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; padding: 2px 8px; cursor: pointer; transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease; line-height: 1.2; }
