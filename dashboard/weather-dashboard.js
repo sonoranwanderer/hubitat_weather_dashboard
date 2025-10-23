@@ -248,7 +248,7 @@
 
   let airQualityRotation = {
     timer: null,
-    sources: [], // ['outdoor', 'indoor']
+    sources: [], // ['Outdoor', 'Indoor']
     index: 0,
     interval: DEFAULT_AIR_QUALITY_ROTATION_INTERVAL_MS,
     paused: false,
@@ -2654,61 +2654,90 @@
     `;
   }
 
-  function buildAirQualityCard(data) {
+  function resolveAirQualitySources(data) {
     const sources = [];
-    if (data.outdoorAirQuality) sources.push('Outdoor');
-    if (data.indoorAirQuality) sources.push('Indoor');
+    if (hasAirQualityData(data?.outdoorAirQuality, 'Outdoor')) sources.push('Outdoor');
+    if (hasAirQualityData(data?.indoorAirQuality, 'Indoor')) sources.push('Indoor');
+    return sources;
+  }
 
-    const currentSource = airQualityRotation.sources[airQualityRotation.index] || sources[0] || 'Outdoor';
-    const airData = currentSource === 'Indoor' ? data.indoorAirQuality : data.outdoorAirQuality;
+  function hasAirQualityData(air, type) {
+    if (!air || typeof air !== 'object') return false;
+    const keys = ['aqi', 'aqi_avg_24h', 'pm25', 'pm25_avg_24h'];
+    if (type === 'Indoor') {
+      keys.push('pm10', 'pm10_avg_24h', 'carbonDioxide', 'carbonDioxide_avg_24h');
+    }
+    return keys.some(key => Number.isFinite(toNumber(air[key])));
+  }
+
+  function buildAirQualityCard(data) {
+    const availableSources = resolveAirQualitySources(data);
+    const rotationSource = airQualityRotation.sources[airQualityRotation.index];
+    const currentSource = availableSources.includes(rotationSource)
+      ? rotationSource
+      : (availableSources[0] || '');
+    const airData = currentSource === 'Indoor'
+      ? data?.indoorAirQuality
+      : currentSource === 'Outdoor'
+        ? data?.outdoorAirQuality
+        : null;
 
     const metricsBySource = {};
-    if (data.outdoorAirQuality) {
-      metricsBySource.Outdoor = buildAirQualityMetrics(data.outdoorAirQuality, 'Outdoor');
-    }
-    if (data.indoorAirQuality) {
-      metricsBySource.Indoor = buildAirQualityMetrics(data.indoorAirQuality, 'Indoor');
+    for (const source of availableSources) {
+      const sourceData = source === 'Indoor' ? data?.indoorAirQuality : data?.outdoorAirQuality;
+      metricsBySource[source] = buildAirQualityMetrics(sourceData, source);
     }
 
-    const baseMetrics = metricsBySource[currentSource]
-      || buildAirQualityMetrics(airData, currentSource);
-    const spansAllColumns = airQualitySpansAllColumns();
-    const normalizedMetrics = spansAllColumns
-      ? harmonizeAirQualityMetrics(baseMetrics, metricsBySource)
-      : baseMetrics;
-    const gridLayout = determineAirMetricGrid(normalizedMetrics);
-    const metrics = padAirQualityMetrics(normalizedMetrics, {
-      columns: gridLayout.columns,
-      maxRows: gridLayout.rows
-    });
-    const batteryLevel = toNumber(airData?.battery);
-    const batteryLabel = `${currentSource} air quality sensor`;
-    const batterySlot = buildBatterySlot(batteryLevel, {
-      orientation: 'landscape',
-      className: 'wdash-air-battery',
-      label: batteryLabel,
-      titlePrefix: `${batteryLabel} battery`
-    });
+    let metricsMarkup = '';
+    if (!availableSources.length) {
+      metricsMarkup = '<div class="wdash-air-empty">No Data Available</div>';
+    } else {
+      const baseMetrics = metricsBySource[currentSource]
+        || buildAirQualityMetrics(airData, currentSource);
+      const spansAllColumns = airQualitySpansAllColumns();
+      const normalizedMetrics = spansAllColumns
+        ? harmonizeAirQualityMetrics(baseMetrics, metricsBySource)
+        : baseMetrics;
+      const gridLayout = determineAirMetricGrid(normalizedMetrics);
+      const metrics = padAirQualityMetrics(normalizedMetrics, {
+        columns: gridLayout.columns,
+        maxRows: gridLayout.rows
+      });
+      metricsMarkup = buildMetricRow(metrics, 'wdash-air-metrics', {
+        variant: 'compact',
+        columns: gridLayout.columns
+      });
+    }
 
+    const batteryLabel = currentSource ? `${currentSource} air quality sensor` : '';
+    const batterySlot = currentSource
+      ? buildBatterySlot(toNumber(airData?.battery), {
+          orientation: 'landscape',
+          className: 'wdash-air-battery',
+          label: batteryLabel,
+          titlePrefix: `${batteryLabel} battery`
+        })
+      : '';
+    const headerSourceMarkup = currentSource
+      ? `<span class="wdash-air-source">${escapeHtml(currentSource)}</span>`
+      : '';
     const headerHtml = `
       <header class="wdash-card-header wdash-card-header--air">
         <div class="wdash-card-header-main">
           <h3>${escapeHtml(CARD_TITLES.air)}</h3>
-          <span class="wdash-air-source">${escapeHtml(currentSource)}</span>
+          ${headerSourceMarkup}
         </div>
         <div class="wdash-air-header-meta">
           ${batterySlot}
         </div>
       </header>
     `;
+    const sourceAttr = currentSource ? currentSource.toLowerCase() : 'none';
 
     return `
-      <section class="wdash-card wdash-card--air" data-aq-source="${currentSource.toLowerCase()}">
+      <section class="wdash-card wdash-card--air" data-aq-source="${escapeHtml(sourceAttr)}">
         ${headerHtml}
-        ${buildMetricRow(metrics, 'wdash-air-metrics', {
-          variant: 'compact',
-          columns: gridLayout.columns
-        })}
+        ${metricsMarkup}
       </section>
     `;
   }
@@ -4281,23 +4310,28 @@
   function setupAirQualityRotation(data) {
     airQualityRotation.lastData = data;
     airQualityRotation.interval = DEFAULT_AIR_QUALITY_ROTATION_INTERVAL_MS;
-    const sources = [];
-    if (data?.outdoorAirQuality) sources.push('Outdoor');
-    if (data?.indoorAirQuality) sources.push('Indoor');
+    const sources = resolveAirQualitySources(data);
     airQualityRotation.sources = sources;
 
     if (airQualityRotation.index >= sources.length) {
       airQualityRotation.index = 0;
     }
 
-    if (sources.length > 1 && !airQualityRotation.timer) {
+    if (sources.length > 1) {
       scheduleAirQualityRotation();
-    } else if (sources.length <= 1) {
-      clearAirQualityRotation();
+    } else {
+      stopAirQualityRotationTimer();
+      if (!sources.length) {
+        airQualityRotation.index = 0;
+      }
     }
   }
 
   function scheduleAirQualityRotation() {
+    if (airQualityRotation.sources.length <= 1) {
+      stopAirQualityRotationTimer();
+      return;
+    }
     if (airQualityRotation.timer) clearTimeout(airQualityRotation.timer);
     airQualityRotation.timer = setTimeout(() => {
       airQualityRotation.timer = null;
@@ -4307,11 +4341,15 @@
     }, airQualityRotation.interval);
   }
 
-  function clearAirQualityRotation() {
+  function stopAirQualityRotationTimer() {
     if (airQualityRotation.timer) {
       clearTimeout(airQualityRotation.timer);
       airQualityRotation.timer = null;
     }
+  }
+
+  function clearAirQualityRotation() {
+    stopAirQualityRotationTimer();
     airQualityRotation.sources = [];
     airQualityRotation.index = 0;
   }
@@ -5289,6 +5327,7 @@
 .wdash-air-metrics .wdash-metric-label { white-space: normal; line-height: 1.3; overflow-wrap: anywhere; }
 .wdash-air-metrics .wdash-metric-value { font-size: 1rem; white-space: nowrap; text-align: right; }
 .wdash-air-metrics .wdash-metric--placeholder { visibility: hidden; pointer-events: none; }
+.wdash-air-empty { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; min-height: 72px; padding: 14px; border-radius: 10px; background: rgba(255,255,255,0.04); font-size: 0.86rem; letter-spacing: 0.08em; text-transform: uppercase; color: #9badcf; opacity: 0.8; text-align: center; }
 @media (max-width: 1100px) {
   .wdash-grid { gap: var(--wdash-grid-gap-tablet, ${DEFAULT_GAPS.tablet}); grid-template-columns: var(--wdash-grid-columns-tablet, ${DEFAULT_COLUMNS.tablet}); grid-template-rows: var(--wdash-grid-rows-tablet, ${DEFAULT_TEMPLATES.tablet.rows}); grid-template-areas: var(--wdash-grid-areas-tablet, ${DEFAULT_TEMPLATES.tablet.areas}); }
   .wdash { --wdash-frame-gap: var(--wdash-frame-gap-tablet, var(--wdash-frame-gap-desktop, 18px)); }
