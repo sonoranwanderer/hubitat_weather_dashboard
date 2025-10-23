@@ -248,7 +248,7 @@
 
   let airQualityRotation = {
     timer: null,
-    sources: [], // ['outdoor', 'indoor']
+    sources: [], // ['Outdoor', 'Indoor']
     index: 0,
     interval: DEFAULT_AIR_QUALITY_ROTATION_INTERVAL_MS,
     paused: false,
@@ -1714,8 +1714,27 @@
     return Object.keys(result).length ? result : null;
   }
 
-  function resolveAmbientSeedState(data) {
+  function resolveAmbientSensors(data) {
     const sensors = Array.isArray(data?.ambientSensors) ? data.ambientSensors.filter(Boolean) : [];
+    if (sensors.length) return sensors;
+
+    const indoor = data?.indoor;
+    if (!indoor || typeof indoor !== 'object') return sensors;
+
+    const hasTemp = Number.isFinite(toNumber(indoor.temperatureF)) || Number.isFinite(toNumber(indoor.temperatureC));
+    const hasHumidity = Number.isFinite(toNumber(indoor.humidity));
+    if (!hasTemp && !hasHumidity) return sensors;
+
+    const fallback = { ...indoor };
+    const rawName = fallback.name != null ? String(fallback.name) : '';
+    const trimmedName = rawName.trim();
+    fallback.name = trimmedName.length ? trimmedName : 'Indoor';
+
+    return [fallback];
+  }
+
+  function resolveAmbientSeedState(data) {
+    const sensors = resolveAmbientSensors(data);
     if (!sensors.length) return null;
 
     const normalizedSensors = sensors.map((sensor, index) => ({ sensor, index }));
@@ -2083,7 +2102,7 @@
   }
 
   function buildAmbientSensorCard(data, seedOptions) {
-    const sensors = Array.isArray(data.ambientSensors) ? data.ambientSensors.filter(Boolean) : [];
+    const sensors = resolveAmbientSensors(data);
     const hasSensors = sensors.length > 0;
     const seed = seedOptions && typeof seedOptions === 'object' ? seedOptions : null;
     let index = hasSensors ? 0 : -1;
@@ -2115,6 +2134,8 @@
     });
     const timerDisabledAttr = sensors.length > 1 ? '' : ' disabled';
     const timerLabel = sensors.length > 1 ? 'Pause ambient sensor rotation' : 'Ambient sensor rotation unavailable';
+    const nextDisabledAttr = sensors.length > 1 ? '' : ' disabled';
+    const nextLabel = sensors.length > 1 ? 'Show next ambient sensor' : 'Ambient sensor rotation unavailable';
 
     const sensorKey = getAmbientSensorKey(sensor, index >= 0 ? index : 0) || (seed && seed.sensorKey) || '';
     const keyAttr = sensorKey ? ` data-active-sensor-key="${escapeHtml(sensorKey)}"` : '';
@@ -2139,7 +2160,10 @@
       <section class="wdash-card wdash-card--ambient${hasSensors ? '' : ' wdash-ambient--empty'}"${keyAttr}>
         <header class="wdash-card-header wdash-card-header--ambient">
           <h3 class="wdash-ambient-name">${escapeHtml(nameDisplay)}</h3>
-          <span class="wdash-ambient-rotation">${escapeHtml(rotationText)}</span>
+          <div class="wdash-ambient-header-meta">
+            <span class="wdash-ambient-rotation">${escapeHtml(rotationText)}</span>
+            ${batterySlot}
+          </div>
         </header>
         <div class="wdash-ambient" data-count="${sensors.length}"${keyAttr}>
           <div class="wdash-ambient-circles">
@@ -2159,7 +2183,11 @@
               </svg>
               <span class="wdash-ambient-reading wdash-ambient-reading--temp">${escapeHtml(tempDisplay)}</span>
               <span class="wdash-ambient-label">Temperature</span>
-              ${batterySlot}
+              <button type="button" class="wdash-ambient-next" aria-label="${escapeHtml(nextLabel)}" title="${escapeHtml(nextLabel)}"${nextDisabledAttr}>
+                <svg class="wdash-ambient-next-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <path d="M9 6l8 6-8 6V6z" fill="currentColor" />
+                </svg>
+              </button>
             </div>
             <div class="wdash-ambient-circle wdash-ambient-circle--humidity">
               <svg class="wdash-ambient-svg wdash-ambient-svg--humidity" viewBox="0 0 100 100" aria-hidden="true">
@@ -2626,61 +2654,90 @@
     `;
   }
 
-  function buildAirQualityCard(data) {
+  function resolveAirQualitySources(data) {
     const sources = [];
-    if (data.outdoorAirQuality) sources.push('Outdoor');
-    if (data.indoorAirQuality) sources.push('Indoor');
+    if (hasAirQualityData(data?.outdoorAirQuality, 'Outdoor')) sources.push('Outdoor');
+    if (hasAirQualityData(data?.indoorAirQuality, 'Indoor')) sources.push('Indoor');
+    return sources;
+  }
 
-    const currentSource = airQualityRotation.sources[airQualityRotation.index] || sources[0] || 'Outdoor';
-    const airData = currentSource === 'Indoor' ? data.indoorAirQuality : data.outdoorAirQuality;
+  function hasAirQualityData(air, type) {
+    if (!air || typeof air !== 'object') return false;
+    const keys = ['aqi', 'aqi_avg_24h', 'pm25', 'pm25_avg_24h'];
+    if (type === 'Indoor') {
+      keys.push('pm10', 'pm10_avg_24h', 'carbonDioxide', 'carbonDioxide_avg_24h');
+    }
+    return keys.some(key => Number.isFinite(toNumber(air[key])));
+  }
+
+  function buildAirQualityCard(data) {
+    const availableSources = resolveAirQualitySources(data);
+    const rotationSource = airQualityRotation.sources[airQualityRotation.index];
+    const currentSource = availableSources.includes(rotationSource)
+      ? rotationSource
+      : (availableSources[0] || '');
+    const airData = currentSource === 'Indoor'
+      ? data?.indoorAirQuality
+      : currentSource === 'Outdoor'
+        ? data?.outdoorAirQuality
+        : null;
 
     const metricsBySource = {};
-    if (data.outdoorAirQuality) {
-      metricsBySource.Outdoor = buildAirQualityMetrics(data.outdoorAirQuality, 'Outdoor');
-    }
-    if (data.indoorAirQuality) {
-      metricsBySource.Indoor = buildAirQualityMetrics(data.indoorAirQuality, 'Indoor');
+    for (const source of availableSources) {
+      const sourceData = source === 'Indoor' ? data?.indoorAirQuality : data?.outdoorAirQuality;
+      metricsBySource[source] = buildAirQualityMetrics(sourceData, source);
     }
 
-    const baseMetrics = metricsBySource[currentSource]
-      || buildAirQualityMetrics(airData, currentSource);
-    const spansAllColumns = airQualitySpansAllColumns();
-    const normalizedMetrics = spansAllColumns
-      ? harmonizeAirQualityMetrics(baseMetrics, metricsBySource)
-      : baseMetrics;
-    const gridLayout = determineAirMetricGrid(normalizedMetrics);
-    const metrics = padAirQualityMetrics(normalizedMetrics, {
-      columns: gridLayout.columns,
-      maxRows: gridLayout.rows
-    });
-    const batteryLevel = toNumber(airData?.battery);
-    const batteryLabel = `${currentSource} air quality sensor`;
-    const batterySlot = buildBatterySlot(batteryLevel, {
-      orientation: 'landscape',
-      className: 'wdash-air-battery',
-      label: batteryLabel,
-      titlePrefix: `${batteryLabel} battery`
-    });
+    let metricsMarkup = '';
+    if (!availableSources.length) {
+      metricsMarkup = '<div class="wdash-air-empty">No Data Available</div>';
+    } else {
+      const baseMetrics = metricsBySource[currentSource]
+        || buildAirQualityMetrics(airData, currentSource);
+      const spansAllColumns = airQualitySpansAllColumns();
+      const normalizedMetrics = spansAllColumns
+        ? harmonizeAirQualityMetrics(baseMetrics, metricsBySource)
+        : baseMetrics;
+      const gridLayout = determineAirMetricGrid(normalizedMetrics);
+      const metrics = padAirQualityMetrics(normalizedMetrics, {
+        columns: gridLayout.columns,
+        maxRows: gridLayout.rows
+      });
+      metricsMarkup = buildMetricRow(metrics, 'wdash-air-metrics', {
+        variant: 'compact',
+        columns: gridLayout.columns
+      });
+    }
 
+    const batteryLabel = currentSource ? `${currentSource} air quality sensor` : '';
+    const batterySlot = currentSource
+      ? buildBatterySlot(toNumber(airData?.battery), {
+          orientation: 'landscape',
+          className: 'wdash-air-battery',
+          label: batteryLabel,
+          titlePrefix: `${batteryLabel} battery`
+        })
+      : '';
+    const headerSourceMarkup = currentSource
+      ? `<span class="wdash-air-source">${escapeHtml(currentSource)}</span>`
+      : '';
     const headerHtml = `
       <header class="wdash-card-header wdash-card-header--air">
         <div class="wdash-card-header-main">
           <h3>${escapeHtml(CARD_TITLES.air)}</h3>
-          <span class="wdash-air-source">${escapeHtml(currentSource)}</span>
+          ${headerSourceMarkup}
         </div>
         <div class="wdash-air-header-meta">
           ${batterySlot}
         </div>
       </header>
     `;
+    const sourceAttr = currentSource ? currentSource.toLowerCase() : 'none';
 
     return `
-      <section class="wdash-card wdash-card--air" data-aq-source="${currentSource.toLowerCase()}">
+      <section class="wdash-card wdash-card--air" data-aq-source="${escapeHtml(sourceAttr)}">
         ${headerHtml}
-        ${buildMetricRow(metrics, 'wdash-air-metrics', {
-          variant: 'compact',
-          columns: gridLayout.columns
-        })}
+        ${metricsMarkup}
       </section>
     `;
   }
@@ -3809,20 +3866,40 @@
   }
 
   function setupAmbientControls(container) {
-    const button = container.querySelector('.wdash-ambient-timer');
-    if (!button) return;
+    const timerButton = container.querySelector('.wdash-ambient-timer');
+    if (timerButton) {
+      if (timerButton.dataset.ambientListenerBound !== 'true') {
+        timerButton.addEventListener('click', handleAmbientToggleClick);
+        timerButton.dataset.ambientListenerBound = 'true';
+      }
+    }
 
-    if (button.dataset.ambientListenerBound !== 'true') {
-      button.addEventListener('click', handleAmbientToggleClick);
-      button.dataset.ambientListenerBound = 'true';
+    const nextButton = container.querySelector('.wdash-ambient-next');
+    if (nextButton) {
+      if (nextButton.dataset.ambientListenerBound !== 'true') {
+        nextButton.addEventListener('click', handleAmbientNextClick);
+        nextButton.dataset.ambientListenerBound = 'true';
+      }
     }
 
     updateAmbientTimerDisplay();
+    updateAmbientNextButton();
   }
 
   function handleAmbientToggleClick() {
     if (ambientRotation.sensors.length <= 1) return;
     toggleAmbientRotationPause();
+  }
+
+  function handleAmbientNextClick(event) {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
+    if (ambientRotation.sensors.length <= 1) return;
+
+    advanceAmbientSensor();
   }
 
   function toggleAmbientRotationPause(force) {
@@ -3940,6 +4017,22 @@
     }
   }
 
+  function updateAmbientNextButton() {
+    const button = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-ambient-next');
+    if (!button) return;
+
+    const disabled = ambientRotation.sensors.length <= 1;
+    if (button.disabled !== disabled) {
+      button.disabled = disabled;
+    }
+
+    const label = ambientRotation.sensors.length > 1
+      ? 'Show next ambient sensor'
+      : 'Ambient sensor rotation unavailable';
+    button.setAttribute('aria-label', label);
+    button.setAttribute('title', label);
+  }
+
   function resolveAmbientRotationIntervalMs(data) {
     const rawSeconds = data?.ambientRotationSeconds;
     if (rawSeconds == null) return DEFAULT_AMBIENT_ROTATION_INTERVAL_MS;
@@ -3967,7 +4060,7 @@
       remaining = prevNextSwitchAt - now;
     }
 
-    const sensors = Array.isArray(data?.ambientSensors) ? data.ambientSensors.filter(Boolean) : [];
+    const sensors = resolveAmbientSensors(data);
     ambientRotation.sensors = sensors;
     ambientRotation.tempUnit = data?.ambientTemperatureUnit || '°F';
     ambientRotation.humidityUnit = data?.ambientHumidityUnit || '%';
@@ -4012,6 +4105,8 @@
     ambientRotation.sensors = [];
     ambientRotation.index = 0;
     ambientRotation.paused = false;
+    updateAmbientTimerDisplay();
+    updateAmbientNextButton();
   }
 
   function updateAmbientDisplay() {
@@ -4042,7 +4137,7 @@
     const humidityEl = container.querySelector('.wdash-ambient-reading--humidity');
     const nameEl = scope.querySelector('.wdash-ambient-name');
     const rotationEl = scope.querySelector('.wdash-ambient-rotation');
-    const batteryEl = container.querySelector('.wdash-ambient-battery');
+    const batteryEl = scope.querySelector('.wdash-ambient-battery');
 
     if (!sensor) {
       if (tempEl) tempEl.textContent = formatAmbientValue(null, ambientRotation.tempUnit, 1);
@@ -4059,6 +4154,8 @@
         });
       }
       assignAmbientKeyToElements(container, card, null);
+      updateAmbientTimerDisplay();
+      updateAmbientNextButton();
       return;
     }
 
@@ -4067,7 +4164,7 @@
     const sensorName = sensor && typeof sensor.name === 'string' ? sensor.name.trim() : '';
     if (tempEl) tempEl.textContent = formatAmbientValue(sensor.temperatureF, ambientRotation.tempUnit, 1);
     if (humidityEl) humidityEl.textContent = formatAmbientValue(sensor.humidity, ambientRotation.humidityUnit, 0);
-    if (nameEl) nameEl.textContent = sensor.name || 'Sensor';
+    if (nameEl) nameEl.textContent = sensorName.length ? sensorName : 'Ambient Sensor';
     if (rotationEl) {
       rotationEl.textContent = ambientRotation.sensors.length > 1
         ? `Sensor ${ambientRotation.index + 1} of ${ambientRotation.sensors.length}`
@@ -4082,6 +4179,7 @@
     }
 
     updateAmbientTimerDisplay();
+    updateAmbientNextButton();
 
     // Draw rings for temperature and humidity using inline SVG for better compatibility
     try {
@@ -4098,7 +4196,7 @@
         // If the temp fill uses a gradient, attempt to update its stops; otherwise fall back to mid color
         const svg = tempFill.ownerSVGElement;
         if (svg) {
-    const grad = svg.querySelector('#wdash-ambient-temp-gradient') || svg.querySelector('linearGradient');
+          const grad = svg.querySelector('#wdash-ambient-temp-gradient') || svg.querySelector('linearGradient');
           if (grad) {
             const stops = grad.querySelectorAll('stop');
             if (stops[0]) stops[0].setAttribute('stop-color', tempColors.colors[0]);
@@ -4212,23 +4310,28 @@
   function setupAirQualityRotation(data) {
     airQualityRotation.lastData = data;
     airQualityRotation.interval = DEFAULT_AIR_QUALITY_ROTATION_INTERVAL_MS;
-    const sources = [];
-    if (data?.outdoorAirQuality) sources.push('Outdoor');
-    if (data?.indoorAirQuality) sources.push('Indoor');
+    const sources = resolveAirQualitySources(data);
     airQualityRotation.sources = sources;
 
     if (airQualityRotation.index >= sources.length) {
       airQualityRotation.index = 0;
     }
 
-    if (sources.length > 1 && !airQualityRotation.timer) {
+    if (sources.length > 1) {
       scheduleAirQualityRotation();
-    } else if (sources.length <= 1) {
-      clearAirQualityRotation();
+    } else {
+      stopAirQualityRotationTimer();
+      if (!sources.length) {
+        airQualityRotation.index = 0;
+      }
     }
   }
 
   function scheduleAirQualityRotation() {
+    if (airQualityRotation.sources.length <= 1) {
+      stopAirQualityRotationTimer();
+      return;
+    }
     if (airQualityRotation.timer) clearTimeout(airQualityRotation.timer);
     airQualityRotation.timer = setTimeout(() => {
       airQualityRotation.timer = null;
@@ -4238,11 +4341,15 @@
     }, airQualityRotation.interval);
   }
 
-  function clearAirQualityRotation() {
+  function stopAirQualityRotationTimer() {
     if (airQualityRotation.timer) {
       clearTimeout(airQualityRotation.timer);
       airQualityRotation.timer = null;
     }
+  }
+
+  function clearAirQualityRotation() {
+    stopAirQualityRotationTimer();
     airQualityRotation.sources = [];
     airQualityRotation.index = 0;
   }
@@ -4989,9 +5096,10 @@
 .wdash-card-header-leading { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .wdash-card-subtitle { font-size: 0.62rem; letter-spacing: 0.08em; color: #9badcf; }
 .wdash-card-header h3 { margin: 0; font-size: 0.82rem; font-weight: 700; color: #c9d8ff; }
-.wdash-card-header--ambient { width: 100%; align-items: baseline; }
+.wdash-card-header--ambient { width: 100%; align-items: center; }
 .wdash-card-header--ambient .wdash-ambient-name { margin: 0; }
-.wdash-card-header--ambient .wdash-ambient-rotation { margin-left: auto; text-align: right; }
+.wdash-ambient-header-meta { margin-left: auto; display: inline-flex; align-items: center; gap: 10px; }
+.wdash-card-header--ambient .wdash-ambient-rotation { margin: 0; text-align: right; min-width: 0; }
 .wdash-card-header--air { align-items: center; gap: 10px; }
 .wdash-card-header--air .wdash-card-header-main { flex-direction: row; align-items: baseline; gap: 8px; }
 .wdash-card--solar .wdash-card-header { position: relative; z-index: 2; background: transparent; }
@@ -5116,7 +5224,11 @@
 .wdash-ambient-label { font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.8; }
 .wdash-ambient-circle--temp { background: transparent; }
 .wdash-ambient-circle--humidity { background: transparent; }
-.wdash-ambient-circle--temp .wdash-ambient-battery { position: absolute; top: calc(92px + 20px); left: -36px; transform: translateY(-50%); }
+.wdash-ambient-next { --wdash-next-color: #4da7ff; position: absolute; top: 92px; left: -36px; width: 40px; height: 40px; border: none; padding: 0; border-radius: 50%; background: transparent; color: var(--wdash-next-color); display: grid; place-items: center; cursor: pointer; filter: drop-shadow(0 8px 16px rgba(0,0,0,0.45)); transition: transform 0.2s ease, filter 0.2s ease, color 0.2s ease; }
+.wdash-ambient-next:hover:not(:disabled) { transform: translateY(-1px); filter: drop-shadow(0 16px 26px rgba(0,0,0,0.55)); }
+.wdash-ambient-next:active:not(:disabled) { transform: translateY(1px); filter: drop-shadow(0 10px 18px rgba(0,0,0,0.45)); }
+.wdash-ambient-next:disabled { cursor: not-allowed; opacity: 0.55; filter: drop-shadow(0 8px 16px rgba(0,0,0,0.35)); }
+.wdash-ambient-next-icon { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .wdash-ambient-timer { --wdash-timer-color: #29d88b; position: absolute; top: 92px; right: -36px; width: 40px; height: 40px; border: none; padding: 0; border-radius: 50%; background: transparent; color: var(--wdash-timer-color); display: grid; place-items: center; cursor: pointer; filter: drop-shadow(0 8px 16px rgba(0,0,0,0.45)); transition: transform 0.2s ease, filter 0.2s ease, color 0.2s ease; }
 .wdash-ambient-timer:hover:not(:disabled) { transform: translateY(-1px); filter: drop-shadow(0 16px 26px rgba(0,0,0,0.55)); }
 .wdash-ambient-timer:active:not(:disabled) { transform: translateY(1px); filter: drop-shadow(0 10px 18px rgba(0,0,0,0.45)); }
@@ -5204,7 +5316,7 @@
 .wdash-moon-label { display: flex; flex-direction: column; align-items: center; gap: 2px; }
 .wdash-moon-phase-name { font-size: 0.74rem; font-weight: 600; color: #f4f6ff; white-space: nowrap; }
 .wdash-moon-illumination { font-size: 0.64rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: #8ea0c8; }
-.wdash-sun-time { position: absolute; font-size: 0.8rem; font-weight: 600; color: #c9d8ff; transform: translate(-50%, 8px); white-space: nowrap; }
+.wdash-sun-time { position: absolute; font-size: 0.8rem; font-weight: 600; color: #c9d8ff; transform: translate(-50%, -100%); line-height: 1; white-space: nowrap; }
 .wdash-sun-time--rise { /* Positioned by inline style */ }
 .wdash-sun-time--set { /* Positioned by inline style */ }
 .wdash-metric-row--compact .wdash-metric { flex: unset; min-height: 0; width: 100%; height: 100%; padding: 4px 6px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 2px 6px; text-align: left; }
@@ -5215,6 +5327,7 @@
 .wdash-air-metrics .wdash-metric-label { white-space: normal; line-height: 1.3; overflow-wrap: anywhere; }
 .wdash-air-metrics .wdash-metric-value { font-size: 1rem; white-space: nowrap; text-align: right; }
 .wdash-air-metrics .wdash-metric--placeholder { visibility: hidden; pointer-events: none; }
+.wdash-air-empty { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; min-height: 72px; padding: 14px; border-radius: 10px; background: rgba(255,255,255,0.04); font-size: 0.86rem; letter-spacing: 0.08em; text-transform: uppercase; color: #9badcf; opacity: 0.8; text-align: center; }
 @media (max-width: 1100px) {
   .wdash-grid { gap: var(--wdash-grid-gap-tablet, ${DEFAULT_GAPS.tablet}); grid-template-columns: var(--wdash-grid-columns-tablet, ${DEFAULT_COLUMNS.tablet}); grid-template-rows: var(--wdash-grid-rows-tablet, ${DEFAULT_TEMPLATES.tablet.rows}); grid-template-areas: var(--wdash-grid-areas-tablet, ${DEFAULT_TEMPLATES.tablet.areas}); }
   .wdash { --wdash-frame-gap: var(--wdash-frame-gap-tablet, var(--wdash-frame-gap-desktop, 18px)); }
