@@ -2320,7 +2320,7 @@
               </svg>
               <span class="wdash-ambient-reading wdash-ambient-reading--humidity">${escapeHtml(humidityDisplay)}</span>
               <span class="wdash-ambient-label">Humidity</span>
-              <button type="button" class="wdash-ambient-timer" aria-label="${escapeHtml(timerLabel)}" aria-pressed="false"${timerDisabledAttr}>
+              <button type="button" class="wdash-ambient-timer" aria-label="${escapeHtml(timerLabel)}" title="${escapeHtml(timerLabel)}" aria-pressed="false"${timerDisabledAttr}>
                 <svg class="wdash-ambient-timer-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                   <!-- Simplified sync-style icon: two curved strokes with chevrons drawn as short stroked segments -->
                   <g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -5419,6 +5419,7 @@
       ? (ambientRotation.paused ? 'Resume ambient sensor rotation' : 'Pause ambient sensor rotation')
       : 'Ambient sensor rotation unavailable';
     button.setAttribute('aria-label', label);
+    button.setAttribute('title', label);
     button.setAttribute('aria-pressed', disabled ? 'false' : String(ambientRotation.paused));
 
     const countdownEl = button.querySelector('.wdash-ambient-timer-countdown');
