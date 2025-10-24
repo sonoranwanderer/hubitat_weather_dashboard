@@ -7594,7 +7594,21 @@
       formatPressureChange,
       convertPressure,
       convertLightningDistance,
-      formatLightningDistance
+      formatLightningDistance,
+      setupAirQualityRotation,
+      scheduleAirQualityRotation,
+      stopAirQualityRotationTimer,
+      clearAirQualityRotation,
+      updateAirQualityCard,
+      getAirQualityRotationState: () => ({
+        timer: airQualityRotation.timer,
+        index: airQualityRotation.index,
+        sources: Array.isArray(airQualityRotation.sources)
+          ? airQualityRotation.sources.slice()
+          : [],
+        interval: airQualityRotation.interval,
+        lastData: airQualityRotation.lastData
+      })
     });
   }
 })();
