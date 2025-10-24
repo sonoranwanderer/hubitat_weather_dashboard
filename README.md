@@ -26,10 +26,10 @@ v1/
 1. Install the **Weather Dashboard Device** driver and **Weather Dashboard App** in Hubitat.
 2. Create a virtual device using the driver, or allow the app to create/manage it automatically.
 3. Configure the app by selecting your source weather device and mapping the attribute names that correspond to each data point.
-4. Add both the dashboard device (as an **Attribute** tile) and the JavaScript Injector tile to your Hubitat dashboard.
-   * Assign the injector to `tile-0`.
-   * Assign the dashboard device’s JSON segment attributes to the remaining tiles (template **Attribute**). Use the plain JSON variants (`segmentCore`, `segmentPrecip`, `segmentAmbient1`, `segmentAmbient2`, `segmentAirQuality`, `segmentMeta`, `segmentLayout`, etc.) on sequential tiles starting with `tile-1`. The JavaScript tile gathers valid JSON from every attribute tile automatically, so you can add as many segments as your layout requires. The matching `...B64` attributes are optional and intended for external consumers that prefer base64-encoded payloads.
-5. Paste the contents of `dashboard/weather-dashboard.js` into the JavaScript Injector configuration.
+4. Upload `dashboard/weather-dashboard.js` to Hubitat's **File Manager** so it is available at `/local/weather-dashboard.js`. Files stored in File Manager are served under the `/local/` path used by dashboards and drivers.
+5. Add the dashboard device to your Hubitat dashboard using the **Attribute** tile template.
+   * Assign the device’s `dashboardScript` attribute to `tile-0`. The tile injects a `<script>` tag that loads `dashboard/weather-dashboard.js` from the URL defined in the driver preferences (defaults to `/local/weather-dashboard.js`, but you can point it anywhere the script is hosted).
+   * Assign the remaining JSON segment attributes (`segmentCore`, `segmentPrecip`, `segmentAmbient1`, `segmentAmbient2`, `segmentAirQuality`, `segmentMeta`, `segmentLayout`, etc.) to sequential tiles starting with `tile-1`. The JavaScript automatically discovers valid JSON from each tile, so you can add as many segments as your layout requires. The matching `...B64` attributes are optional and intended for external consumers that prefer base64-encoded payloads.
 
 The app publishes a consolidated JSON document to the dashboard device. The driver converts that document into deterministic segments (core conditions, precipitation/solar/lightning, ambient sensors in groups of four, air quality, metadata, and layout) and stores each segment in its own attribute. Keeping each segment under 700 bytes avoids Hubitat’s 1 KB attribute ceiling and eliminates the need for runtime chunk reassembly.
 
@@ -39,6 +39,7 @@ The app publishes a consolidated JSON document to the dashboard device. The driv
 
 * The JavaScript focuses purely on presentation—calculations live in the Hubitat app.
 * The JSON payload is designed to be compact but descriptive, minimizing the number of attributes required on the virtual device.
+* The driver exposes a `dashboardScript` attribute that emits an auto-injecting `<script>` tag. Hubitat dashboards load `dashboard/weather-dashboard.js` directly from the provided URL, so no third-party injector is required. Adjust the URL in the device preferences if you host a custom build of the script.
 * Derived metrics (wind averages, pressure tendency, outlook) are recalculated every minute or whenever the underlying weather attributes change.
 * Lightweight Node harnesses exercise the Temp & Wind card renderer and layout measurements without Hubitat. Run `tests/run-all.sh` (or invoke `node tests/temp-wind-card-harness.js` and `node tests/layout-base-dimensions-harness.js` individually) to verify the in-place update logic and guard against regressions in the gauge/compass behaviour and base dimension calculations.
 

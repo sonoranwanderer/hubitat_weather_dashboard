@@ -14,6 +14,8 @@ import groovy.transform.Field
 @Field static final Integer AMBIENT_SENSORS_PER_SEGMENT = 4
 @Field static final Integer MAX_AMBIENT_SEGMENTS = 6
 @Field static final String EMPTY_JSON = '{}'
+@Field static final String DASHBOARD_SCRIPT_ATTR = 'dashboardScript'
+@Field static final String DEFAULT_SCRIPT_URL = '/local/weather-dashboard.js'
 @Field static final Map<String, String> STATIC_SEGMENTS = [
     core  : 'segmentCore',
     precip: 'segmentPrecip',
@@ -44,6 +46,7 @@ definition(
     }
 
     attribute "dashboardUpdated", "string"
+    attribute DASHBOARD_SCRIPT_ATTR, "string"
 
     command "updateDashboardData", [[name: "Dashboard JSON", type: "STRING", description: "JSON payload for dashboard rendering"]]
     command "clearDashboardData"
@@ -51,6 +54,9 @@ definition(
 
 preferences {
     input name: "enableDebug", type: "bool", title: "Enable debug logging", defaultValue: false
+    input name: "dashboardScriptUrl", type: "text", title: "Dashboard script URL", required: false,
+        defaultValue: DEFAULT_SCRIPT_URL,
+        description: "Hub-hosted location of dashboard/weather-dashboard.js"
 }
 
 def installed() {
@@ -65,6 +71,7 @@ def updated() {
 
 def initialize() {
     if (enableDebug) runIn(1800, "logsOff")
+    publishDashboardScript()
 }
 
 def logsOff() {
@@ -83,6 +90,7 @@ def clearDashboardData() {
     }
     state.clear() // Clear last-sent segment cache
     sendEvent(name: "dashboardUpdated", value: timestamp(), isStateChange: true)
+    publishDashboardScript()
 }
 
 def updateDashboardData(String json) {
@@ -277,6 +285,25 @@ private void sendSegmentJson(String attr, String json) {
         sendEvent(name: attr, value: newPayload, isStateChange: true)
         state[stateKey] = newPayload
     }
+}
+
+private void publishDashboardScript() {
+    String url = (settings?.dashboardScriptUrl ?: DEFAULT_SCRIPT_URL)?.toString()?.trim()
+    if (!url) {
+        url = DEFAULT_SCRIPT_URL
+    }
+
+    String payload = buildScriptInjection(url)
+    def stateKey = "last_${DASHBOARD_SCRIPT_ATTR}"
+    if (state[stateKey] != payload) {
+        sendEvent(name: DASHBOARD_SCRIPT_ATTR, value: payload, isStateChange: true)
+        state[stateKey] = payload
+    }
+}
+
+private String buildScriptInjection(String url) {
+    String escapedUrl = url.replace('\\', '\\\\').replace("'", "\\'")
+    return "<script>(function(){const existing=document.querySelector('script[data-weather-dashboard=\\\"true\\\"]');const src='${escapedUrl}';if(existing&&existing.getAttribute('src')===src){return;}if(existing){existing.remove();}const script=document.createElement('script');script.setAttribute('data-weather-dashboard','true');script.src=src;script.type='text/javascript';document.head.appendChild(script);}())</script>"
 }
 
 private void sendAmbientSegments(List<Map> segments) {
