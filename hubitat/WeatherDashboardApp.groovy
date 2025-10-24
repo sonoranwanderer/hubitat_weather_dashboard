@@ -1356,33 +1356,33 @@ def refreshWeatherData() {
     def longitude = location?.longitude
     Date generated = new Date(timestamp)
     Map payload = [:]
+    String temperatureDisplayUnit = temperatureDisplayUnitSetting()
 
     Map outdoor = [:]
     BigDecimal tempF = readings.outdoorTemp
     if (tempF != null) {
-        outdoor.temperatureF = round(tempF, 1)
-        outdoor.temperatureC = round(fahrenheitToCelsius(tempF), 1)
+        outdoor.temperature = convertTemperatureForDisplay(tempF, temperatureDisplayUnit)
         def trend = computeTemperatureTrend()
         if (trend != null) {
-            outdoor.trendFPerHour = round(trend, 2)
+            outdoor.trendPerHour = convertTemperatureDeltaForDisplay(trend, temperatureDisplayUnit)
         }
     }
 
     def dailyExtrema = dailyMaintenance.outdoor
     if (dailyExtrema?.high != null) {
-        outdoor.dailyHighF = dailyExtrema.high
+        outdoor.dailyHigh = convertTemperatureForDisplay(dailyExtrema.high, temperatureDisplayUnit)
     }
     if (dailyExtrema?.low != null) {
-        outdoor.dailyLowF = dailyExtrema.low
+        outdoor.dailyLow = convertTemperatureForDisplay(dailyExtrema.low, temperatureDisplayUnit)
     }
 
     BigDecimal feels = readings.feelsLike
     if (feels != null) {
-        outdoor.feelsLikeF = round(feels, 1)
+        outdoor.feelsLike = convertTemperatureForDisplay(feels, temperatureDisplayUnit)
     }
     BigDecimal dew = readings.dewPoint
     if (dew != null) {
-        outdoor.dewPointF = round(dew, 1)
+        outdoor.dewPoint = convertTemperatureForDisplay(dew, temperatureDisplayUnit)
     }
     BigDecimal humidity = readings.outdoorHumidity
     if (humidity != null) {
@@ -1399,7 +1399,7 @@ def refreshWeatherData() {
     Map indoor = [:]
     BigDecimal indoorTemp = readings.indoorTemp
     if (indoorTemp != null) {
-        indoor.temperatureF = round(indoorTemp, 1)
+        indoor.temperature = convertTemperatureForDisplay(indoorTemp, temperatureDisplayUnit)
     }
     BigDecimal indoorHumidity = readings.indoorHumidity
     if (indoorHumidity != null) {
@@ -1751,6 +1751,7 @@ private Map buildAmbientSensorsPayload() {
     def tempUnit = settings.ambientTemperatureUnit ?: "°F"
     def humidityUnit = settings.ambientHumidityUnit ?: "%"
     boolean inputIsCelsius = temperatureInputUnitSetting() == 'C'
+    String displayUnit = temperatureDisplayUnitSetting()
 
     def entries = []
     sensors.each { dev ->
@@ -1761,8 +1762,7 @@ private Map buildAmbientSensorsPayload() {
         def tempVal = tempAttr ? readDecimal(dev, tempAttr) : null
         def convertedTemp = convertInputTemperature(tempVal, inputIsCelsius)
         if (convertedTemp != null) {
-            entry.temperatureF = round(convertedTemp, 1)
-            entry.temperatureC = round(fahrenheitToCelsius(convertedTemp), 1)
+            entry.temperature = convertTemperatureForDisplay(convertedTemp, displayUnit)
         }
         def humidityVal = humidityAttr ? readDecimal(dev, humidityAttr) : null
         if (humidityVal != null) {
@@ -1772,7 +1772,7 @@ private Map buildAmbientSensorsPayload() {
         if (batteryVal != null) {
             entry.battery = batteryVal
         }
-        if (entry.temperatureF != null || entry.humidity != null || entry.battery != null) {
+        if (entry.temperature != null || entry.humidity != null || entry.battery != null) {
             entries << entry
         }
     }
@@ -1873,6 +1873,25 @@ private BigDecimal celsiusToFahrenheit(BigDecimal tempC) {
 private BigDecimal convertInputTemperature(BigDecimal value, boolean inputIsCelsius) {
     if (value == null) return null
     inputIsCelsius ? celsiusToFahrenheit(value) : value
+}
+
+private BigDecimal convertTemperatureForDisplay(BigDecimal tempF, String displayUnit) {
+    if (tempF == null) return null
+    String unit = normalizeTemperatureUnitSetting(displayUnit) ?: 'F'
+    BigDecimal converted = (unit == 'C') ? fahrenheitToCelsius(tempF) : tempF
+    return round(converted, 1)
+}
+
+private BigDecimal convertTemperatureDeltaForDisplay(BigDecimal deltaF, String displayUnit) {
+    if (deltaF == null) return null
+    String unit = normalizeTemperatureUnitSetting(displayUnit) ?: 'F'
+    BigDecimal converted = (unit == 'C') ? fahrenheitDeltaToCelsius(deltaF) : deltaF
+    return round(converted, 2)
+}
+
+private BigDecimal fahrenheitDeltaToCelsius(BigDecimal deltaF) {
+    if (deltaF == null) return null
+    (deltaF * 5 / 9) as BigDecimal
 }
 
 private String temperatureInputUnitSetting() {

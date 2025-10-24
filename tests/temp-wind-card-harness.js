@@ -114,10 +114,31 @@ function buildTempWindStructure(doc) {
   return { card, windCompass, avgArrow };
 }
 
-function formatTemperature(value, unit = 'F') {
+function convertTemperature(value, fromUnit = 'F', toUnit = 'F') {
+  if (!Number.isFinite(value)) return NaN;
+  const from = (fromUnit || 'F').toUpperCase();
+  const to = (toUnit || 'F').toUpperCase();
+  if (from === to) return value;
+  if (from === 'C' && to === 'F') return (value * 9) / 5 + 32;
+  if (from === 'F' && to === 'C') return (value - 32) * (5 / 9);
+  return value;
+}
+
+function convertTemperatureDelta(value, fromUnit = 'F', toUnit = 'F') {
+  if (!Number.isFinite(value)) return NaN;
+  const from = (fromUnit || 'F').toUpperCase();
+  const to = (toUnit || 'F').toUpperCase();
+  if (from === to) return value;
+  if (from === 'C' && to === 'F') return (value * 9) / 5;
+  if (from === 'F' && to === 'C') return (value * 5) / 9;
+  return value;
+}
+
+function formatTemperature(value, targetUnit = 'F', sourceUnit = 'F') {
   if (!Number.isFinite(value)) return '--°';
-  const normalized = unit === 'C' ? (value - 32) * (5 / 9) : value;
-  return `${normalized.toFixed(1)}°`;
+  const converted = convertTemperature(value, sourceUnit, targetUnit);
+  if (!Number.isFinite(converted)) return '--°';
+  return `${converted.toFixed(1)}°`;
 }
 
 function formatPercent(value, decimals = 0) {
@@ -219,13 +240,13 @@ function assertEqual(actual, expected, message) {
 
   const dataA = {
     outdoor: {
-      temperatureF: 72.3,
-      dailyHighF: 85.1,
-      dailyLowF: 60.5,
-      feelsLikeF: 74.2,
-      dewPointF: 55.2,
+      temperature: 72.3,
+      dailyHigh: 85.1,
+      dailyLow: 60.5,
+      feelsLike: 74.2,
+      dewPoint: 55.2,
       humidity: 45,
-      trendFPerHour: -0.5,
+      trendPerHour: -0.5,
       battery: 88
     },
     wind: {
@@ -253,17 +274,17 @@ function assertEqual(actual, expected, message) {
   const gaugeValueEl = card.querySelector('.wdash-gauge-value-number');
   const gaugeUnitButton = card.querySelector('.wdash-temp-unit-indicator');
   const windUnitButton = card.querySelector('[data-wind-unit-indicator="true"]');
-  assertEqual(gaugeValueEl.textContent, formatTemperature(dataA.outdoor.temperatureF), 'gauge value mismatch after dataA');
+  assertEqual(gaugeValueEl.textContent, formatTemperature(dataA.outdoor.temperature), 'gauge value mismatch after dataA');
   assertEqual(gaugeUnitButton.textContent, '°F', 'unit indicator mismatch after dataA');
   assertEqual(windUnitButton.textContent, windIndicatorText('mph'), 'wind unit indicator mismatch after dataA');
-  assertEqual(card.querySelector('.wdash-temp-extrema--high .wdash-temp-extrema-value').textContent, formatTemperature(dataA.outdoor.dailyHighF), 'high value mismatch after dataA');
-  assertEqual(card.querySelector('.wdash-temp-extrema--low .wdash-temp-extrema-value').textContent, formatTemperature(dataA.outdoor.dailyLowF), 'low value mismatch after dataA');
+  assertEqual(card.querySelector('.wdash-temp-extrema--high .wdash-temp-extrema-value').textContent, formatTemperature(dataA.outdoor.dailyHigh), 'high value mismatch after dataA');
+  assertEqual(card.querySelector('.wdash-temp-extrema--low .wdash-temp-extrema-value').textContent, formatTemperature(dataA.outdoor.dailyLow), 'low value mismatch after dataA');
 
   const detailValuesA = [
-    formatTemperature(dataA.outdoor.feelsLikeF),
-    formatTemperature(dataA.outdoor.dewPointF),
+    formatTemperature(dataA.outdoor.feelsLike),
+    formatTemperature(dataA.outdoor.dewPoint),
     formatPercent(dataA.outdoor.humidity, 0),
-    formatSigned(dataA.outdoor.trendFPerHour, 1, '°F/hr'),
+    formatSigned(dataA.outdoor.trendPerHour, 1, '°F/hr'),
     formatAverageWind(dataA.wind.average.directionCardinal, dataA.wind.average.speedMph, 'mph'),
     `${formatWind(dataA.wind.dailyMaxGustMph, 'mph')}`
   ];
@@ -295,17 +316,17 @@ function assertEqual(actual, expected, message) {
   assertEqual(avgArrow.style.transform, `rotate(${normalizeDegrees(dataA.wind.average.directionDegrees)}deg)`, 'avg arrow rotation mismatch after dataA');
 
   const gaugeIndicatorBefore = card.querySelector('.wdash-gauge').style.getPropertyValue('--gauge-indicator');
-  assertEqual(gaugeIndicatorBefore, gaugeIndicator(dataA.outdoor.temperatureF), 'gauge indicator mismatch after dataA');
+  assertEqual(gaugeIndicatorBefore, gaugeIndicator(dataA.outdoor.temperature), 'gauge indicator mismatch after dataA');
 
   const dataB = {
     outdoor: {
-      temperatureF: 65.0,
-      dailyHighF: 70.2,
-      dailyLowF: 50.4,
-      feelsLikeF: 63.5,
-      dewPointF: 52.1,
+      temperature: 65.0,
+      dailyHigh: 70.2,
+      dailyLow: 50.4,
+      feelsLike: 63.5,
+      dewPoint: 52.1,
       humidity: 60,
-      trendFPerHour: 0.2,
+      trendPerHour: 0.2,
       battery: 76
     },
     wind: {
@@ -325,14 +346,14 @@ function assertEqual(actual, expected, message) {
   tempWindState.data = dataB;
   updateTempWindCard();
 
-  assertEqual(gaugeValueEl.textContent, formatTemperature(dataB.outdoor.temperatureF), 'gauge value mismatch after dataB');
+  assertEqual(gaugeValueEl.textContent, formatTemperature(dataB.outdoor.temperature), 'gauge value mismatch after dataB');
   assertEqual(compass.getAttribute('aria-label'), `Wind direction NE ${formatDegrees(dataB.wind.directionDegrees)}`, 'aria label mismatch after dataB');
   assertEqual(currentArrow.style.transform, `rotate(${normalizeDegrees(dataB.wind.directionDegrees)}deg)`, 'current arrow rotation mismatch after dataB');
   assertEqual(avgArrow.style.display, 'none', 'avg arrow should be hidden for dataB');
   assertEqual(card.querySelector('.wdash-wind-gust-value').textContent, formatWind(dataB.wind.gustMph, 'mph'), 'gust mismatch after dataB');
 
   const gaugeIndicatorAfter = card.querySelector('.wdash-gauge').style.getPropertyValue('--gauge-indicator');
-  assertEqual(gaugeIndicatorAfter, gaugeIndicator(dataB.outdoor.temperatureF), 'gauge indicator mismatch after dataB');
+  assertEqual(gaugeIndicatorAfter, gaugeIndicator(dataB.outdoor.temperature), 'gauge indicator mismatch after dataB');
   assert(gaugeIndicatorAfter !== gaugeIndicatorBefore, 'gauge indicator should change for new data');
 
   const speedValueB = card.querySelector('.wdash-wind-speed-value').textContent;
@@ -340,13 +361,13 @@ function assertEqual(actual, expected, message) {
 
   const dataC = {
     outdoor: {
-      temperatureF: 68.0,
-      dailyHighF: 74.2,
-      dailyLowF: 55.1,
-      feelsLikeF: 66.5,
-      dewPointF: 50.8,
+      temperature: 20.0,
+      dailyHigh: 23.4,
+      dailyLow: 12.8,
+      feelsLike: 19.2,
+      dewPoint: 10.4,
       humidity: 58,
-      trendFPerHour: -0.3,
+      trendPerHour: -0.17,
       battery: 80
     },
     wind: {
@@ -371,38 +392,38 @@ function assertEqual(actual, expected, message) {
   updateTempWindCard();
 
   const gaugeIndicatorC = card.querySelector('.wdash-gauge').style.getPropertyValue('--gauge-indicator');
-  assertEqual(gaugeIndicatorC, gaugeIndicator(dataC.outdoor.temperatureF), 'gauge indicator mismatch after dataC');
+  assertEqual(gaugeIndicatorC, gaugeIndicator(convertTemperature(dataC.outdoor.temperature, 'C', 'F')), 'gauge indicator mismatch after dataC');
   assertEqual(gaugeUnitButton.textContent, '°C', 'unit indicator mismatch after metadata default');
-  assertEqual(gaugeValueEl.textContent, formatTemperature(dataC.outdoor.temperatureF, 'C'), 'gauge value mismatch after metadata default');
+  assertEqual(gaugeValueEl.textContent, formatTemperature(dataC.outdoor.temperature, 'C', 'C'), 'gauge value mismatch after metadata default');
 
   const detailNodesMetadata = card.querySelectorAll('.wdash-temp-wind-details .wdash-metric-value');
-  assertEqual(detailNodesMetadata[0].textContent, formatTemperature(dataC.outdoor.feelsLikeF, 'C'), 'feels like mismatch after metadata default');
-  assertEqual(detailNodesMetadata[1].textContent, formatTemperature(dataC.outdoor.dewPointF, 'C'), 'dew point mismatch after metadata default');
+  assertEqual(detailNodesMetadata[0].textContent, formatTemperature(dataC.outdoor.feelsLike, 'C', 'C'), 'feels like mismatch after metadata default');
+  assertEqual(detailNodesMetadata[1].textContent, formatTemperature(dataC.outdoor.dewPoint, 'C', 'C'), 'dew point mismatch after metadata default');
   assertEqual(detailNodesMetadata[2].textContent, formatPercent(dataC.outdoor.humidity, 0), 'humidity mismatch after metadata default');
-  assertEqual(detailNodesMetadata[3].textContent, formatSigned(dataC.outdoor.trendFPerHour * (5 / 9), 1, '°C/hr'), 'trend mismatch after metadata default');
+  assertEqual(detailNodesMetadata[3].textContent, formatSigned(dataC.outdoor.trendPerHour, 1, '°C/hr'), 'trend mismatch after metadata default');
 
   hooks.setTemperatureDisplayUnit('F');
   updateTempWindCard();
 
   assertEqual(gaugeUnitButton.textContent, '°F', 'unit indicator mismatch after switching to Fahrenheit');
-  assertEqual(gaugeValueEl.textContent, formatTemperature(dataC.outdoor.temperatureF), 'gauge value mismatch after switching to Fahrenheit');
+  assertEqual(gaugeValueEl.textContent, formatTemperature(dataC.outdoor.temperature, 'F', 'C'), 'gauge value mismatch after switching to Fahrenheit');
 
   const detailNodesF = card.querySelectorAll('.wdash-temp-wind-details .wdash-metric-value');
-  assertEqual(detailNodesF[0].textContent, formatTemperature(dataC.outdoor.feelsLikeF), 'feels like mismatch after switching to Fahrenheit');
-  assertEqual(detailNodesF[1].textContent, formatTemperature(dataC.outdoor.dewPointF), 'dew point mismatch after switching to Fahrenheit');
+  assertEqual(detailNodesF[0].textContent, formatTemperature(dataC.outdoor.feelsLike, 'F', 'C'), 'feels like mismatch after switching to Fahrenheit');
+  assertEqual(detailNodesF[1].textContent, formatTemperature(dataC.outdoor.dewPoint, 'F', 'C'), 'dew point mismatch after switching to Fahrenheit');
   assertEqual(detailNodesF[2].textContent, formatPercent(dataC.outdoor.humidity, 0), 'humidity mismatch after switching to Fahrenheit');
-  assertEqual(detailNodesF[3].textContent, formatSigned(dataC.outdoor.trendFPerHour, 1, '°F/hr'), 'trend mismatch after switching to Fahrenheit');
+  assertEqual(detailNodesF[3].textContent, formatSigned(convertTemperatureDelta(dataC.outdoor.trendPerHour, 'C', 'F'), 1, '°F/hr'), 'trend mismatch after switching to Fahrenheit');
 
   hooks.setTemperatureDisplayUnit('C');
   updateTempWindCard();
   assertEqual(gaugeUnitButton.textContent, '°C', 'unit indicator mismatch after switching back to Celsius');
-  assertEqual(gaugeValueEl.textContent, formatTemperature(dataC.outdoor.temperatureF, 'C'), 'gauge value mismatch after switching back to Celsius');
+  assertEqual(gaugeValueEl.textContent, formatTemperature(dataC.outdoor.temperature, 'C', 'C'), 'gauge value mismatch after switching back to Celsius');
 
   const detailNodesBackToC = card.querySelectorAll('.wdash-temp-wind-details .wdash-metric-value');
-  assertEqual(detailNodesBackToC[0].textContent, formatTemperature(dataC.outdoor.feelsLikeF, 'C'), 'feels like mismatch after switching back to Celsius');
-  assertEqual(detailNodesBackToC[1].textContent, formatTemperature(dataC.outdoor.dewPointF, 'C'), 'dew point mismatch after switching back to Celsius');
+  assertEqual(detailNodesBackToC[0].textContent, formatTemperature(dataC.outdoor.feelsLike, 'C', 'C'), 'feels like mismatch after switching back to Celsius');
+  assertEqual(detailNodesBackToC[1].textContent, formatTemperature(dataC.outdoor.dewPoint, 'C', 'C'), 'dew point mismatch after switching back to Celsius');
   assertEqual(detailNodesBackToC[2].textContent, formatPercent(dataC.outdoor.humidity, 0), 'humidity mismatch after switching back to Celsius');
-  assertEqual(detailNodesBackToC[3].textContent, formatSigned(dataC.outdoor.trendFPerHour * (5 / 9), 1, '°C/hr'), 'trend mismatch after switching back to Celsius');
+  assertEqual(detailNodesBackToC[3].textContent, formatSigned(dataC.outdoor.trendPerHour, 1, '°C/hr'), 'trend mismatch after switching back to Celsius');
 
   hooks.setWindDisplayUnit('kph');
   updateTempWindCard();

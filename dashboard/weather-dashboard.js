@@ -1817,7 +1817,7 @@
     const indoor = data?.indoor;
     if (!indoor || typeof indoor !== 'object') return sensors;
 
-    const hasTemp = Number.isFinite(toNumber(indoor.temperatureF)) || Number.isFinite(toNumber(indoor.temperatureC));
+    const hasTemp = Number.isFinite(toNumber(indoor.temperature));
     const hasHumidity = Number.isFinite(toNumber(indoor.humidity));
     if (!hasTemp && !hasHumidity) return sensors;
 
@@ -1943,13 +1943,13 @@
 
   function buildTempWindCard(data) {
     const outdoor = data.outdoor || {};
-    const tempPair = resolveTemperaturePair(outdoor.temperatureF, outdoor.temperatureC);
-    const highPair = resolveTemperaturePair(outdoor.dailyHighF, outdoor.dailyHighC);
-    const lowPair = resolveTemperaturePair(outdoor.dailyLowF, outdoor.dailyLowC);
-    const feelsPair = resolveTemperaturePair(outdoor.feelsLikeF, outdoor.feelsLikeC);
-    const dewPair = resolveTemperaturePair(outdoor.dewPointF, outdoor.dewPointC);
+    const tempPair = resolveTemperaturePair(outdoor.temperature);
+    const highPair = resolveTemperaturePair(outdoor.dailyHigh);
+    const lowPair = resolveTemperaturePair(outdoor.dailyLow);
+    const feelsPair = resolveTemperaturePair(outdoor.feelsLike);
+    const dewPair = resolveTemperaturePair(outdoor.dewPoint);
     const humidity = toNumber(outdoor.humidity);
-    const trendPair = resolveTemperatureDelta(outdoor.trendFPerHour, outdoor.trendCPerHour);
+    const trendPair = resolveTemperatureDelta(outdoor.trendPerHour);
 
     const wind = data.wind || {};
     const avg = wind.average || {};
@@ -2233,7 +2233,7 @@
       index = Math.max(0, Math.min(sensors.length - 1, seed.index));
     }
     const sensor = index >= 0 ? sensors[index] || {} : {};
-    const tempPair = resolveTemperaturePair(sensor.temperatureF, sensor.temperatureC);
+    const tempPair = resolveTemperaturePair(sensor.temperature);
     const humidityUnit = data.ambientHumidityUnit || '%';
     const sensorName = typeof sensor.name === 'string' ? sensor.name.trim() : '';
     const nameDisplay = hasSensors
@@ -3403,11 +3403,12 @@
 
     let changed = false;
 
-    if (normalizedInput) {
-      temperatureUnitState.metadataInput = normalizedInput;
-      if (normalizedInput !== temperatureUnitState.input) {
-        temperatureUnitState.input = normalizedInput;
-        persistTemperatureUnit('input', normalizedInput);
+    const effectiveInput = normalizedInput || normalizedDisplay;
+    if (effectiveInput) {
+      temperatureUnitState.metadataInput = effectiveInput;
+      if (effectiveInput !== temperatureUnitState.input) {
+        temperatureUnitState.input = effectiveInput;
+        persistTemperatureUnit('input', effectiveInput);
         changed = true;
       }
     }
@@ -4192,6 +4193,18 @@
   }
 
   function resolveTemperaturePair(valueF, valueC) {
+    if (arguments.length <= 1 || valueC === undefined) {
+      const sourceUnit = getInputTemperatureUnit();
+      const value = toNumber(valueF);
+      if (!Number.isFinite(value)) {
+        return { f: NaN, c: NaN };
+      }
+      return {
+        f: convertTemperatureValue(value, sourceUnit, 'F'),
+        c: convertTemperatureValue(value, sourceUnit, 'C')
+      };
+    }
+
     const preferred = getInputTemperatureUnit();
     const f = toNumber(valueF);
     const c = toNumber(valueC);
@@ -4223,6 +4236,18 @@
   }
 
   function resolveTemperatureDelta(valueF, valueC) {
+    if (arguments.length <= 1 || valueC === undefined) {
+      const sourceUnit = getInputTemperatureUnit();
+      const value = toNumber(valueF);
+      if (!Number.isFinite(value)) {
+        return { f: NaN, c: NaN };
+      }
+      return {
+        f: convertTemperatureDelta(value, sourceUnit, 'F'),
+        c: convertTemperatureDelta(value, sourceUnit, 'C')
+      };
+    }
+
     const preferred = getInputTemperatureUnit();
     const f = toNumber(valueF);
     const c = toNumber(valueC);
@@ -4900,13 +4925,13 @@
     const wind = data?.wind || {};
     const avg = wind.average || {};
 
-    const tempPair = resolveTemperaturePair(outdoor.temperatureF, outdoor.temperatureC);
-    const highPair = resolveTemperaturePair(outdoor.dailyHighF, outdoor.dailyHighC);
-    const lowPair = resolveTemperaturePair(outdoor.dailyLowF, outdoor.dailyLowC);
-    const feelsPair = resolveTemperaturePair(outdoor.feelsLikeF, outdoor.feelsLikeC);
-    const dewPair = resolveTemperaturePair(outdoor.dewPointF, outdoor.dewPointC);
+    const tempPair = resolveTemperaturePair(outdoor.temperature);
+    const highPair = resolveTemperaturePair(outdoor.dailyHigh);
+    const lowPair = resolveTemperaturePair(outdoor.dailyLow);
+    const feelsPair = resolveTemperaturePair(outdoor.feelsLike);
+    const dewPair = resolveTemperaturePair(outdoor.dewPoint);
     const humidity = toNumber(outdoor.humidity);
-    const trendPair = resolveTemperatureDelta(outdoor.trendFPerHour, outdoor.trendCPerHour);
+    const trendPair = resolveTemperatureDelta(outdoor.trendPerHour);
     const batteryLevel = toNumber(outdoor.battery);
 
     const speed = toNumber(wind.speedMph);
@@ -5555,7 +5580,7 @@
     container.classList.remove('wdash-ambient--empty');
     if (card) card.classList.remove('wdash-ambient--empty');
     const sensorName = sensor && typeof sensor.name === 'string' ? sensor.name.trim() : '';
-    const tempPair = resolveTemperaturePair(sensor.temperatureF, sensor.temperatureC);
+    const tempPair = resolveTemperaturePair(sensor.temperature);
     if (tempEl) tempEl.textContent = formatTemperature(tempPair.f);
     if (humidityEl) humidityEl.textContent = formatAmbientValue(sensor.humidity, ambientRotation.humidityUnit, 0);
     if (nameEl) nameEl.textContent = sensorName.length ? sensorName : 'Ambient Sensor';
