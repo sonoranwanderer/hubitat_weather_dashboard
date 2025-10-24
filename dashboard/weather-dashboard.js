@@ -55,6 +55,20 @@
     displayOverride: false
   };
 
+  const WIND_UNITS = ['mph', 'kph', 'kts'];
+  const WIND_UNIT_STORAGE_KEYS = {
+    input: 'wdashWindInputUnit',
+    display: 'wdashWindDisplayUnit'
+  };
+
+  const windUnitState = {
+    input: readStoredWindUnit('input') || 'mph',
+    display: readStoredWindUnit('display') || 'mph',
+    metadataInput: null,
+    metadataDisplay: null,
+    displayOverride: false
+  };
+
   const tileMeasurementState = {
     width: null,
     height: null
@@ -543,6 +557,7 @@
     try {
       applyTemperatureUnitsFromMetadata(payload?.metadata);
       applyRainUnitsFromMetadata(payload?.metadata);
+      applyWindUnitsFromMetadata(payload?.metadata);
       applyLayoutOverrides(payload?.metadata);
       applyScale();
 
@@ -1917,6 +1932,13 @@
 
     const bearingLabel = dirText || (Number.isFinite(dirDegrees) ? degreesToCardinal(dirDegrees) : '--');
 
+    const displayWindUnit = getDisplayWindUnit();
+    const windUnitLabel = formatWindUnitLabel(displayWindUnit);
+    const speedDisplay = convertWindSpeed(speed, 'mph', displayWindUnit);
+    const gustDisplay = convertWindSpeed(gust, 'mph', displayWindUnit);
+    const avgSpeedDisplay = convertWindSpeed(avgSpeed, 'mph', displayWindUnit);
+    const dailyMaxGustDisplay = convertWindSpeed(dailyMaxGust, 'mph', displayWindUnit);
+
     const tempF = tempPair.f;
     const tempColor = colorForTemp(tempF);
     const indicator = gaugeIndicator(tempF);
@@ -1927,10 +1949,10 @@
     const feelsText = formatTemperature(feelsPair.f);
     const highText = formatTemperature(highPair.f);
     const lowText = formatTemperature(lowPair.f);
-    const gustText = Number.isFinite(gust) ? `${formatNumber(gust, 1)} mph` : '--';
-    const avgSpeedText = Number.isFinite(avgSpeed) ? `${formatNumber(avgSpeed, 1)} mph` : '--';
+    const gustText = Number.isFinite(gustDisplay) ? `${formatNumber(gustDisplay, 1)} ${windUnitLabel}` : '--';
+    const avgSpeedText = Number.isFinite(avgSpeedDisplay) ? `${formatNumber(avgSpeedDisplay, 1)} ${windUnitLabel}` : '--';
     const avgCombinedText = `${avgDirText || '--'} ${avgSpeedText}`;
-    const dailyMaxGustText = Number.isFinite(dailyMaxGust) ? `${formatNumber(dailyMaxGust, 1)} mph` : '--';
+    const dailyMaxGustText = Number.isFinite(dailyMaxGustDisplay) ? `${formatNumber(dailyMaxGustDisplay, 1)} ${windUnitLabel}` : '--';
 
     const mainTempText = formatTemperature(tempF);
     const currentDisplayUnit = getDisplayTemperatureUnit();
@@ -1969,6 +1991,12 @@
         ${outdoorBatterySlot}
       </div>
     `;
+
+    const windIndicatorLabelUnit = describeWindUnit(getNextWindUnit(displayWindUnit)) || getNextWindUnit(displayWindUnit);
+    const windIndicatorLabel = windIndicatorLabelUnit
+      ? `Switch wind display to ${windIndicatorLabelUnit}`
+      : 'Switch wind display';
+    const windIndicatorText = formatWindUnitIndicator(displayWindUnit);
 
     return `
       <section class="wdash-card wdash-card--temp-wind">
@@ -2013,6 +2041,7 @@
             </div>
           </div>
           <div class="wdash-wind">
+            <button type="button" class="wdash-temp-unit-indicator wdash-wind-unit-indicator" data-wind-unit-indicator="true"${windIndicatorLabel ? ` aria-label="${escapeHtml(windIndicatorLabel)}" title="${escapeHtml(windIndicatorLabel)}"` : ''}>${escapeHtml(windIndicatorText)}</button>
             <div class="wdash-wind-compass" aria-label="Wind direction ${bearingLabel} ${formatDegrees(dirDegrees)}">
               ${windCompassSvg(dirDegrees, avgDir)}
               <div class="wdash-wind-overlay">
@@ -2021,8 +2050,8 @@
                   <span class="wdash-wind-heading"> ${formatDegrees(dirDegrees)}</span>
                 </span>
                 <span class="wdash-wind-speed">
-                  <span class="wdash-wind-speed-value">${formatNumber(speed, 1)}</span>
-                  <span class="wdash-unit">mph</span>
+                  <span class="wdash-wind-speed-value">${Number.isFinite(speedDisplay) ? formatNumber(speedDisplay, 1) : '--'}</span>
+                  <span class="wdash-unit wdash-wind-speed-unit">${escapeHtml(windUnitLabel)}</span>
                 </span>
                 <span class="wdash-wind-gust">
                   <span class="wdash-wind-gust-label">Gust: </span>
@@ -3053,6 +3082,7 @@
     setupAmbientControls(container);
     setupTempWindGaugeSizing(container);
     setupTemperatureUnitIndicator(container);
+    setupWindUnitIndicator(container);
     setupRainUnitIndicator(container);
     // ensure ambient ring sizing is applied on setup
     applyAmbientRingSizing();
@@ -3097,6 +3127,55 @@
 
     buttons.forEach(button => {
       button.textContent = formatTemperatureUnitIndicator(current);
+      if (label) {
+        button.setAttribute('aria-label', label);
+        button.setAttribute('title', label);
+      } else {
+        button.removeAttribute('aria-label');
+        button.removeAttribute('title');
+      }
+    });
+  }
+
+  function setupWindUnitIndicator(container) {
+    if (!container) return;
+    const indicator = container.querySelector('[data-wind-unit-indicator="true"]');
+    if (!indicator) return;
+    if (indicator.dataset.windUnitListenerBound === 'true') {
+      syncWindUnitIndicators();
+      return;
+    }
+
+    indicator.addEventListener('click', handleWindIndicatorClick);
+    indicator.dataset.windUnitListenerBound = 'true';
+    syncWindUnitIndicators();
+  }
+
+  function handleWindIndicatorClick(event) {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
+    const next = getNextWindUnit(getDisplayWindUnit());
+    setWindDisplayUnit(next);
+  }
+
+  function refreshWindUnitUI() {
+    syncWindUnitIndicators();
+  }
+
+  function syncWindUnitIndicators() {
+    const buttons = document.querySelectorAll('#' + DISPLAY_TILE_ID + ' [data-wind-unit-indicator="true"]');
+    if (!buttons.length) return;
+    const current = getDisplayWindUnit();
+    const next = getNextWindUnit(current);
+    const labelUnit = describeWindUnit(next);
+    const label = labelUnit ? `Switch wind display to ${labelUnit}` : 'Switch wind display';
+    const text = formatWindUnitIndicator(current);
+
+    buttons.forEach(button => {
+      button.textContent = text;
       if (label) {
         button.setAttribute('aria-label', label);
         button.setAttribute('title', label);
@@ -3238,6 +3317,47 @@
     }
   }
 
+  function applyWindUnitsFromMetadata(metadata) {
+    if (!metadata || typeof metadata !== 'object') return;
+
+    const unitsSource = isPlainObject(metadata.windUnits) ? metadata.windUnits : null;
+    const inputCandidate = unitsSource?.input ?? unitsSource?.source ?? unitsSource?.sensor ?? metadata.windInputUnit;
+    const displayCandidate = unitsSource?.display ?? unitsSource?.default ?? unitsSource?.output ?? metadata.windDisplayUnit;
+
+    const normalizedInput = normalizeWindUnit(inputCandidate);
+    const normalizedDisplay = normalizeWindUnit(displayCandidate);
+
+    let changed = false;
+
+    if (normalizedInput) {
+      windUnitState.metadataInput = normalizedInput;
+      if (normalizedInput !== windUnitState.input) {
+        windUnitState.input = normalizedInput;
+        persistWindUnit('input', normalizedInput);
+        changed = true;
+      }
+    }
+
+    if (normalizedDisplay) {
+      const previousMetadataDisplay = windUnitState.metadataDisplay;
+      const metadataChanged = normalizedDisplay !== previousMetadataDisplay;
+      windUnitState.metadataDisplay = normalizedDisplay;
+      if (metadataChanged) {
+        windUnitState.displayOverride = false;
+      }
+      const overrideActive = windUnitState.displayOverride === true;
+      if ((!overrideActive || metadataChanged) && normalizedDisplay !== windUnitState.display) {
+        windUnitState.display = normalizedDisplay;
+        persistWindUnit('display', normalizedDisplay);
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      refreshWindUnitUI();
+    }
+  }
+
   function setTemperatureInputUnit(unit) {
     const normalized = normalizeTemperatureUnit(unit);
     if (!normalized || normalized === temperatureUnitState.input) {
@@ -3314,6 +3434,44 @@
     }
   }
 
+  function setWindInputUnit(unit) {
+    const normalized = normalizeWindUnit(unit);
+    if (!normalized || normalized === windUnitState.input) {
+      refreshWindUnitUI();
+      return;
+    }
+    windUnitState.input = normalized;
+    persistWindUnit('input', normalized);
+    refreshWindUnitUI();
+    if (!IS_TEST_ENV) {
+      safeRenderFromData();
+    }
+  }
+
+  function setWindDisplayUnit(unit) {
+    const normalized = normalizeWindUnit(unit);
+    if (!normalized) {
+      refreshWindUnitUI();
+      return;
+    }
+
+    if (normalized === windUnitState.display) {
+      const metadataDefault = windUnitState.metadataDisplay;
+      windUnitState.displayOverride = metadataDefault ? normalized !== metadataDefault : windUnitState.displayOverride;
+      refreshWindUnitUI();
+      return;
+    }
+
+    const metadataDefault = windUnitState.metadataDisplay;
+    windUnitState.display = normalized;
+    windUnitState.displayOverride = metadataDefault ? normalized !== metadataDefault : true;
+    persistWindUnit('display', normalized);
+    refreshWindUnitUI();
+    if (!IS_TEST_ENV) {
+      safeRenderFromData();
+    }
+  }
+
   function getInputTemperatureUnit() {
     const normalized = normalizeTemperatureUnit(temperatureUnitState.input);
     return normalized || 'F';
@@ -3340,6 +3498,23 @@
 
   function getOppositeRainUnit(unit) {
     return normalizeRainUnit(unit) === 'mm' ? 'in' : 'mm';
+  }
+
+  function getInputWindUnit() {
+    const normalized = normalizeWindUnit(windUnitState.input);
+    return normalized || 'mph';
+  }
+
+  function getDisplayWindUnit() {
+    const normalized = normalizeWindUnit(windUnitState.display);
+    return normalized || 'mph';
+  }
+
+  function getNextWindUnit(unit) {
+    const normalized = normalizeWindUnit(unit) || 'mph';
+    const index = WIND_UNITS.indexOf(normalized);
+    if (index === -1) return 'mph';
+    return WIND_UNITS[(index + 1) % WIND_UNITS.length];
   }
 
   function normalizeTemperatureUnit(value) {
@@ -3379,6 +3554,40 @@
   function formatRainUnitIndicator(unit) {
     const normalized = normalizeRainUnit(unit);
     return normalized || '';
+  }
+
+  function normalizeWindUnit(value) {
+    if (typeof value !== 'string') return null;
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) return null;
+    if (normalized === 'mph' || normalized === 'mi' || normalized === 'mile' || normalized === 'miles') return 'mph';
+    if (normalized === 'kph' || normalized === 'kmh' || normalized === 'km' || normalized === 'kilometer' || normalized === 'kilometers') return 'kph';
+    if (normalized === 'kts' || normalized === 'kt' || normalized === 'knot' || normalized === 'knots') return 'kts';
+    return null;
+  }
+
+  function describeWindUnit(unit) {
+    const normalized = normalizeWindUnit(unit);
+    if (normalized === 'kph') return 'kilometers per hour';
+    if (normalized === 'kts') return 'knots';
+    if (normalized === 'mph') return 'miles per hour';
+    return '';
+  }
+
+  function formatWindUnitIndicator(unit) {
+    const normalized = normalizeWindUnit(unit);
+    if (normalized === 'kph') return 'km';
+    if (normalized === 'kts') return 'kt';
+    if (normalized === 'mph') return 'mi';
+    return '';
+  }
+
+  function formatWindUnitLabel(unit) {
+    const normalized = normalizeWindUnit(unit);
+    if (normalized === 'kph') return 'kph';
+    if (normalized === 'kts') return 'kts';
+    if (normalized === 'mph') return 'mph';
+    return '';
   }
 
   function readStoredTemperatureUnit(type) {
@@ -3430,6 +3639,36 @@
   function persistRainUnit(type, unit) {
     const key = RAIN_UNIT_STORAGE_KEYS[type];
     const normalized = normalizeRainUnit(unit);
+    if (!key || !normalized) return;
+    try {
+      if (typeof window === 'undefined' || !window.localStorage) return;
+    } catch (e) {
+      return;
+    }
+    try {
+      window.localStorage.setItem(key, normalized);
+    } catch (err) { /* ignore */ }
+  }
+
+  function readStoredWindUnit(type) {
+    const key = WIND_UNIT_STORAGE_KEYS[type];
+    if (!key) return null;
+    try {
+      if (typeof window === 'undefined' || !window.localStorage) return null;
+    } catch (e) {
+      return null;
+    }
+    try {
+      const stored = window.localStorage.getItem(key);
+      return normalizeWindUnit(stored);
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function persistWindUnit(type, unit) {
+    const key = WIND_UNIT_STORAGE_KEYS[type];
+    const normalized = normalizeWindUnit(unit);
     if (!key || !normalized) return;
     try {
       if (typeof window === 'undefined' || !window.localStorage) return;
@@ -3538,6 +3777,29 @@
       return numeric / 25.4;
     }
     return numeric;
+  }
+
+  function convertWindSpeed(value, fromUnit, toUnit) {
+    const numeric = toNumber(value);
+    if (!Number.isFinite(numeric)) return NaN;
+    const from = normalizeWindUnit(fromUnit) || 'mph';
+    const to = normalizeWindUnit(toUnit) || 'mph';
+    if (from === to) return numeric;
+
+    let mphValue = numeric;
+    if (from === 'kph') {
+      mphValue = numeric / 1.609344;
+    } else if (from === 'kts') {
+      mphValue = numeric * 1.150779448023542;
+    }
+
+    if (to === 'kph') {
+      return mphValue * 1.609344;
+    }
+    if (to === 'kts') {
+      return mphValue / 1.150779448023542;
+    }
+    return mphValue;
   }
 
   function fahrenheitToCelsius(value) {
@@ -4133,10 +4395,16 @@
 
     const bearingLabel = dirText || (Number.isFinite(dirDegrees) ? degreesToCardinal(dirDegrees) : '--');
     const headingText = Number.isFinite(dirDegrees) ? formatDegrees(dirDegrees) : '--°';
-    const gustText = Number.isFinite(gust) ? `${formatNumber(gust, 1)} mph` : '--';
-    const avgSpeedText = Number.isFinite(avgSpeed) ? `${formatNumber(avgSpeed, 1)} mph` : '--';
+    const displayWindUnit = getDisplayWindUnit();
+    const windUnitLabel = formatWindUnitLabel(displayWindUnit);
+    const speedDisplay = convertWindSpeed(speed, 'mph', displayWindUnit);
+    const gustDisplay = convertWindSpeed(gust, 'mph', displayWindUnit);
+    const avgSpeedDisplay = convertWindSpeed(avgSpeed, 'mph', displayWindUnit);
+    const dailyMaxGustDisplay = convertWindSpeed(dailyMaxGust, 'mph', displayWindUnit);
+    const gustText = Number.isFinite(gustDisplay) ? `${formatNumber(gustDisplay, 1)} ${windUnitLabel}` : '--';
+    const avgSpeedText = Number.isFinite(avgSpeedDisplay) ? `${formatNumber(avgSpeedDisplay, 1)} ${windUnitLabel}` : '--';
     const avgCombinedText = `${avgDirText || '--'} ${avgSpeedText}`.trim();
-    const dailyMaxGustText = Number.isFinite(dailyMaxGust) ? `${formatNumber(dailyMaxGust, 1)} mph` : '--';
+    const dailyMaxGustText = Number.isFinite(dailyMaxGustDisplay) ? `${formatNumber(dailyMaxGustDisplay, 1)} ${windUnitLabel}` : '--';
 
     const tempF = tempPair.f;
     const tempColor = colorForTemp(tempF);
@@ -4211,8 +4479,25 @@
       const text = headingText ? ` ${headingText}` : ' --°';
       if (headingEl.textContent !== text) headingEl.textContent = text;
     }
-    setTextContent(card.querySelector('.wdash-wind-speed-value'), Number.isFinite(speed) ? formatNumber(speed, 1) : '--');
+    setTextContent(card.querySelector('.wdash-wind-speed-value'), Number.isFinite(speedDisplay) ? formatNumber(speedDisplay, 1) : '--');
+    setTextContent(card.querySelector('.wdash-wind-speed-unit'), windUnitLabel);
     setTextContent(card.querySelector('.wdash-wind-gust-value'), gustText);
+
+    const windIndicatorButton = card.querySelector('[data-wind-unit-indicator="true"]');
+    if (windIndicatorButton) {
+      const next = getNextWindUnit(displayWindUnit);
+      const labelUnit = describeWindUnit(next) || next;
+      const label = labelUnit ? `Switch wind display to ${labelUnit}` : 'Switch wind display';
+      const indicatorText = formatWindUnitIndicator(displayWindUnit);
+      if (windIndicatorButton.textContent !== indicatorText) windIndicatorButton.textContent = indicatorText;
+      if (label) {
+        windIndicatorButton.setAttribute('aria-label', label);
+        windIndicatorButton.setAttribute('title', label);
+      } else {
+        windIndicatorButton.removeAttribute('aria-label');
+        windIndicatorButton.removeAttribute('title');
+      }
+    }
 
     if (compass) {
       const currentArrow = compass.querySelector('.wdash-compass-arrow--current');
@@ -5720,7 +6005,7 @@
 .wdash-temp-wind-main > .wdash-temp, .wdash-temp-wind-main > .wdash-wind { flex: 1; min-width: 0; min-height: 0; }
 .wdash-temp-wind-details { display: flex; justify-content: space-between; gap: 12px; }
 .wdash-temp { align-items: center; }
-.wdash-wind { align-items: center; }
+.wdash-wind { align-items: center; position: relative; }
 .wdash-gauge, .wdash-wind-compass { position: relative; width: 100%; height: 100%; margin: 0 auto; }
   .wdash-gauge-svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .wdash-gauge-center { position: absolute; inset: var(--temp-wind-gauge-center-inset, 26%); border-radius: 50%; background: rgba(5,10,20,0.85); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 12px 10px; gap: 6px; text-align: center; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04); }
@@ -5729,6 +6014,7 @@
 .wdash-gauge-value-number { display: block; text-align: center; }
 .wdash-temp-unit-indicator { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.24); border-radius: 50%; color: #f5f9ff; font-size: 0.78rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; width: 27px; height: 27px; cursor: pointer; transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
 .wdash-temp-unit-indicator--gauge { position: absolute; top: 0; left: 0; transform: none; z-index: 2; }
+.wdash-wind-unit-indicator { position: absolute; top: 6px; right: 6px; z-index: 2; }
 .wdash-rain-unit-indicator { position: absolute; top: 6px; left: 6px; z-index: 2; }
 .wdash-temp-unit-indicator:hover { background: rgba(255,255,255,0.16); border-color: rgba(255,255,255,0.35); }
 .wdash-temp-unit-indicator:active { background: rgba(77,167,255,0.28); border-color: rgba(77,167,255,0.6); }
@@ -6704,16 +6990,22 @@
       buildLayoutDiagnosticsContext,
       applyTemperatureUnitsFromMetadata,
       applyRainUnitsFromMetadata,
+      applyWindUnitsFromMetadata,
       setTemperatureDisplayUnit,
       setTemperatureInputUnit,
       setRainDisplayUnit,
       setRainInputUnit,
+      setWindDisplayUnit,
+      setWindInputUnit,
       getDisplayTemperatureUnit,
       getInputTemperatureUnit,
       getDisplayRainUnit,
       getInputRainUnit,
+      getDisplayWindUnit,
+      getInputWindUnit,
       formatRain,
-      convertRainDepth
+      convertRainDepth,
+      convertWindSpeed
     });
   }
 })();

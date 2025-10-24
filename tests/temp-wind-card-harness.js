@@ -60,6 +60,11 @@ function buildTempWindStructure(doc) {
   tempSection.appendChild(gauge);
 
   const windSection = createElement(doc, 'div', ['wdash-wind']);
+  const windButton = createElement(doc, 'button', ['wdash-temp-unit-indicator', 'wdash-wind-unit-indicator']);
+  windButton.setAttribute('type', 'button');
+  windButton.setAttribute('data-wind-unit-indicator', 'true');
+  windButton.textContent = 'mi';
+  windSection.appendChild(windButton);
   const windCompass = createElement(doc, 'div', ['wdash-wind-compass']);
   const compassSvg = createElement(doc, 'svg', ['wdash-compass-svg']);
   const currentArrow = createElement(doc, 'g', ['wdash-compass-arrow', 'wdash-compass-arrow--current']);
@@ -78,6 +83,7 @@ function buildTempWindStructure(doc) {
   const speedWrap = createElement(doc, 'span', ['wdash-wind-speed']);
   speedWrap.appendChild(createSpan(doc, 'wdash-wind-speed-value'));
   const unit = createSpan(doc, 'wdash-unit');
+  unit.classList.add('wdash-wind-speed-unit');
   unit.textContent = 'mph';
   speedWrap.appendChild(unit);
   overlay.appendChild(speedWrap);
@@ -131,6 +137,44 @@ function formatNumber(value, decimals = 0) {
 
 function formatDegrees(value) {
   return Number.isFinite(value) ? `${value.toFixed(0)}°` : '--°';
+}
+
+function convertWindSpeed(value, fromUnit = 'mph', toUnit = 'mph') {
+  if (!Number.isFinite(value)) return NaN;
+  const from = (fromUnit || 'mph').toLowerCase();
+  const to = (toUnit || 'mph').toLowerCase();
+  const toMph = from === 'kph' ? value / 1.609344 : from === 'kts' ? value * 1.150779448023542 : value;
+  if (to === 'kph') return toMph * 1.609344;
+  if (to === 'kts') return toMph / 1.150779448023542;
+  return toMph;
+}
+
+function windUnitLabel(unit) {
+  switch ((unit || 'mph').toLowerCase()) {
+    case 'kph': return 'kph';
+    case 'kts': return 'kts';
+    default: return 'mph';
+  }
+}
+
+function windIndicatorText(unit) {
+  switch ((unit || 'mph').toLowerCase()) {
+    case 'kph': return 'km';
+    case 'kts': return 'kt';
+    default: return 'mi';
+  }
+}
+
+function formatWind(value, unit = 'mph', decimals = 1) {
+  const converted = convertWindSpeed(value, 'mph', unit);
+  if (!Number.isFinite(converted)) return '--';
+  return `${converted.toFixed(decimals)} ${windUnitLabel(unit)}`;
+}
+
+function formatAverageWind(direction, speed, unit) {
+  const dirText = direction || '--';
+  const speedText = formatWind(speed, unit);
+  return `${dirText} ${speedText}`;
 }
 
 function gaugeIndicator(temp) {
@@ -208,8 +252,10 @@ function assertEqual(actual, expected, message) {
   const card = document.querySelector('.wdash-card--temp-wind');
   const gaugeValueEl = card.querySelector('.wdash-gauge-value-number');
   const gaugeUnitButton = card.querySelector('.wdash-temp-unit-indicator');
+  const windUnitButton = card.querySelector('[data-wind-unit-indicator="true"]');
   assertEqual(gaugeValueEl.textContent, formatTemperature(dataA.outdoor.temperatureF), 'gauge value mismatch after dataA');
   assertEqual(gaugeUnitButton.textContent, '°F', 'unit indicator mismatch after dataA');
+  assertEqual(windUnitButton.textContent, windIndicatorText('mph'), 'wind unit indicator mismatch after dataA');
   assertEqual(card.querySelector('.wdash-temp-extrema--high .wdash-temp-extrema-value').textContent, formatTemperature(dataA.outdoor.dailyHighF), 'high value mismatch after dataA');
   assertEqual(card.querySelector('.wdash-temp-extrema--low .wdash-temp-extrema-value').textContent, formatTemperature(dataA.outdoor.dailyLowF), 'low value mismatch after dataA');
 
@@ -218,8 +264,8 @@ function assertEqual(actual, expected, message) {
     formatTemperature(dataA.outdoor.dewPointF),
     formatPercent(dataA.outdoor.humidity, 0),
     formatSigned(dataA.outdoor.trendFPerHour, 1, '°F/hr'),
-    `${dataA.wind.average.directionCardinal} ${formatNumber(dataA.wind.average.speedMph, 1)} mph`,
-    `${formatNumber(dataA.wind.dailyMaxGustMph, 1)} mph`
+    formatAverageWind(dataA.wind.average.directionCardinal, dataA.wind.average.speedMph, 'mph'),
+    `${formatWind(dataA.wind.dailyMaxGustMph, 'mph')}`
   ];
   const detailNodesA = card.querySelectorAll('.wdash-temp-wind-details .wdash-metric-value');
   detailNodesA.forEach((node, index) => {
@@ -237,7 +283,8 @@ function assertEqual(actual, expected, message) {
   const headingEl = card.querySelector('.wdash-wind-heading');
   assertEqual(headingEl.textContent, ` ${formatDegrees(dataA.wind.directionDegrees)}`, 'heading mismatch after dataA');
   assertEqual(card.querySelector('.wdash-wind-speed-value').textContent, formatNumber(dataA.wind.speedMph, 1), 'speed value mismatch after dataA');
-  assertEqual(card.querySelector('.wdash-wind-gust-value').textContent, `${formatNumber(dataA.wind.gustMph, 1)} mph`, 'gust value mismatch after dataA');
+  assertEqual(card.querySelector('.wdash-wind-speed-unit').textContent, 'mph', 'wind unit label mismatch after dataA');
+  assertEqual(card.querySelector('.wdash-wind-gust-value').textContent, formatWind(dataA.wind.gustMph, 'mph'), 'gust value mismatch after dataA');
 
   const compass = card.querySelector('.wdash-wind-compass');
   assertEqual(compass.getAttribute('aria-label'), `Wind direction SE ${formatDegrees(dataA.wind.directionDegrees)}`, 'aria label mismatch after dataA');
@@ -282,7 +329,7 @@ function assertEqual(actual, expected, message) {
   assertEqual(compass.getAttribute('aria-label'), `Wind direction NE ${formatDegrees(dataB.wind.directionDegrees)}`, 'aria label mismatch after dataB');
   assertEqual(currentArrow.style.transform, `rotate(${normalizeDegrees(dataB.wind.directionDegrees)}deg)`, 'current arrow rotation mismatch after dataB');
   assertEqual(avgArrow.style.display, 'none', 'avg arrow should be hidden for dataB');
-  assertEqual(card.querySelector('.wdash-wind-gust-value').textContent, `${formatNumber(dataB.wind.gustMph, 1)} mph`, 'gust mismatch after dataB');
+  assertEqual(card.querySelector('.wdash-wind-gust-value').textContent, formatWind(dataB.wind.gustMph, 'mph'), 'gust mismatch after dataB');
 
   const gaugeIndicatorAfter = card.querySelector('.wdash-gauge').style.getPropertyValue('--gauge-indicator');
   assertEqual(gaugeIndicatorAfter, gaugeIndicator(dataB.outdoor.temperatureF), 'gauge indicator mismatch after dataB');
@@ -358,6 +405,39 @@ function assertEqual(actual, expected, message) {
   assertEqual(detailNodesBackToC[1].textContent, formatTemperature(dataC.outdoor.dewPointF, 'C'), 'dew point mismatch after switching back to Celsius');
   assertEqual(detailNodesBackToC[2].textContent, formatPercent(dataC.outdoor.humidity, 0), 'humidity mismatch after switching back to Celsius');
   assertEqual(detailNodesBackToC[3].textContent, formatSigned(dataC.outdoor.trendFPerHour * (5 / 9), 1, '°C/hr'), 'trend mismatch after switching back to Celsius');
+
+  hooks.setWindDisplayUnit('kph');
+  updateTempWindCard();
+
+  assertEqual(windUnitButton.textContent, windIndicatorText('kph'), 'wind unit indicator mismatch after switching to kph');
+  assertEqual(card.querySelector('.wdash-wind-speed-value').textContent, formatNumber(convertWindSpeed(dataC.wind.speedMph, 'mph', 'kph'), 1), 'wind speed mismatch after switching to kph');
+  assertEqual(card.querySelector('.wdash-wind-speed-unit').textContent, 'kph', 'wind unit label mismatch after switching to kph');
+  assertEqual(card.querySelector('.wdash-wind-gust-value').textContent, formatWind(dataC.wind.gustMph, 'kph'), 'gust mismatch after switching to kph');
+
+  const detailNodesWindKph = card.querySelectorAll('.wdash-temp-wind-details .wdash-metric-value');
+  assertEqual(detailNodesWindKph[4].textContent, formatAverageWind(dataC.wind.average.directionCardinal, dataC.wind.average.speedMph, 'kph'), 'average wind mismatch after switching to kph');
+  assertEqual(detailNodesWindKph[5].textContent, formatWind(dataC.wind.dailyMaxGustMph, 'kph'), 'max gust mismatch after switching to kph');
+
+  hooks.setWindDisplayUnit('kts');
+  updateTempWindCard();
+
+  assertEqual(windUnitButton.textContent, windIndicatorText('kts'), 'wind unit indicator mismatch after switching to kts');
+  assertEqual(card.querySelector('.wdash-wind-speed-value').textContent, formatNumber(convertWindSpeed(dataC.wind.speedMph, 'mph', 'kts'), 1), 'wind speed mismatch after switching to kts');
+  assertEqual(card.querySelector('.wdash-wind-speed-unit').textContent, 'kts', 'wind unit label mismatch after switching to kts');
+  assertEqual(card.querySelector('.wdash-wind-gust-value').textContent, formatWind(dataC.wind.gustMph, 'kts'), 'gust mismatch after switching to kts');
+
+  const detailNodesWindKts = card.querySelectorAll('.wdash-temp-wind-details .wdash-metric-value');
+  assertEqual(detailNodesWindKts[4].textContent, formatAverageWind(dataC.wind.average.directionCardinal, dataC.wind.average.speedMph, 'kts'), 'average wind mismatch after switching to kts');
+  assertEqual(detailNodesWindKts[5].textContent, formatWind(dataC.wind.dailyMaxGustMph, 'kts'), 'max gust mismatch after switching to kts');
+
+  hooks.applyWindUnitsFromMetadata({ windUnits: { display: 'mph' }, windDisplayUnit: 'mph' });
+  updateTempWindCard();
+
+  assertEqual(windUnitButton.textContent, windIndicatorText('mph'), 'wind unit indicator mismatch after resetting to metadata mph');
+  assertEqual(card.querySelector('.wdash-wind-speed-unit').textContent, 'mph', 'wind unit label mismatch after resetting to metadata mph');
+
+  hooks.setWindDisplayUnit('mph');
+  updateTempWindCard();
 
   updateTempWindCard();
   assertEqual(card.querySelector('.wdash-gauge').style.getPropertyValue('--gauge-indicator'), gaugeIndicatorC, 'gauge indicator should remain stable on repeat update');

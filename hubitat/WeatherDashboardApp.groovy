@@ -90,6 +90,12 @@ def mainPage() {
             input name: "rainDisplayUnit", type: "enum", title: "Default dashboard rain depth unit", options: rainUnitOptions(), defaultValue: "in", required: true, submitOnChange: true, width: 6
         }
 
+        section("Wind speed units") {
+            paragraph "Tell the app which unit your weather devices report for wind and choose the dashboard's default display."
+            input name: "windInputUnit", type: "enum", title: "Weather device wind speed unit", options: windUnitOptions(), defaultValue: "mph", required: true, submitOnChange: true, width: 6
+            input name: "windDisplayUnit", type: "enum", title: "Default dashboard wind speed unit", options: windUnitOptions(), defaultValue: "mph", required: true, submitOnChange: true, width: 6
+        }
+
         section("Outdoor Air Quality (optional)") {
             attributeInputs("AQI", "attrOutdoorAQI", "aqi", deviceOptions)
             attributeInputs("AQI (24h Avg)", "attrOutdoorAQI24h", "aqi_avg_24h", deviceOptions)
@@ -282,6 +288,14 @@ private Map rainUnitOptions() {
     [
         'in': 'Inch (in)',
         'mm': 'Millimeter (mm)'
+    ]
+}
+
+private Map windUnitOptions() {
+    [
+        'mph': 'Miles per hour (mph)',
+        'kph': 'Kilometers per hour (kph)',
+        'kts': 'Knots (kts)'
     ]
 }
 
@@ -1122,9 +1136,10 @@ private Map captureRawReadings() {
     readings.indoorHumidity = readDecimalFor("attrIndoorHumidity")
     readings.indoorBattery = readDecimalFor("attrIndoorBattery")
 
-    readings.windSpeed = readDecimalFor("attrWindSpeed")
-    readings.windGust = readDecimalFor("attrWindGust")
-    readings.windDailyMax = readDecimalFor("attrWindGustMaxDaily")
+    String windInputUnit = windInputUnitSetting()
+    readings.windSpeed = convertInputWindSpeed(readDecimalFor("attrWindSpeed"), windInputUnit)
+    readings.windGust = convertInputWindSpeed(readDecimalFor("attrWindGust"), windInputUnit)
+    readings.windDailyMax = convertInputWindSpeed(readDecimalFor("attrWindGustMaxDaily"), windInputUnit)
     readings.windBattery = readDecimalFor("attrBatteryWind")
     readings.windDirectionDegrees = readDecimalFor("attrWindDirectionDegrees")
     readings.windDirectionText = readStringFor("attrWindDirection")
@@ -1692,6 +1707,21 @@ private Map buildMetadata(Date generated, TimeZone tz, String stationUpdatedAt, 
     if (rainUnits) {
         metadata.rainUnits = rainUnits
     }
+
+    String windInput = windInputUnitSetting()
+    String windDisplay = windDisplayUnitSetting()
+    Map windUnits = [:]
+    if (windInput) {
+        windUnits.input = windInput
+        metadata.windInputUnit = windInput
+    }
+    if (windDisplay) {
+        windUnits.display = windDisplay
+        metadata.windDisplayUnit = windDisplay
+    }
+    if (windUnits) {
+        metadata.windUnits = windUnits
+    }
     metadata
 }
 
@@ -1859,6 +1889,19 @@ private BigDecimal convertInputRainDepth(BigDecimal value, boolean inputIsMillim
     inputIsMillimeters ? millimetersToInches(value) : value
 }
 
+private BigDecimal convertInputWindSpeed(BigDecimal value, String inputUnit) {
+    if (value == null) return null
+    String normalized = normalizeWindUnitSetting(inputUnit) ?: 'mph'
+    switch (normalized) {
+        case 'kph':
+            return kphToMph(value)
+        case 'kts':
+            return knotsToMph(value)
+        default:
+            return value
+    }
+}
+
 private String rainInputUnitSetting() {
     normalizeRainUnitSetting(settings.rainInputUnit) ?: 'in'
 }
@@ -1876,6 +1919,36 @@ private String normalizeRainUnitSetting(Object raw) {
     if (['in', 'inch', 'inches'].contains(value)) return 'in'
     if (['mm', 'millimeter', 'millimeters'].contains(value)) return 'mm'
     return null
+}
+
+private String windInputUnitSetting() {
+    normalizeWindUnitSetting(settings.windInputUnit) ?: 'mph'
+}
+
+private String windDisplayUnitSetting() {
+    normalizeWindUnitSetting(settings.windDisplayUnit) ?: 'mph'
+}
+
+private String normalizeWindUnitSetting(Object raw) {
+    if (!(raw instanceof CharSequence)) {
+        return null
+    }
+    String value = raw.toString().trim().toLowerCase()
+    if (!value) return null
+    if (['mph', 'mi', 'miles', 'milesperhour', 'mileperhour'].contains(value)) return 'mph'
+    if (['kph', 'kmh', 'kmph', 'km', 'kilometer', 'kilometers', 'kilometersperhour', 'kilometerperhour'].contains(value)) return 'kph'
+    if (['kts', 'kt', 'kn', 'knot', 'knots'].contains(value)) return 'kts'
+    return null
+}
+
+private BigDecimal kphToMph(BigDecimal value) {
+    if (value == null) return null
+    (value / 1.609344G) as BigDecimal
+}
+
+private BigDecimal knotsToMph(BigDecimal value) {
+    if (value == null) return null
+    (value * 1.150779448023542G) as BigDecimal
 }
 
 private void updateWindHistory(BigDecimal speed, BigDecimal direction, long timestamp) {
