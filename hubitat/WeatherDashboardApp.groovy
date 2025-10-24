@@ -156,7 +156,6 @@ def mainPage() {
                 input name: "ambientTempAttr", type: "text", title: "Ambient temperature attribute", defaultValue: "temperature"
                 input name: "ambientHumidityAttr", type: "text", title: "Ambient humidity attribute", defaultValue: "humidity"
                 input name: "ambientBatteryAttr", type: "text", title: "Ambient battery attribute", defaultValue: "battery"
-                input name: "ambientTemperatureUnit", type: "text", title: "Ambient temperature unit label", defaultValue: "°F"
                 input name: "ambientHumidityUnit", type: "text", title: "Ambient humidity unit label", defaultValue: "%"
                 input name: "ambientRotationSeconds", type: "number", title: "Rotation interval (seconds)", defaultValue: 12, range: "3..120"
             }
@@ -1637,7 +1636,6 @@ def refreshWeatherData() {
     if (ambient?.sensors) {
         payload.ambientSensors = ambient.sensors
         if (ambient.rotationSeconds) payload.ambientRotationSeconds = ambient.rotationSeconds
-        if (ambient.temperatureUnit) payload.ambientTemperatureUnit = ambient.temperatureUnit
         if (ambient.humidityUnit) payload.ambientHumidityUnit = ambient.humidityUnit
     }
 
@@ -1748,7 +1746,6 @@ private Map buildAmbientSensorsPayload() {
     if (rotation < 3) {
         rotation = 3
     }
-    def tempUnit = settings.ambientTemperatureUnit ?: "°F"
     def humidityUnit = settings.ambientHumidityUnit ?: "%"
     boolean inputIsCelsius = temperatureInputUnitSetting() == 'C'
     String displayUnit = temperatureDisplayUnitSetting()
@@ -1782,7 +1779,6 @@ private Map buildAmbientSensorsPayload() {
     [
         sensors: entries,
         rotationSeconds: rotation,
-        temperatureUnit: tempUnit,
         humidityUnit: humidityUnit
     ]
 }

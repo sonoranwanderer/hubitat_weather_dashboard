@@ -220,7 +220,6 @@
     'ambientSensors',
     'totalAmbientSensors',
     'ambientRotationSeconds',
-    'ambientTemperatureUnit',
     'ambientHumidityUnit',
     'outdoorAirQuality',
     'indoorAirQuality',
@@ -1715,7 +1714,6 @@
     const ambientMeta = {
       total: null,
       rotation: null,
-      tempUnit: null,
       humidityUnit: null
     };
     let layout = null;
@@ -1727,7 +1725,6 @@
         const total = Number(segment.totalAmbientSensors);
         if (Number.isFinite(total)) ambientMeta.total = total;
         if (segment.ambientRotationSeconds != null) ambientMeta.rotation = segment.ambientRotationSeconds;
-        if (segment.ambientTemperatureUnit != null) ambientMeta.tempUnit = segment.ambientTemperatureUnit;
         if (segment.ambientHumidityUnit != null) ambientMeta.humidityUnit = segment.ambientHumidityUnit;
 
         segment.ambientSensors.forEach(sensor => {
@@ -1742,7 +1739,6 @@
           key === 'ambientSensors' ||
           key === 'totalAmbientSensors' ||
           key === 'ambientRotationSeconds' ||
-          key === 'ambientTemperatureUnit' ||
           key === 'ambientHumidityUnit' ||
           key === 'segmentIndex' ||
           key === 'segmentSize'
@@ -1775,7 +1771,6 @@
     }
 
     if (ambientMeta.rotation != null) result.ambientRotationSeconds = ambientMeta.rotation;
-    if (ambientMeta.tempUnit != null) result.ambientTemperatureUnit = ambientMeta.tempUnit;
     if (ambientMeta.humidityUnit != null) result.ambientHumidityUnit = ambientMeta.humidityUnit;
     if (Number.isFinite(ambientMeta.total)) result.totalAmbientSensors = ambientMeta.total;
 
