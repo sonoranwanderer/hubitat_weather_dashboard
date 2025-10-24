@@ -69,6 +69,20 @@
     displayOverride: false
   };
 
+  const PRESSURE_UNITS = ['inhg', 'mb'];
+  const PRESSURE_UNIT_STORAGE_KEYS = {
+    input: 'wdashPressureInputUnit',
+    display: 'wdashPressureDisplayUnit'
+  };
+
+  const pressureUnitState = {
+    input: readStoredPressureUnit('input') || 'inhg',
+    display: readStoredPressureUnit('display') || 'inhg',
+    metadataInput: null,
+    metadataDisplay: null,
+    displayOverride: false
+  };
+
   const tileMeasurementState = {
     width: null,
     height: null
@@ -528,6 +542,8 @@
 
     refreshTemperatureUnitUI();
     refreshRainUnitUI();
+    refreshWindUnitUI();
+    refreshPressureUnitUI();
 
     ensureDataTileObservers();
     watchForTileInsertions();
@@ -558,6 +574,7 @@
       applyTemperatureUnitsFromMetadata(payload?.metadata);
       applyRainUnitsFromMetadata(payload?.metadata);
       applyWindUnitsFromMetadata(payload?.metadata);
+      applyPressureUnitsFromMetadata(payload?.metadata);
       applyLayoutOverrides(payload?.metadata);
       applyScale();
 
@@ -2452,22 +2469,30 @@
     const rate = toNumber(pressure.trendInHgPerHour);
     const change = toNumber(pressure.changeInTrendWindow);
     const outlook = data.outlook24h || {};
+    const displayUnit = getDisplayPressureUnit();
+    const nextUnit = getOppositePressureUnit(displayUnit);
+    const indicatorLabelUnit = describePressureUnit(nextUnit);
+    const indicatorLabel = indicatorLabelUnit ? `Switch barometer display to ${indicatorLabelUnit}` : 'Switch barometer display';
+    const indicatorText = formatPressureUnitIndicator(displayUnit);
     const headerSummary = (() => {
       const source = outlook.shortSummary || outlook.summary || outlook.text;
       const limited = truncateText(source, 40);
       return limited || '';
     })();
     const mode = pressureMode === 'absolute' ? 'absolute' : 'relative';
-    const relative = escapeHtml(formatPressure(pressure.relativeInHg));
-    const absolute = escapeHtml(formatPressure(pressure.absoluteInHg));
+    const relative = escapeHtml(formatPressure(pressure.relativeInHg, { sourceUnit: 'inhg' }));
+    const absolute = escapeHtml(formatPressure(pressure.absoluteInHg, { sourceUnit: 'inhg' }));
+    const rateText = formatPressureChange(rate, { sourceUnit: 'inhg', perHour: true });
+    const changeText = formatPressureChange(change, { sourceUnit: 'inhg' });
     const stats = [
       { label: 'Tendency', value: trend },
-      { label: 'Rate', value: formatSigned(rate, 3, 'inHg/hr') },
-      { label: 'Change', value: formatSigned(change, 3, 'inHg') }
+      { label: 'Rate', value: rateText },
+      { label: 'Change', value: changeText }
     ];
 
     return `
       <section class="wdash-card wdash-card--pressure" data-pressure-mode="${mode}">
+        <button type="button" class="wdash-temp-unit-indicator wdash-pressure-unit-indicator" data-pressure-unit-indicator="true" aria-label="${escapeHtml(indicatorLabel)}" title="${escapeHtml(indicatorLabel)}">${escapeHtml(indicatorText)}</button>
         ${cardHeader(
           CARD_TITLES.pressure,
           data,
@@ -3079,6 +3104,7 @@
 
   function setupInteractiveComponents(container) {
     setupPressureToggle(container);
+    setupPressureUnitIndicator(container);
     setupAmbientControls(container);
     setupTempWindGaugeSizing(container);
     setupTemperatureUnitIndicator(container);
@@ -3173,6 +3199,55 @@
     const labelUnit = describeWindUnit(next);
     const label = labelUnit ? `Switch wind display to ${labelUnit}` : 'Switch wind display';
     const text = formatWindUnitIndicator(current);
+
+    buttons.forEach(button => {
+      button.textContent = text;
+      if (label) {
+        button.setAttribute('aria-label', label);
+        button.setAttribute('title', label);
+      } else {
+        button.removeAttribute('aria-label');
+        button.removeAttribute('title');
+      }
+    });
+  }
+
+  function setupPressureUnitIndicator(container) {
+    if (!container) return;
+    const indicator = container.querySelector('[data-pressure-unit-indicator="true"]');
+    if (!indicator) return;
+    if (indicator.dataset.pressureUnitListenerBound === 'true') {
+      syncPressureUnitIndicators();
+      return;
+    }
+
+    indicator.addEventListener('click', handlePressureIndicatorClick);
+    indicator.dataset.pressureUnitListenerBound = 'true';
+    syncPressureUnitIndicators();
+  }
+
+  function handlePressureIndicatorClick(event) {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
+    const next = getOppositePressureUnit(getDisplayPressureUnit());
+    setPressureDisplayUnit(next);
+  }
+
+  function refreshPressureUnitUI() {
+    syncPressureUnitIndicators();
+  }
+
+  function syncPressureUnitIndicators() {
+    const buttons = document.querySelectorAll('#' + DISPLAY_TILE_ID + ' [data-pressure-unit-indicator="true"]');
+    if (!buttons.length) return;
+    const current = getDisplayPressureUnit();
+    const next = getOppositePressureUnit(current);
+    const labelUnit = describePressureUnit(next);
+    const label = labelUnit ? `Switch barometer display to ${labelUnit}` : 'Switch barometer display';
+    const text = formatPressureUnitIndicator(current);
 
     buttons.forEach(button => {
       button.textContent = text;
@@ -3358,6 +3433,47 @@
     }
   }
 
+  function applyPressureUnitsFromMetadata(metadata) {
+    if (!metadata || typeof metadata !== 'object') return;
+
+    const unitsSource = isPlainObject(metadata.pressureUnits) ? metadata.pressureUnits : null;
+    const inputCandidate = unitsSource?.input ?? unitsSource?.source ?? unitsSource?.sensor ?? metadata.pressureInputUnit;
+    const displayCandidate = unitsSource?.display ?? unitsSource?.default ?? unitsSource?.output ?? metadata.pressureDisplayUnit;
+
+    const normalizedInput = normalizePressureUnit(inputCandidate);
+    const normalizedDisplay = normalizePressureUnit(displayCandidate);
+
+    let changed = false;
+
+    if (normalizedInput) {
+      pressureUnitState.metadataInput = normalizedInput;
+      if (normalizedInput !== pressureUnitState.input) {
+        pressureUnitState.input = normalizedInput;
+        persistPressureUnit('input', normalizedInput);
+        changed = true;
+      }
+    }
+
+    if (normalizedDisplay) {
+      const previousMetadataDisplay = pressureUnitState.metadataDisplay;
+      const metadataChanged = normalizedDisplay !== previousMetadataDisplay;
+      pressureUnitState.metadataDisplay = normalizedDisplay;
+      if (metadataChanged) {
+        pressureUnitState.displayOverride = false;
+      }
+      const overrideActive = pressureUnitState.displayOverride === true;
+      if ((!overrideActive || metadataChanged) && normalizedDisplay !== pressureUnitState.display) {
+        pressureUnitState.display = normalizedDisplay;
+        persistPressureUnit('display', normalizedDisplay);
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      refreshPressureUnitUI();
+    }
+  }
+
   function setTemperatureInputUnit(unit) {
     const normalized = normalizeTemperatureUnit(unit);
     if (!normalized || normalized === temperatureUnitState.input) {
@@ -3472,6 +3588,44 @@
     }
   }
 
+  function setPressureInputUnit(unit) {
+    const normalized = normalizePressureUnit(unit);
+    if (!normalized || normalized === pressureUnitState.input) {
+      refreshPressureUnitUI();
+      return;
+    }
+    pressureUnitState.input = normalized;
+    persistPressureUnit('input', normalized);
+    refreshPressureUnitUI();
+    if (!IS_TEST_ENV) {
+      safeRenderFromData();
+    }
+  }
+
+  function setPressureDisplayUnit(unit) {
+    const normalized = normalizePressureUnit(unit);
+    if (!normalized) {
+      refreshPressureUnitUI();
+      return;
+    }
+
+    if (normalized === pressureUnitState.display) {
+      const metadataDefault = pressureUnitState.metadataDisplay;
+      pressureUnitState.displayOverride = metadataDefault ? normalized !== metadataDefault : pressureUnitState.displayOverride;
+      refreshPressureUnitUI();
+      return;
+    }
+
+    const metadataDefault = pressureUnitState.metadataDisplay;
+    pressureUnitState.display = normalized;
+    pressureUnitState.displayOverride = metadataDefault ? normalized !== metadataDefault : true;
+    persistPressureUnit('display', normalized);
+    refreshPressureUnitUI();
+    if (!IS_TEST_ENV) {
+      safeRenderFromData();
+    }
+  }
+
   function getInputTemperatureUnit() {
     const normalized = normalizeTemperatureUnit(temperatureUnitState.input);
     return normalized || 'F';
@@ -3515,6 +3669,20 @@
     const index = WIND_UNITS.indexOf(normalized);
     if (index === -1) return 'mph';
     return WIND_UNITS[(index + 1) % WIND_UNITS.length];
+  }
+
+  function getInputPressureUnit() {
+    const normalized = normalizePressureUnit(pressureUnitState.input);
+    return normalized || 'inhg';
+  }
+
+  function getDisplayPressureUnit() {
+    const normalized = normalizePressureUnit(pressureUnitState.display);
+    return normalized || 'inhg';
+  }
+
+  function getOppositePressureUnit(unit) {
+    return normalizePressureUnit(unit) === 'mb' ? 'inhg' : 'mb';
   }
 
   function normalizeTemperatureUnit(value) {
@@ -3588,6 +3756,92 @@
     if (normalized === 'kts') return 'kts';
     if (normalized === 'mph') return 'mph';
     return '';
+  }
+
+  function normalizePressureUnit(value) {
+    const normalized = normalizePressureUnitForConversion(value);
+    if (!normalized) return null;
+    if (normalized === 'inhg' || normalized === 'mmhg') return 'inhg';
+    if (normalized === 'mb' || normalized === 'kpa') return 'mb';
+    return normalized === 'inhg' ? 'inhg' : null;
+  }
+
+  function describePressureUnit(unit) {
+    const normalized = normalizePressureUnit(unit);
+    if (normalized === 'mb') return 'millibars';
+    if (normalized === 'inhg') return 'inches of mercury';
+    return '';
+  }
+
+  function formatPressureUnitIndicator(unit) {
+    const normalized = normalizePressureUnit(unit);
+    if (normalized === 'mb') return 'mb';
+    if (normalized === 'inhg') return 'in';
+    return '';
+  }
+
+  function formatPressureUnitLabel(unit) {
+    const normalized = normalizePressureUnit(unit);
+    if (normalized === 'mb') return 'mb';
+    if (normalized === 'inhg') return 'inHg';
+    return '';
+  }
+
+  function pressureValueDecimals(unit) {
+    const normalized = normalizePressureUnit(unit);
+    return normalized === 'mb' ? 1 : 2;
+  }
+
+  function pressureChangeDecimals(unit) {
+    const normalized = normalizePressureUnit(unit);
+    return normalized === 'mb' ? 2 : 3;
+  }
+
+  function normalizePressureUnitForConversion(value) {
+    if (typeof value !== 'string') return null;
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) return null;
+    if (normalized === 'inhg' || normalized === 'in' || normalized === 'hg' || normalized === 'inch' || normalized === 'inches') return 'inhg';
+    if (normalized === 'mb' || normalized === 'mbar' || normalized === 'millibar' || normalized === 'millibars' || normalized === 'hpa' || normalized === 'hectopascal' || normalized === 'hectopascals') return 'mb';
+    if (normalized === 'kpa' || normalized === 'kilopascal' || normalized === 'kilopascals') return 'kpa';
+    if (normalized === 'mmhg' || normalized === 'mm') return 'mmhg';
+    return null;
+  }
+
+  function convertPressure(value, fromUnit, toUnit) {
+    const numeric = toNumber(value);
+    if (!Number.isFinite(numeric)) return NaN;
+    const fromNormalized = normalizePressureUnitForConversion(fromUnit) || 'inhg';
+    const toNormalized = normalizePressureUnitForConversion(toUnit) || 'inhg';
+
+    let valueInInHg;
+    switch (fromNormalized) {
+      case 'mb':
+        valueInInHg = numeric / 33.8638866667;
+        break;
+      case 'kpa':
+        valueInInHg = numeric / 3.3863886667;
+        break;
+      case 'mmhg':
+        valueInInHg = numeric / 25.4;
+        break;
+      case 'inhg':
+      default:
+        valueInInHg = numeric;
+        break;
+    }
+
+    switch (toNormalized) {
+      case 'mb':
+        return valueInInHg * 33.8638866667;
+      case 'kpa':
+        return valueInInHg * 3.3863886667;
+      case 'mmhg':
+        return valueInInHg * 25.4;
+      case 'inhg':
+      default:
+        return valueInInHg;
+    }
   }
 
   function readStoredTemperatureUnit(type) {
@@ -3669,6 +3923,36 @@
   function persistWindUnit(type, unit) {
     const key = WIND_UNIT_STORAGE_KEYS[type];
     const normalized = normalizeWindUnit(unit);
+    if (!key || !normalized) return;
+    try {
+      if (typeof window === 'undefined' || !window.localStorage) return;
+    } catch (e) {
+      return;
+    }
+    try {
+      window.localStorage.setItem(key, normalized);
+    } catch (err) { /* ignore */ }
+  }
+
+  function readStoredPressureUnit(type) {
+    const key = PRESSURE_UNIT_STORAGE_KEYS[type];
+    if (!key) return null;
+    try {
+      if (typeof window === 'undefined' || !window.localStorage) return null;
+    } catch (e) {
+      return null;
+    }
+    try {
+      const stored = window.localStorage.getItem(key);
+      return normalizePressureUnit(stored);
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function persistPressureUnit(type, unit) {
+    const key = PRESSURE_UNIT_STORAGE_KEYS[type];
+    const normalized = normalizePressureUnit(unit);
     if (!key || !normalized) return;
     try {
       if (typeof window === 'undefined' || !window.localStorage) return;
@@ -5994,7 +6278,7 @@
 .wdash-lightning-header-icon .wdash-lightning-bolt-svg { width: 30px; height: auto; transform: scaleY(1.15) rotate(10deg); transform-origin: center; filter: drop-shadow(0 4px 10px rgba(0,0,0,0.45)); }
 .wdash-card--rain { grid-area: rain; position: relative; }
 .wdash-rain-battery { display: inline-flex; align-items: center; justify-content: center; }
-.wdash-card--pressure { grid-area: pressure; }
+.wdash-card--pressure { grid-area: pressure; position: relative; }
 .wdash-card--solar { grid-area: solar; }
 .wdash-card--air { grid-area: air; gap: 8px; }
 .wdash-temp, .wdash-wind, .wdash-solar, .wdash-pressure { display: flex; flex-direction: column; gap: 10px; flex: 1; }
@@ -6015,6 +6299,7 @@
 .wdash-temp-unit-indicator { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.24); border-radius: 50%; color: #f5f9ff; font-size: 0.78rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; width: 27px; height: 27px; cursor: pointer; transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
 .wdash-temp-unit-indicator--gauge { position: absolute; top: 0; left: 0; transform: none; z-index: 2; }
 .wdash-wind-unit-indicator { position: absolute; top: 6px; right: 6px; z-index: 2; }
+.wdash-pressure-unit-indicator { position: absolute; left: 6px; bottom: 6px; z-index: 2; }
 .wdash-rain-unit-indicator { position: absolute; top: 6px; left: 6px; z-index: 2; }
 .wdash-temp-unit-indicator:hover { background: rgba(255,255,255,0.16); border-color: rgba(255,255,255,0.35); }
 .wdash-temp-unit-indicator:active { background: rgba(77,167,255,0.28); border-color: rgba(77,167,255,0.6); }
@@ -6412,9 +6697,32 @@
     return `${parts.valueText} ${unitText}`;
   }
 
-  function formatPressure(value) {
-    if (!Number.isFinite(value)) return '--';
-    return `${value.toFixed(2)} inHg`;
+  function formatPressure(value, options = {}) {
+    const sourceUnit = normalizePressureUnitForConversion(options.sourceUnit) || 'inhg';
+    const targetUnit = normalizePressureUnit(options.displayUnit) || getDisplayPressureUnit();
+    const numeric = toNumber(value);
+    if (!Number.isFinite(numeric)) return '--';
+    const converted = convertPressure(numeric, sourceUnit, targetUnit);
+    if (!Number.isFinite(converted)) return '--';
+    const decimalsInput = Number(options.decimals);
+    const decimals = Number.isFinite(decimalsInput) ? decimalsInput : pressureValueDecimals(targetUnit);
+    const label = formatPressureUnitLabel(targetUnit);
+    return `${converted.toFixed(decimals)} ${label}`;
+  }
+
+  function formatPressureChange(value, options = {}) {
+    const sourceUnit = normalizePressureUnitForConversion(options.sourceUnit) || 'inhg';
+    const targetUnit = normalizePressureUnit(options.displayUnit) || getDisplayPressureUnit();
+    const perHour = options.perHour === true;
+    const numeric = toNumber(value);
+    if (!Number.isFinite(numeric)) return '--';
+    const converted = convertPressure(numeric, sourceUnit, targetUnit);
+    if (!Number.isFinite(converted)) return '--';
+    const decimalsInput = Number(options.decimals);
+    const decimals = Number.isFinite(decimalsInput) ? decimalsInput : pressureChangeDecimals(targetUnit);
+    const unitLabel = formatPressureUnitLabel(targetUnit);
+    const suffix = perHour ? `${unitLabel}/hr` : unitLabel;
+    return formatSigned(converted, decimals, suffix);
   }
 
   function formatSigned(value, decimals = 1, suffix = '') {
@@ -6991,21 +7299,29 @@
       applyTemperatureUnitsFromMetadata,
       applyRainUnitsFromMetadata,
       applyWindUnitsFromMetadata,
+      applyPressureUnitsFromMetadata,
       setTemperatureDisplayUnit,
       setTemperatureInputUnit,
       setRainDisplayUnit,
       setRainInputUnit,
       setWindDisplayUnit,
       setWindInputUnit,
+      setPressureDisplayUnit,
+      setPressureInputUnit,
       getDisplayTemperatureUnit,
       getInputTemperatureUnit,
       getDisplayRainUnit,
       getInputRainUnit,
       getDisplayWindUnit,
       getInputWindUnit,
+      getDisplayPressureUnit,
+      getInputPressureUnit,
       formatRain,
       convertRainDepth,
-      convertWindSpeed
+      convertWindSpeed,
+      formatPressure,
+      formatPressureChange,
+      convertPressure
     });
   }
 })();

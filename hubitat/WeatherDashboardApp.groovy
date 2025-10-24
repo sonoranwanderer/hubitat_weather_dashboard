@@ -96,6 +96,12 @@ def mainPage() {
             input name: "windDisplayUnit", type: "enum", title: "Default dashboard wind speed unit", options: windUnitOptions(), defaultValue: "mph", required: true, submitOnChange: true, width: 6
         }
 
+        section("Pressure units") {
+            paragraph "Tell the app which unit your barometer reports and choose the dashboard's default display."
+            input name: "pressureInputUnit", type: "enum", title: "Weather device pressure unit", options: pressureUnitOptions(), defaultValue: "inhg", required: true, submitOnChange: true, width: 6
+            input name: "pressureDisplayUnit", type: "enum", title: "Default dashboard pressure unit", options: pressureUnitOptions(), defaultValue: "inhg", required: true, submitOnChange: true, width: 6
+        }
+
         section("Outdoor Air Quality (optional)") {
             attributeInputs("AQI", "attrOutdoorAQI", "aqi", deviceOptions)
             attributeInputs("AQI (24h Avg)", "attrOutdoorAQI24h", "aqi_avg_24h", deviceOptions)
@@ -296,6 +302,13 @@ private Map windUnitOptions() {
         'mph': 'Miles per hour (mph)',
         'kph': 'Kilometers per hour (kph)',
         'kts': 'Knots (kts)'
+    ]
+}
+
+private Map pressureUnitOptions() {
+    [
+        'inhg': 'Inches of mercury (inHg)',
+        'mb'  : 'Millibars (mb)'
     ]
 }
 
@@ -1144,8 +1157,9 @@ private Map captureRawReadings() {
     readings.windDirectionDegrees = readDecimalFor("attrWindDirectionDegrees")
     readings.windDirectionText = readStringFor("attrWindDirection")
 
-    readings.pressureRelative = readPressureSample("attrPressure")
-    readings.pressureAbsolute = readPressureSample("attrAbsolutePressure")
+    String pressureInputUnit = pressureInputUnitSetting()
+    readings.pressureRelative = normalizePressureSample(readPressureSample("attrPressure"), pressureInputUnit)
+    readings.pressureAbsolute = normalizePressureSample(readPressureSample("attrAbsolutePressure"), pressureInputUnit)
 
     boolean rainInputIsMillimeters = rainInputUnitSetting() == 'mm'
     readings.rain = [
@@ -1722,6 +1736,21 @@ private Map buildMetadata(Date generated, TimeZone tz, String stationUpdatedAt, 
     if (windUnits) {
         metadata.windUnits = windUnits
     }
+
+    String pressureInput = pressureInputUnitSetting()
+    String pressureDisplay = pressureDisplayUnitSetting()
+    Map pressureUnits = [:]
+    if (pressureInput) {
+        pressureUnits.input = pressureInput
+        metadata.pressureInputUnit = pressureInput
+    }
+    if (pressureDisplay) {
+        pressureUnits.display = pressureDisplay
+        metadata.pressureDisplayUnit = pressureDisplay
+    }
+    if (pressureUnits) {
+        metadata.pressureUnits = pressureUnits
+    }
     metadata
 }
 
@@ -1939,6 +1968,78 @@ private String normalizeWindUnitSetting(Object raw) {
     if (['kph', 'kmh', 'kmph', 'km', 'kilometer', 'kilometers', 'kilometersperhour', 'kilometerperhour'].contains(value)) return 'kph'
     if (['kts', 'kt', 'kn', 'knot', 'knots'].contains(value)) return 'kts'
     return null
+}
+
+private String pressureInputUnitSetting() {
+    normalizePressureUnitSetting(settings.pressureInputUnit) ?: 'inhg'
+}
+
+private String pressureDisplayUnitSetting() {
+    normalizePressureUnitSetting(settings.pressureDisplayUnit) ?: 'inhg'
+}
+
+private String normalizePressureUnitSetting(Object raw) {
+    if (!(raw instanceof CharSequence)) {
+        return null
+    }
+    String value = raw.toString().trim().toLowerCase()
+    if (!value) return null
+    if (['inhg', 'in', 'hg', 'inch', 'inches'].contains(value)) return 'inhg'
+    if (['mb', 'mbar', 'millibar', 'millibars', 'hpa', 'hectopascal', 'hectopascals'].contains(value)) return 'mb'
+    return null
+}
+
+private String normalizePressureSensorUnit(Object raw) {
+    if (!(raw instanceof CharSequence)) {
+        return null
+    }
+    String value = raw.toString().trim().toLowerCase()
+    if (!value) return null
+    if (['inhg', 'in', 'hg', 'inch', 'inches'].contains(value)) return 'inhg'
+    if (['mb', 'mbar', 'millibar', 'millibars', 'hpa', 'hectopascal', 'hectopascals'].contains(value)) return 'mb'
+    if (['kpa', 'kilopascal', 'kilopascals'].contains(value)) return 'kpa'
+    if (['mmhg', 'mm'].contains(value)) return 'mmhg'
+    return null
+}
+
+private BigDecimal convertPressureToInHg(BigDecimal value, String unit) {
+    if (value == null) return null
+    String normalized = (unit ?: 'inhg').toString().trim().toLowerCase()
+    switch (normalized) {
+        case 'inhg':
+        case 'in':
+        case 'hg':
+        case 'inch':
+        case 'inches':
+            return value
+        case 'mb':
+        case 'mbar':
+        case 'millibar':
+        case 'millibars':
+        case 'hpa':
+        case 'hectopascal':
+        case 'hectopascals':
+            return value / 33.8638866667G
+        case 'kpa':
+        case 'kilopascal':
+        case 'kilopascals':
+            return value / 3.3863886667G
+        case 'mmhg':
+        case 'mm':
+            return value / 25.4G
+        default:
+            return value
+    }
+}
+
+private Map normalizePressureSample(Map sample, String configuredUnit) {
+    Map raw = (sample instanceof Map) ? sample : [:]
+    BigDecimal value = toBigDecimal(raw.value)
+    String rawUnit = raw.unit
+    String sensorUnit = normalizePressureSensorUnit(rawUnit)
+    String fallbackUnit = normalizePressureUnitSetting(configuredUnit) ?: 'inhg'
+    BigDecimal converted = convertPressureToInHg(value, sensorUnit ?: fallbackUnit)
+    return [value: converted, unit: 'inHg']
 }
 
 private BigDecimal kphToMph(BigDecimal value) {
