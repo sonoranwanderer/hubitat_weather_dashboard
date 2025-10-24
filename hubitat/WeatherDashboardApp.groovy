@@ -102,6 +102,12 @@ def mainPage() {
             input name: "pressureDisplayUnit", type: "enum", title: "Default dashboard pressure unit", options: pressureUnitOptions(), defaultValue: "inhg", required: true, submitOnChange: true, width: 6
         }
 
+        section("Lightning distance units") {
+            paragraph "Tell the app which unit your lightning sensor reports and choose the dashboard's default display."
+            input name: "lightningInputUnit", type: "enum", title: "Weather device lightning distance unit", options: lightningUnitOptions(), defaultValue: "mi", required: true, submitOnChange: true, width: 6
+            input name: "lightningDisplayUnit", type: "enum", title: "Default dashboard lightning distance unit", options: lightningUnitOptions(), defaultValue: "mi", required: true, submitOnChange: true, width: 6
+        }
+
         section("Outdoor Air Quality (optional)") {
             attributeInputs("AQI", "attrOutdoorAQI", "aqi", deviceOptions)
             attributeInputs("AQI (24h Avg)", "attrOutdoorAQI24h", "aqi_avg_24h", deviceOptions)
@@ -309,6 +315,13 @@ private Map pressureUnitOptions() {
     [
         'inhg': 'Inches of mercury (inHg)',
         'mb'  : 'Millibars (mb)'
+    ]
+}
+
+private Map lightningUnitOptions() {
+    [
+        'mi': 'Miles (mi)',
+        'km': 'Kilometers (km)'
     ]
 }
 
@@ -1172,7 +1185,6 @@ private Map captureRawReadings() {
         yearly : convertInputRainDepth(readDecimalFor("attrRainYearly"), rainInputIsMillimeters),
         battery: readDecimalFor("attrBatteryRain")
     ]
-
     readings.solar = [
         uvIndex       : readDecimalFor("attrUVIndex"),
         uvColor       : readStringFor("attrUVColor"),
@@ -1208,9 +1220,10 @@ private Map captureRawReadings() {
         battery      : readDecimalFor("attrIndoorAQIBattery")
     ]
 
+    String lightningInputUnit = lightningInputUnitSetting()
     readings.lightning = [
         count  : readDecimalFor("attrLightningCount"),
-        distance: readDecimalFor("attrLightningDistance"),
+        distance: convertInputLightningDistance(readDecimalFor("attrLightningDistance"), lightningInputUnit),
         time   : readStringFor("attrLightningTime"),
         battery: readDecimalFor("attrLightningBattery")
     ]
@@ -1595,7 +1608,12 @@ def refreshWeatherData() {
 
     Map lightning = [:]
     if (readings.lightning?.count != null) lightning.count = readings.lightning.count
-    if (readings.lightning?.distance != null) lightning.distance = readings.lightning.distance
+    if (readings.lightning?.distance != null) {
+        BigDecimal miles = round(readings.lightning.distance, 1)
+        lightning.distanceMi = miles
+        lightning.distance = miles
+        lightning.distanceKm = round(milesToKilometers(readings.lightning.distance), 1)
+    }
     if (readings.lightning?.time) lightning.time = readings.lightning.time
     if (readings.lightning?.battery != null) lightning.battery = readings.lightning.battery
     if (lightning) {
@@ -1750,6 +1768,21 @@ private Map buildMetadata(Date generated, TimeZone tz, String stationUpdatedAt, 
     }
     if (pressureUnits) {
         metadata.pressureUnits = pressureUnits
+    }
+
+    String lightningInput = lightningInputUnitSetting()
+    String lightningDisplay = lightningDisplayUnitSetting()
+    Map lightningUnits = [:]
+    if (lightningInput) {
+        lightningUnits.input = lightningInput
+        metadata.lightningInputUnit = lightningInput
+    }
+    if (lightningDisplay) {
+        lightningUnits.display = lightningDisplay
+        metadata.lightningDisplayUnit = lightningDisplay
+    }
+    if (lightningUnits) {
+        metadata.lightningUnits = lightningUnits
     }
     metadata
 }
@@ -2050,6 +2083,46 @@ private BigDecimal kphToMph(BigDecimal value) {
 private BigDecimal knotsToMph(BigDecimal value) {
     if (value == null) return null
     (value * 1.150779448023542G) as BigDecimal
+}
+
+private String lightningInputUnitSetting() {
+    normalizeLightningUnitSetting(settings.lightningInputUnit) ?: 'mi'
+}
+
+private String lightningDisplayUnitSetting() {
+    normalizeLightningUnitSetting(settings.lightningDisplayUnit) ?: 'mi'
+}
+
+private String normalizeLightningUnitSetting(Object raw) {
+    if (!(raw instanceof CharSequence)) {
+        return null
+    }
+    String value = raw.toString().trim().toLowerCase()
+    if (!value) return null
+    if (['mi', 'mile', 'miles'].contains(value)) return 'mi'
+    if (['km', 'kilometer', 'kilometers'].contains(value)) return 'km'
+    return null
+}
+
+private BigDecimal convertInputLightningDistance(BigDecimal value, String inputUnit) {
+    if (value == null) return null
+    String normalized = normalizeLightningUnitSetting(inputUnit) ?: 'mi'
+    switch (normalized) {
+        case 'km':
+            return kilometersToMiles(value)
+        default:
+            return value
+    }
+}
+
+private BigDecimal kilometersToMiles(BigDecimal value) {
+    if (value == null) return null
+    (value / 1.609344G) as BigDecimal
+}
+
+private BigDecimal milesToKilometers(BigDecimal value) {
+    if (value == null) return null
+    (value * 1.609344G) as BigDecimal
 }
 
 private void updateWindHistory(BigDecimal speed, BigDecimal direction, long timestamp) {

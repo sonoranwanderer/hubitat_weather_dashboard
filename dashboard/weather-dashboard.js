@@ -83,6 +83,20 @@
     displayOverride: false
   };
 
+  const LIGHTNING_UNITS = ['mi', 'km'];
+  const LIGHTNING_UNIT_STORAGE_KEYS = {
+    input: 'wdashLightningInputUnit',
+    display: 'wdashLightningDisplayUnit'
+  };
+
+  const lightningUnitState = {
+    input: readStoredLightningUnit('input') || 'mi',
+    display: readStoredLightningUnit('display') || 'mi',
+    metadataInput: null,
+    metadataDisplay: null,
+    displayOverride: false
+  };
+
   const tileMeasurementState = {
     width: null,
     height: null
@@ -544,6 +558,7 @@
     refreshRainUnitUI();
     refreshWindUnitUI();
     refreshPressureUnitUI();
+    refreshLightningUnitUI();
 
     ensureDataTileObservers();
     watchForTileInsertions();
@@ -575,6 +590,7 @@
       applyRainUnitsFromMetadata(payload?.metadata);
       applyWindUnitsFromMetadata(payload?.metadata);
       applyPressureUnitsFromMetadata(payload?.metadata);
+      applyLightningUnitsFromMetadata(payload?.metadata);
       applyLayoutOverrides(payload?.metadata);
       applyScale();
 
@@ -2339,12 +2355,18 @@
     const eventUtc = eventParts ? convertLocalPartsToUtc(eventParts, zone) : NaN;
     const daysAgo = Number.isFinite(eventUtc) ? calculateDaysAgo(nowUtc, eventUtc) : null;
 
-    const distance = toNumber(lightning.distance);
+    const distanceMiles = toNumber(lightning.distanceMi ?? lightning.distance);
+    const distanceKilometers = toNumber(lightning.distanceKm);
     const count = toNumber(lightning.count);
     const battery = toNumber(lightning.battery);
 
     const daysAgoDisplay = Number.isFinite(daysAgo) ? String(daysAgo) : '--';
-    const distanceDisplay = Number.isFinite(distance) ? `${formatNumber(distance, 1)} mi` : '--';
+    let distanceDisplay = '--';
+    if (Number.isFinite(distanceMiles)) {
+      distanceDisplay = formatLightningDistance(distanceMiles, { sourceUnit: 'mi' });
+    } else if (Number.isFinite(distanceKilometers)) {
+      distanceDisplay = formatLightningDistance(distanceKilometers, { sourceUnit: 'km' });
+    }
     const countDisplay = Number.isFinite(count) ? formatNumber(count, 0) : '--';
     const batteryIcon = renderBatteryIcon({
       level: Number.isFinite(battery) ? clamp(battery, 0, 100) : null,
@@ -2355,8 +2377,17 @@
         : 'Lightning sensor battery level unavailable'
     });
 
+    const displayUnit = getDisplayLightningUnit();
+    const nextUnit = getOppositeLightningUnit(displayUnit);
+    const nextUnitLabel = describeLightningUnit(nextUnit);
+    const indicatorLabel = nextUnitLabel
+      ? `Switch lightning distance display to ${nextUnitLabel}`
+      : 'Switch lightning distance display';
+    const indicatorText = formatLightningUnitIndicator(displayUnit);
+
     return `
       <section class="wdash-card wdash-card--lightning">
+        <button type="button" class="wdash-temp-unit-indicator wdash-lightning-unit-indicator" data-lightning-unit-indicator="true" aria-label="${escapeHtml(indicatorLabel)}" title="${escapeHtml(indicatorLabel)}">${escapeHtml(indicatorText)}</button>
         <header class="wdash-card-header wdash-card-header--lightning">
           <h3>Lightning</h3>
           <span class="wdash-lightning-header-icon" aria-hidden="true">${renderLightningBoltIcon()}</span>
@@ -3110,6 +3141,7 @@
     setupTemperatureUnitIndicator(container);
     setupWindUnitIndicator(container);
     setupRainUnitIndicator(container);
+    setupLightningUnitIndicator(container);
     // ensure ambient ring sizing is applied on setup
     applyAmbientRingSizing();
     // also size outdoor gauge/compass
@@ -3310,6 +3342,55 @@
     });
   }
 
+  function setupLightningUnitIndicator(container) {
+    if (!container) return;
+    const indicator = container.querySelector('[data-lightning-unit-indicator="true"]');
+    if (!indicator) return;
+    if (indicator.dataset.lightningUnitListenerBound === 'true') {
+      syncLightningUnitIndicators();
+      return;
+    }
+
+    indicator.addEventListener('click', handleLightningIndicatorClick);
+    indicator.dataset.lightningUnitListenerBound = 'true';
+    syncLightningUnitIndicators();
+  }
+
+  function handleLightningIndicatorClick(event) {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
+    const next = getOppositeLightningUnit(getDisplayLightningUnit());
+    setLightningDisplayUnit(next);
+  }
+
+  function refreshLightningUnitUI() {
+    syncLightningUnitIndicators();
+  }
+
+  function syncLightningUnitIndicators() {
+    const buttons = document.querySelectorAll('#' + DISPLAY_TILE_ID + ' [data-lightning-unit-indicator="true"]');
+    if (!buttons.length) return;
+    const current = getDisplayLightningUnit();
+    const next = getOppositeLightningUnit(current);
+    const labelUnit = describeLightningUnit(next);
+    const label = labelUnit ? `Switch lightning distance display to ${labelUnit}` : 'Switch lightning distance display';
+    const text = formatLightningUnitIndicator(current);
+
+    buttons.forEach(button => {
+      button.textContent = text;
+      if (label) {
+        button.setAttribute('aria-label', label);
+        button.setAttribute('title', label);
+      } else {
+        button.removeAttribute('aria-label');
+        button.removeAttribute('title');
+      }
+    });
+  }
+
   function applyTemperatureUnitsFromMetadata(metadata) {
     if (!metadata || typeof metadata !== 'object') return;
 
@@ -3474,6 +3555,47 @@
     }
   }
 
+  function applyLightningUnitsFromMetadata(metadata) {
+    if (!metadata || typeof metadata !== 'object') return;
+
+    const unitsSource = isPlainObject(metadata.lightningUnits) ? metadata.lightningUnits : null;
+    const inputCandidate = unitsSource?.input ?? unitsSource?.source ?? unitsSource?.sensor ?? metadata.lightningInputUnit;
+    const displayCandidate = unitsSource?.display ?? unitsSource?.default ?? unitsSource?.output ?? metadata.lightningDisplayUnit;
+
+    const normalizedInput = normalizeLightningUnit(inputCandidate);
+    const normalizedDisplay = normalizeLightningUnit(displayCandidate);
+
+    let changed = false;
+
+    if (normalizedInput) {
+      lightningUnitState.metadataInput = normalizedInput;
+      if (normalizedInput !== lightningUnitState.input) {
+        lightningUnitState.input = normalizedInput;
+        persistLightningUnit('input', normalizedInput);
+        changed = true;
+      }
+    }
+
+    if (normalizedDisplay) {
+      const previousMetadataDisplay = lightningUnitState.metadataDisplay;
+      const metadataChanged = normalizedDisplay !== previousMetadataDisplay;
+      lightningUnitState.metadataDisplay = normalizedDisplay;
+      if (metadataChanged) {
+        lightningUnitState.displayOverride = false;
+      }
+      const overrideActive = lightningUnitState.displayOverride === true;
+      if ((!overrideActive || metadataChanged) && normalizedDisplay !== lightningUnitState.display) {
+        lightningUnitState.display = normalizedDisplay;
+        persistLightningUnit('display', normalizedDisplay);
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      refreshLightningUnitUI();
+    }
+  }
+
   function setTemperatureInputUnit(unit) {
     const normalized = normalizeTemperatureUnit(unit);
     if (!normalized || normalized === temperatureUnitState.input) {
@@ -3626,6 +3748,44 @@
     }
   }
 
+  function setLightningInputUnit(unit) {
+    const normalized = normalizeLightningUnit(unit);
+    if (!normalized || normalized === lightningUnitState.input) {
+      refreshLightningUnitUI();
+      return;
+    }
+    lightningUnitState.input = normalized;
+    persistLightningUnit('input', normalized);
+    refreshLightningUnitUI();
+    if (!IS_TEST_ENV) {
+      safeRenderFromData();
+    }
+  }
+
+  function setLightningDisplayUnit(unit) {
+    const normalized = normalizeLightningUnit(unit);
+    if (!normalized) {
+      refreshLightningUnitUI();
+      return;
+    }
+
+    if (normalized === lightningUnitState.display) {
+      const metadataDefault = lightningUnitState.metadataDisplay;
+      lightningUnitState.displayOverride = metadataDefault ? normalized !== metadataDefault : lightningUnitState.displayOverride;
+      refreshLightningUnitUI();
+      return;
+    }
+
+    const metadataDefault = lightningUnitState.metadataDisplay;
+    lightningUnitState.display = normalized;
+    lightningUnitState.displayOverride = metadataDefault ? normalized !== metadataDefault : true;
+    persistLightningUnit('display', normalized);
+    refreshLightningUnitUI();
+    if (!IS_TEST_ENV) {
+      safeRenderFromData();
+    }
+  }
+
   function getInputTemperatureUnit() {
     const normalized = normalizeTemperatureUnit(temperatureUnitState.input);
     return normalized || 'F';
@@ -3685,6 +3845,20 @@
     return normalizePressureUnit(unit) === 'mb' ? 'inhg' : 'mb';
   }
 
+  function getInputLightningUnit() {
+    const normalized = normalizeLightningUnit(lightningUnitState.input);
+    return normalized || 'mi';
+  }
+
+  function getDisplayLightningUnit() {
+    const normalized = normalizeLightningUnit(lightningUnitState.display);
+    return normalized || 'mi';
+  }
+
+  function getOppositeLightningUnit(unit) {
+    return normalizeLightningUnit(unit) === 'km' ? 'mi' : 'km';
+  }
+
   function normalizeTemperatureUnit(value) {
     if (typeof value !== 'string') return null;
     const normalized = value.trim().toUpperCase();
@@ -3722,6 +3896,29 @@
   function formatRainUnitIndicator(unit) {
     const normalized = normalizeRainUnit(unit);
     return normalized || '';
+  }
+
+  function normalizeLightningUnit(value) {
+    if (typeof value !== 'string') return null;
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) return null;
+    if (normalized === 'mi' || normalized === 'mile' || normalized === 'miles') return 'mi';
+    if (normalized === 'km' || normalized === 'kilometer' || normalized === 'kilometers') return 'km';
+    return null;
+  }
+
+  function describeLightningUnit(unit) {
+    const normalized = normalizeLightningUnit(unit);
+    if (normalized === 'km') return 'kilometers';
+    if (normalized === 'mi') return 'miles';
+    return '';
+  }
+
+  function formatLightningUnitIndicator(unit) {
+    const normalized = normalizeLightningUnit(unit);
+    if (normalized === 'km') return 'km';
+    if (normalized === 'mi') return 'mi';
+    return '';
   }
 
   function normalizeWindUnit(value) {
@@ -3964,6 +4161,36 @@
     } catch (err) { /* ignore */ }
   }
 
+  function readStoredLightningUnit(type) {
+    const key = LIGHTNING_UNIT_STORAGE_KEYS[type];
+    if (!key) return null;
+    try {
+      if (typeof window === 'undefined' || !window.localStorage) return null;
+    } catch (e) {
+      return null;
+    }
+    try {
+      const stored = window.localStorage.getItem(key);
+      return normalizeLightningUnit(stored);
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function persistLightningUnit(type, unit) {
+    const key = LIGHTNING_UNIT_STORAGE_KEYS[type];
+    const normalized = normalizeLightningUnit(unit);
+    if (!key || !normalized) return;
+    try {
+      if (typeof window === 'undefined' || !window.localStorage) return;
+    } catch (e) {
+      return;
+    }
+    try {
+      window.localStorage.setItem(key, normalized);
+    } catch (err) { /* ignore */ }
+  }
+
   function resolveTemperaturePair(valueF, valueC) {
     const preferred = getInputTemperatureUnit();
     const f = toNumber(valueF);
@@ -4059,6 +4286,21 @@
     }
     if (from === 'mm' && to === 'in') {
       return numeric / 25.4;
+    }
+    return numeric;
+  }
+
+  function convertLightningDistance(value, fromUnit, toUnit) {
+    const numeric = toNumber(value);
+    if (!Number.isFinite(numeric)) return NaN;
+    const from = normalizeLightningUnit(fromUnit) || 'mi';
+    const to = normalizeLightningUnit(toUnit) || 'mi';
+    if (from === to) return numeric;
+    if (from === 'mi' && to === 'km') {
+      return numeric * 1.609344;
+    }
+    if (from === 'km' && to === 'mi') {
+      return numeric / 1.609344;
     }
     return numeric;
   }
@@ -6271,7 +6513,7 @@
 .wdash-card--temp-wind .wdash-metric-row--gauge { max-width: 100%; }
 .wdash-card--temp-wind .wdash-temp-wind-main { padding-block: 2px; position: relative; z-index: 1; }
 .wdash-card--ambient { grid-area: ambient; gap: 12px; align-items: stretch; }
-.wdash-card--lightning { grid-area: lightning; gap: 8px; align-items: stretch; min-width: 0; display: none; }
+.wdash-card--lightning { grid-area: lightning; gap: 8px; align-items: stretch; min-width: 0; display: none; position: relative; }
 .wdash[data-layout-has-lightning="true"] .wdash-card--lightning { display: flex; }
 .wdash-card-header--lightning { align-items: flex-start; }
 .wdash-lightning-header-icon { display: flex; align-items: flex-start; justify-content: flex-end; margin-left: auto; }
@@ -6301,6 +6543,7 @@
 .wdash-wind-unit-indicator { position: absolute; top: 6px; right: 6px; z-index: 2; }
 .wdash-pressure-unit-indicator { position: absolute; left: 6px; bottom: 6px; z-index: 2; }
 .wdash-rain-unit-indicator { position: absolute; top: 6px; left: 6px; z-index: 2; }
+.wdash-lightning-unit-indicator { position: absolute; left: 6px; bottom: 6px; z-index: 2; }
 .wdash-temp-unit-indicator:hover { background: rgba(255,255,255,0.16); border-color: rgba(255,255,255,0.35); }
 .wdash-temp-unit-indicator:active { background: rgba(77,167,255,0.28); border-color: rgba(77,167,255,0.6); }
 .wdash-gauge-label { font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.12em; color: #9badcf; }
@@ -6695,6 +6938,19 @@
     if (!parts.isValid) return '--';
     const unitText = parts.perHour ? `${parts.unitText}/hr` : parts.unitText;
     return `${parts.valueText} ${unitText}`;
+  }
+
+  function formatLightningDistance(value, options = {}) {
+    const decimalsInput = Number(options.decimals);
+    const decimals = Number.isFinite(decimalsInput) ? decimalsInput : 1;
+    const sourceUnit = normalizeLightningUnit(options.sourceUnit) || 'mi';
+    const targetUnit = normalizeLightningUnit(options.unit) || getDisplayLightningUnit();
+    const numeric = toNumber(value);
+    if (!Number.isFinite(numeric)) return '--';
+    const converted = convertLightningDistance(numeric, sourceUnit, targetUnit);
+    if (!Number.isFinite(converted)) return '--';
+    const unitLabel = targetUnit === 'km' ? 'km' : 'mi';
+    return `${converted.toFixed(decimals)} ${unitLabel}`;
   }
 
   function formatPressure(value, options = {}) {
@@ -7300,6 +7556,7 @@
       applyRainUnitsFromMetadata,
       applyWindUnitsFromMetadata,
       applyPressureUnitsFromMetadata,
+      applyLightningUnitsFromMetadata,
       setTemperatureDisplayUnit,
       setTemperatureInputUnit,
       setRainDisplayUnit,
@@ -7308,6 +7565,8 @@
       setWindInputUnit,
       setPressureDisplayUnit,
       setPressureInputUnit,
+      setLightningDisplayUnit,
+      setLightningInputUnit,
       getDisplayTemperatureUnit,
       getInputTemperatureUnit,
       getDisplayRainUnit,
@@ -7316,12 +7575,16 @@
       getInputWindUnit,
       getDisplayPressureUnit,
       getInputPressureUnit,
+      getDisplayLightningUnit,
+      getInputLightningUnit,
       formatRain,
       convertRainDepth,
       convertWindSpeed,
       formatPressure,
       formatPressureChange,
-      convertPressure
+      convertPressure,
+      convertLightningDistance,
+      formatLightningDistance
     });
   }
 })();
