@@ -404,6 +404,26 @@
   let pressureMode = 'relative';
   let lastSuccessfulPayload = null;
 
+  function isDashboardValueErrorMessage(message) {
+    if (!message) return false;
+    const text = String(message);
+    return (
+      text.includes("Cannot set properties of undefined (setting 'value')") ||
+      text.includes('value is not defined') ||
+      text.includes("can't access property \"value\"")
+    );
+  }
+
+  function isDashboardValueErrorSource(filename) {
+    if (!filename) return true;
+    const source = String(filename);
+    if (source.indexOf('app.js') !== -1) return true;
+    if (source.indexOf('access_token=') !== -1) return true;
+    if (/\/tile-\d+/i.test(source)) return true;
+    if (/\btileId=/i.test(source)) return true;
+    return false;
+  }
+
     if (!IS_TEST_ENV) {
       patchDashboardGlitches();
       whenDomReady(init);
@@ -421,6 +441,24 @@
     if (typeof window === 'undefined') return;
 
     if (!window.__wdashHistoryPatched) {
+      const disableDashboardHistory = () => {
+        if (window.__wdashHistorySuppressed) return;
+        window.__wdashHistorySuppressed = true;
+        const noop = function noopAddToDashboardHistory() { return undefined; };
+        try {
+          Object.defineProperty(window, 'addToDashboardHistory', {
+            configurable: true,
+            writable: true,
+            value: noop
+          });
+        } catch (err) {
+          try {
+            window.addToDashboardHistory = noop;
+          } catch (assignErr) { /* ignore */ }
+        }
+        window.__wdashHistoryPatched = true;
+      };
+
       const installPatchedHistory = original => {
         if (typeof original !== 'function') return;
         if (window.__wdashHistoryPatched) return;
@@ -429,6 +467,9 @@
           try {
             return original.apply(this, args);
           } catch (err) {
+            if (isDashboardValueErrorMessage(err && err.message)) {
+              disableDashboardHistory();
+            }
             console.warn('[WeatherDashboard] Suppressed dashboard history error', err);
             return undefined;
           }
@@ -501,16 +542,14 @@
       window.addEventListener('error', event => {
         if (!event) return;
         const message = String(event.message || '');
-        const isDashboardValueError = (
-          message.includes("Cannot set properties of undefined (setting 'value')") ||
-          message.includes('value is not defined') ||
-          message.includes("can't access property \"value\"")
-        );
-        if (isDashboardValueError && event.filename && event.filename.indexOf('app.js') !== -1) {
+        const filename = event.filename || '';
+        const isDashboardValueError = isDashboardValueErrorMessage(message) && isDashboardValueErrorSource(filename);
+        if (isDashboardValueError) {
           event.preventDefault();
           if (typeof event.stopImmediatePropagation === 'function') {
             event.stopImmediatePropagation();
           }
+          disableDashboardHistory();
           console.warn('[WeatherDashboard] Ignored dashboard socket value update error', {
             message: event.message,
             filename: event.filename
