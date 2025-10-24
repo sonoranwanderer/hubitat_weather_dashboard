@@ -173,24 +173,23 @@ private List<Map> buildAmbientSegments(Map payload) {
 
     int total = sensors.size()
     def rotation = payload.ambientRotationSeconds
-    def tempUnit = payload.ambientTemperatureUnit
     def humidityUnit = payload.ambientHumidityUnit
 
     List<Map> segments = []
     if (sensors) {
         sensors.collate(AMBIENT_SENSORS_PER_SEGMENT).eachWithIndex { List<Map> group, int idx ->
-            def segment = baseAmbientSegment(total, rotation, tempUnit, humidityUnit, idx)
+            def segment = baseAmbientSegment(total, rotation, humidityUnit, idx)
             segment.ambientSensors = group
             segments << segment
         }
     } else {
-        segments << baseAmbientSegment(total, rotation, tempUnit, humidityUnit, 0)
+        segments << baseAmbientSegment(total, rotation, humidityUnit, 0)
     }
 
     return segments
 }
 
-private Map baseAmbientSegment(int total, def rotation, def tempUnit, def humidityUnit, int segmentIndex) {
+private Map baseAmbientSegment(int total, def rotation, def humidityUnit, int segmentIndex) {
     def segment = [
         ambientSensors      : [],
         totalAmbientSensors : total,
@@ -198,7 +197,6 @@ private Map baseAmbientSegment(int total, def rotation, def tempUnit, def humidi
         segmentSize         : AMBIENT_SENSORS_PER_SEGMENT
     ]
     if (rotation != null) segment.ambientRotationSeconds = rotation
-    if (tempUnit != null) segment.ambientTemperatureUnit = tempUnit
     if (humidityUnit != null) segment.ambientHumidityUnit = humidityUnit
     return segment
 }

@@ -1,0 +1,8 @@
+{
+  "name": "ecowitt-weather-hubitat-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test": "./tests/run-all.sh"
+  }
+}

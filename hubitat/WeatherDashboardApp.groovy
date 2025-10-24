@@ -78,6 +78,36 @@ def mainPage() {
             attributeInputs("Weather station update time", "attrStationUpdatedAt", "lastUpdateTime", deviceOptions)
         }
 
+        section("Temperature units") {
+            paragraph "Tell the app which unit your weather devices report and choose the dashboard's default display."
+            input name: "temperatureInputUnit", type: "enum", title: "Weather device temperature unit", options: temperatureUnitOptions(), defaultValue: "F", required: true, submitOnChange: true, width: 6
+            input name: "temperatureDisplayUnit", type: "enum", title: "Default dashboard temperature unit", options: temperatureUnitOptions(), defaultValue: "F", required: true, submitOnChange: true, width: 6
+        }
+
+        section("Rainfall units") {
+            paragraph "Tell the app which unit your rain sensors report and choose the dashboard's default display."
+            input name: "rainInputUnit", type: "enum", title: "Weather device rain depth unit", options: rainUnitOptions(), defaultValue: "in", required: true, submitOnChange: true, width: 6
+            input name: "rainDisplayUnit", type: "enum", title: "Default dashboard rain depth unit", options: rainUnitOptions(), defaultValue: "in", required: true, submitOnChange: true, width: 6
+        }
+
+        section("Wind speed units") {
+            paragraph "Tell the app which unit your weather devices report for wind and choose the dashboard's default display."
+            input name: "windInputUnit", type: "enum", title: "Weather device wind speed unit", options: windUnitOptions(), defaultValue: "mph", required: true, submitOnChange: true, width: 6
+            input name: "windDisplayUnit", type: "enum", title: "Default dashboard wind speed unit", options: windUnitOptions(), defaultValue: "mph", required: true, submitOnChange: true, width: 6
+        }
+
+        section("Pressure units") {
+            paragraph "Tell the app which unit your barometer reports and choose the dashboard's default display."
+            input name: "pressureInputUnit", type: "enum", title: "Weather device pressure unit", options: pressureUnitOptions(), defaultValue: "inhg", required: true, submitOnChange: true, width: 6
+            input name: "pressureDisplayUnit", type: "enum", title: "Default dashboard pressure unit", options: pressureUnitOptions(), defaultValue: "inhg", required: true, submitOnChange: true, width: 6
+        }
+
+        section("Lightning distance units") {
+            paragraph "Tell the app which unit your lightning sensor reports and choose the dashboard's default display."
+            input name: "lightningInputUnit", type: "enum", title: "Weather device lightning distance unit", options: lightningUnitOptions(), defaultValue: "mi", required: true, submitOnChange: true, width: 6
+            input name: "lightningDisplayUnit", type: "enum", title: "Default dashboard lightning distance unit", options: lightningUnitOptions(), defaultValue: "mi", required: true, submitOnChange: true, width: 6
+        }
+
         section("Outdoor Air Quality (optional)") {
             attributeInputs("AQI", "attrOutdoorAQI", "aqi", deviceOptions)
             attributeInputs("AQI (24h Avg)", "attrOutdoorAQI24h", "aqi_avg_24h", deviceOptions)
@@ -126,7 +156,6 @@ def mainPage() {
                 input name: "ambientTempAttr", type: "text", title: "Ambient temperature attribute", defaultValue: "temperature"
                 input name: "ambientHumidityAttr", type: "text", title: "Ambient humidity attribute", defaultValue: "humidity"
                 input name: "ambientBatteryAttr", type: "text", title: "Ambient battery attribute", defaultValue: "battery"
-                input name: "ambientTemperatureUnit", type: "text", title: "Ambient temperature unit label", defaultValue: "°F"
                 input name: "ambientHumidityUnit", type: "text", title: "Ambient humidity unit label", defaultValue: "%"
                 input name: "ambientRotationSeconds", type: "number", title: "Rotation interval (seconds)", defaultValue: 12, range: "3..120"
             }
@@ -256,6 +285,42 @@ private Map loggingLevelOptions() {
         info : 'Info',
         debug: 'Debug',
         trace: 'Trace'
+    ]
+}
+
+private Map temperatureUnitOptions() {
+    [
+        'F': 'Fahrenheit (°F)',
+        'C': 'Celsius (°C)'
+    ]
+}
+
+private Map rainUnitOptions() {
+    [
+        'in': 'Inch (in)',
+        'mm': 'Millimeter (mm)'
+    ]
+}
+
+private Map windUnitOptions() {
+    [
+        'mph': 'Miles per hour (mph)',
+        'kph': 'Kilometers per hour (kph)',
+        'kts': 'Knots (kts)'
+    ]
+}
+
+private Map pressureUnitOptions() {
+    [
+        'inhg': 'Inches of mercury (inHg)',
+        'mb'  : 'Millibars (mb)'
+    ]
+}
+
+private Map lightningUnitOptions() {
+    [
+        'mi': 'Miles (mi)',
+        'km': 'Kilometers (km)'
     ]
 }
 
@@ -1083,37 +1148,42 @@ private String readStringFor(String attrSetting) {
 
 private Map captureRawReadings() {
     LinkedHashMap readings = new LinkedHashMap()
-    readings.outdoorTemp = readDecimalFor("attrOutdoorTemp")
-    readings.feelsLike = readDecimalFor("attrFeelsLike")
-    readings.dewPoint = readDecimalFor("attrDewPoint")
+    String tempUnit = temperatureInputUnitSetting()
+    boolean inputIsCelsius = tempUnit == 'C'
+
+    readings.outdoorTemp = convertInputTemperature(readDecimalFor("attrOutdoorTemp"), inputIsCelsius)
+    readings.feelsLike = convertInputTemperature(readDecimalFor("attrFeelsLike"), inputIsCelsius)
+    readings.dewPoint = convertInputTemperature(readDecimalFor("attrDewPoint"), inputIsCelsius)
     readings.outdoorHumidity = readDecimalFor("attrOutdoorHumidity")
     readings.outdoorBattery = readDecimalFor("attrOutdoorBattery")
 
-    readings.indoorTemp = readDecimalFor("attrIndoorTemp")
+    readings.indoorTemp = convertInputTemperature(readDecimalFor("attrIndoorTemp"), inputIsCelsius)
     readings.indoorHumidity = readDecimalFor("attrIndoorHumidity")
     readings.indoorBattery = readDecimalFor("attrIndoorBattery")
 
-    readings.windSpeed = readDecimalFor("attrWindSpeed")
-    readings.windGust = readDecimalFor("attrWindGust")
-    readings.windDailyMax = readDecimalFor("attrWindGustMaxDaily")
+    String windInputUnit = windInputUnitSetting()
+    readings.windSpeed = convertInputWindSpeed(readDecimalFor("attrWindSpeed"), windInputUnit)
+    readings.windGust = convertInputWindSpeed(readDecimalFor("attrWindGust"), windInputUnit)
+    readings.windDailyMax = convertInputWindSpeed(readDecimalFor("attrWindGustMaxDaily"), windInputUnit)
     readings.windBattery = readDecimalFor("attrBatteryWind")
     readings.windDirectionDegrees = readDecimalFor("attrWindDirectionDegrees")
     readings.windDirectionText = readStringFor("attrWindDirection")
 
-    readings.pressureRelative = readPressureSample("attrPressure")
-    readings.pressureAbsolute = readPressureSample("attrAbsolutePressure")
+    String pressureInputUnit = pressureInputUnitSetting()
+    readings.pressureRelative = normalizePressureSample(readPressureSample("attrPressure"), pressureInputUnit)
+    readings.pressureAbsolute = normalizePressureSample(readPressureSample("attrAbsolutePressure"), pressureInputUnit)
 
+    boolean rainInputIsMillimeters = rainInputUnitSetting() == 'mm'
     readings.rain = [
-        rate   : readDecimalFor("attrRainRate"),
-        daily  : readDecimalFor("attrRainDaily"),
-        event  : readDecimalFor("attrRainEvent"),
-        hourly : readDecimalFor("attrRainHourly"),
-        weekly : readDecimalFor("attrRainWeekly"),
-        monthly: readDecimalFor("attrRainMonthly"),
-        yearly : readDecimalFor("attrRainYearly"),
+        rate   : convertInputRainDepth(readDecimalFor("attrRainRate"), rainInputIsMillimeters),
+        daily  : convertInputRainDepth(readDecimalFor("attrRainDaily"), rainInputIsMillimeters),
+        event  : convertInputRainDepth(readDecimalFor("attrRainEvent"), rainInputIsMillimeters),
+        hourly : convertInputRainDepth(readDecimalFor("attrRainHourly"), rainInputIsMillimeters),
+        weekly : convertInputRainDepth(readDecimalFor("attrRainWeekly"), rainInputIsMillimeters),
+        monthly: convertInputRainDepth(readDecimalFor("attrRainMonthly"), rainInputIsMillimeters),
+        yearly : convertInputRainDepth(readDecimalFor("attrRainYearly"), rainInputIsMillimeters),
         battery: readDecimalFor("attrBatteryRain")
     ]
-
     readings.solar = [
         uvIndex       : readDecimalFor("attrUVIndex"),
         uvColor       : readStringFor("attrUVColor"),
@@ -1149,9 +1219,10 @@ private Map captureRawReadings() {
         battery      : readDecimalFor("attrIndoorAQIBattery")
     ]
 
+    String lightningInputUnit = lightningInputUnitSetting()
     readings.lightning = [
         count  : readDecimalFor("attrLightningCount"),
-        distance: readDecimalFor("attrLightningDistance"),
+        distance: convertInputLightningDistance(readDecimalFor("attrLightningDistance"), lightningInputUnit),
         time   : readStringFor("attrLightningTime"),
         battery: readDecimalFor("attrLightningBattery")
     ]
@@ -1284,33 +1355,33 @@ def refreshWeatherData() {
     def longitude = location?.longitude
     Date generated = new Date(timestamp)
     Map payload = [:]
+    String temperatureDisplayUnit = temperatureDisplayUnitSetting()
 
     Map outdoor = [:]
     BigDecimal tempF = readings.outdoorTemp
     if (tempF != null) {
-        outdoor.temperatureF = round(tempF, 1)
-        outdoor.temperatureC = round(fahrenheitToCelsius(tempF), 1)
+        outdoor.temperature = convertTemperatureForDisplay(tempF, temperatureDisplayUnit)
         def trend = computeTemperatureTrend()
         if (trend != null) {
-            outdoor.trendFPerHour = round(trend, 2)
+            outdoor.trendPerHour = convertTemperatureDeltaForDisplay(trend, temperatureDisplayUnit)
         }
     }
 
     def dailyExtrema = dailyMaintenance.outdoor
     if (dailyExtrema?.high != null) {
-        outdoor.dailyHighF = dailyExtrema.high
+        outdoor.dailyHigh = convertTemperatureForDisplay(dailyExtrema.high, temperatureDisplayUnit)
     }
     if (dailyExtrema?.low != null) {
-        outdoor.dailyLowF = dailyExtrema.low
+        outdoor.dailyLow = convertTemperatureForDisplay(dailyExtrema.low, temperatureDisplayUnit)
     }
 
     BigDecimal feels = readings.feelsLike
     if (feels != null) {
-        outdoor.feelsLikeF = round(feels, 1)
+        outdoor.feelsLike = convertTemperatureForDisplay(feels, temperatureDisplayUnit)
     }
     BigDecimal dew = readings.dewPoint
     if (dew != null) {
-        outdoor.dewPointF = round(dew, 1)
+        outdoor.dewPoint = convertTemperatureForDisplay(dew, temperatureDisplayUnit)
     }
     BigDecimal humidity = readings.outdoorHumidity
     if (humidity != null) {
@@ -1327,7 +1398,7 @@ def refreshWeatherData() {
     Map indoor = [:]
     BigDecimal indoorTemp = readings.indoorTemp
     if (indoorTemp != null) {
-        indoor.temperatureF = round(indoorTemp, 1)
+        indoor.temperature = convertTemperatureForDisplay(indoorTemp, temperatureDisplayUnit)
     }
     BigDecimal indoorHumidity = readings.indoorHumidity
     if (indoorHumidity != null) {
@@ -1536,7 +1607,12 @@ def refreshWeatherData() {
 
     Map lightning = [:]
     if (readings.lightning?.count != null) lightning.count = readings.lightning.count
-    if (readings.lightning?.distance != null) lightning.distance = readings.lightning.distance
+    if (readings.lightning?.distance != null) {
+        BigDecimal miles = round(readings.lightning.distance, 1)
+        lightning.distanceMi = miles
+        lightning.distance = miles
+        lightning.distanceKm = round(milesToKilometers(readings.lightning.distance), 1)
+    }
     if (readings.lightning?.time) lightning.time = readings.lightning.time
     if (readings.lightning?.battery != null) lightning.battery = readings.lightning.battery
     if (lightning) {
@@ -1560,7 +1636,6 @@ def refreshWeatherData() {
     if (ambient?.sensors) {
         payload.ambientSensors = ambient.sensors
         if (ambient.rotationSeconds) payload.ambientRotationSeconds = ambient.rotationSeconds
-        if (ambient.temperatureUnit) payload.ambientTemperatureUnit = ambient.temperatureUnit
         if (ambient.humidityUnit) payload.ambientHumidityUnit = ambient.humidityUnit
     }
 
@@ -1633,6 +1708,30 @@ private Map buildMetadata(Date generated, TimeZone tz, String stationUpdatedAt, 
     if (layoutOverride) {
         metadata.layout = layoutOverride
     }
+    String temperatureDisplay = temperatureDisplayUnitSetting()
+    if (temperatureDisplay) {
+        metadata.temperatureDisplayUnit = temperatureDisplay
+    }
+
+    String rainDisplay = rainDisplayUnitSetting()
+    if (rainDisplay) {
+        metadata.rainDisplayUnit = rainDisplay
+    }
+
+    String windDisplay = windDisplayUnitSetting()
+    if (windDisplay) {
+        metadata.windDisplayUnit = windDisplay
+    }
+
+    String pressureDisplay = pressureDisplayUnitSetting()
+    if (pressureDisplay) {
+        metadata.pressureDisplayUnit = pressureDisplay
+    }
+
+    String lightningDisplay = lightningDisplayUnitSetting()
+    if (lightningDisplay) {
+        metadata.lightningDisplayUnit = lightningDisplay
+    }
     metadata
 }
 
@@ -1647,8 +1746,9 @@ private Map buildAmbientSensorsPayload() {
     if (rotation < 3) {
         rotation = 3
     }
-    def tempUnit = settings.ambientTemperatureUnit ?: "°F"
     def humidityUnit = settings.ambientHumidityUnit ?: "%"
+    boolean inputIsCelsius = temperatureInputUnitSetting() == 'C'
+    String displayUnit = temperatureDisplayUnitSetting()
 
     def entries = []
     sensors.each { dev ->
@@ -1657,9 +1757,9 @@ private Map buildAmbientSensorsPayload() {
             name: dev.displayName
         ]
         def tempVal = tempAttr ? readDecimal(dev, tempAttr) : null
-        if (tempVal != null) {
-            entry.temperatureF = round(tempVal, 1)
-            entry.temperatureC = round(fahrenheitToCelsius(tempVal), 1)
+        def convertedTemp = convertInputTemperature(tempVal, inputIsCelsius)
+        if (convertedTemp != null) {
+            entry.temperature = convertTemperatureForDisplay(convertedTemp, displayUnit)
         }
         def humidityVal = humidityAttr ? readDecimal(dev, humidityAttr) : null
         if (humidityVal != null) {
@@ -1669,7 +1769,7 @@ private Map buildAmbientSensorsPayload() {
         if (batteryVal != null) {
             entry.battery = batteryVal
         }
-        if (entry.temperatureF != null || entry.humidity != null || entry.battery != null) {
+        if (entry.temperature != null || entry.humidity != null || entry.battery != null) {
             entries << entry
         }
     }
@@ -1679,7 +1779,6 @@ private Map buildAmbientSensorsPayload() {
     [
         sensors: entries,
         rotationSeconds: rotation,
-        temperatureUnit: tempUnit,
         humidityUnit: humidityUnit
     ]
 }
@@ -1761,6 +1860,234 @@ private BigDecimal round(value, int scale) {
 
 private BigDecimal fahrenheitToCelsius(BigDecimal tempF) {
     ((tempF - 32) * 5 / 9) as BigDecimal
+}
+
+private BigDecimal celsiusToFahrenheit(BigDecimal tempC) {
+    ((tempC * 9 / 5) + 32) as BigDecimal
+}
+
+private BigDecimal convertInputTemperature(BigDecimal value, boolean inputIsCelsius) {
+    if (value == null) return null
+    inputIsCelsius ? celsiusToFahrenheit(value) : value
+}
+
+private BigDecimal convertTemperatureForDisplay(BigDecimal tempF, String displayUnit) {
+    if (tempF == null) return null
+    String unit = normalizeTemperatureUnitSetting(displayUnit) ?: 'F'
+    BigDecimal converted = (unit == 'C') ? fahrenheitToCelsius(tempF) : tempF
+    return round(converted, 1)
+}
+
+private BigDecimal convertTemperatureDeltaForDisplay(BigDecimal deltaF, String displayUnit) {
+    if (deltaF == null) return null
+    String unit = normalizeTemperatureUnitSetting(displayUnit) ?: 'F'
+    BigDecimal converted = (unit == 'C') ? fahrenheitDeltaToCelsius(deltaF) : deltaF
+    return round(converted, 2)
+}
+
+private BigDecimal fahrenheitDeltaToCelsius(BigDecimal deltaF) {
+    if (deltaF == null) return null
+    (deltaF * 5 / 9) as BigDecimal
+}
+
+private String temperatureInputUnitSetting() {
+    normalizeTemperatureUnitSetting(settings.temperatureInputUnit) ?: 'F'
+}
+
+private String temperatureDisplayUnitSetting() {
+    normalizeTemperatureUnitSetting(settings.temperatureDisplayUnit) ?: 'F'
+}
+
+private String normalizeTemperatureUnitSetting(Object raw) {
+    if (!(raw instanceof CharSequence)) {
+        return null
+    }
+    String value = raw.toString().trim().toUpperCase()
+    return (value == 'F' || value == 'C') ? value : null
+}
+
+private BigDecimal millimetersToInches(BigDecimal value) {
+    if (value == null) return null
+    (value / 25.4G) as BigDecimal
+}
+
+private BigDecimal convertInputRainDepth(BigDecimal value, boolean inputIsMillimeters) {
+    if (value == null) return null
+    inputIsMillimeters ? millimetersToInches(value) : value
+}
+
+private BigDecimal convertInputWindSpeed(BigDecimal value, String inputUnit) {
+    if (value == null) return null
+    String normalized = normalizeWindUnitSetting(inputUnit) ?: 'mph'
+    switch (normalized) {
+        case 'kph':
+            return kphToMph(value)
+        case 'kts':
+            return knotsToMph(value)
+        default:
+            return value
+    }
+}
+
+private String rainInputUnitSetting() {
+    normalizeRainUnitSetting(settings.rainInputUnit) ?: 'in'
+}
+
+private String rainDisplayUnitSetting() {
+    normalizeRainUnitSetting(settings.rainDisplayUnit) ?: 'in'
+}
+
+private String normalizeRainUnitSetting(Object raw) {
+    if (!(raw instanceof CharSequence)) {
+        return null
+    }
+    String value = raw.toString().trim().toLowerCase()
+    if (!value) return null
+    if (['in', 'inch', 'inches'].contains(value)) return 'in'
+    if (['mm', 'millimeter', 'millimeters'].contains(value)) return 'mm'
+    return null
+}
+
+private String windInputUnitSetting() {
+    normalizeWindUnitSetting(settings.windInputUnit) ?: 'mph'
+}
+
+private String windDisplayUnitSetting() {
+    normalizeWindUnitSetting(settings.windDisplayUnit) ?: 'mph'
+}
+
+private String normalizeWindUnitSetting(Object raw) {
+    if (!(raw instanceof CharSequence)) {
+        return null
+    }
+    String value = raw.toString().trim().toLowerCase()
+    if (!value) return null
+    if (['mph', 'mi', 'miles', 'milesperhour', 'mileperhour'].contains(value)) return 'mph'
+    if (['kph', 'kmh', 'kmph', 'km', 'kilometer', 'kilometers', 'kilometersperhour', 'kilometerperhour'].contains(value)) return 'kph'
+    if (['kts', 'kt', 'kn', 'knot', 'knots'].contains(value)) return 'kts'
+    return null
+}
+
+private String pressureInputUnitSetting() {
+    normalizePressureUnitSetting(settings.pressureInputUnit) ?: 'inhg'
+}
+
+private String pressureDisplayUnitSetting() {
+    normalizePressureUnitSetting(settings.pressureDisplayUnit) ?: 'inhg'
+}
+
+private String normalizePressureUnitSetting(Object raw) {
+    if (!(raw instanceof CharSequence)) {
+        return null
+    }
+    String value = raw.toString().trim().toLowerCase()
+    if (!value) return null
+    if (['inhg', 'in', 'hg', 'inch', 'inches'].contains(value)) return 'inhg'
+    if (['mb', 'mbar', 'millibar', 'millibars', 'hpa', 'hectopascal', 'hectopascals'].contains(value)) return 'mb'
+    return null
+}
+
+private String normalizePressureSensorUnit(Object raw) {
+    if (!(raw instanceof CharSequence)) {
+        return null
+    }
+    String value = raw.toString().trim().toLowerCase()
+    if (!value) return null
+    if (['inhg', 'in', 'hg', 'inch', 'inches'].contains(value)) return 'inhg'
+    if (['mb', 'mbar', 'millibar', 'millibars', 'hpa', 'hectopascal', 'hectopascals'].contains(value)) return 'mb'
+    if (['kpa', 'kilopascal', 'kilopascals'].contains(value)) return 'kpa'
+    if (['mmhg', 'mm'].contains(value)) return 'mmhg'
+    return null
+}
+
+private BigDecimal convertPressureToInHg(BigDecimal value, String unit) {
+    if (value == null) return null
+    String normalized = (unit ?: 'inhg').toString().trim().toLowerCase()
+    switch (normalized) {
+        case 'inhg':
+        case 'in':
+        case 'hg':
+        case 'inch':
+        case 'inches':
+            return value
+        case 'mb':
+        case 'mbar':
+        case 'millibar':
+        case 'millibars':
+        case 'hpa':
+        case 'hectopascal':
+        case 'hectopascals':
+            return value / 33.8638866667G
+        case 'kpa':
+        case 'kilopascal':
+        case 'kilopascals':
+            return value / 3.3863886667G
+        case 'mmhg':
+        case 'mm':
+            return value / 25.4G
+        default:
+            return value
+    }
+}
+
+private Map normalizePressureSample(Map sample, String configuredUnit) {
+    Map raw = (sample instanceof Map) ? sample : [:]
+    BigDecimal value = toBigDecimal(raw.value)
+    String rawUnit = raw.unit
+    String sensorUnit = normalizePressureSensorUnit(rawUnit)
+    String fallbackUnit = normalizePressureUnitSetting(configuredUnit) ?: 'inhg'
+    BigDecimal converted = convertPressureToInHg(value, sensorUnit ?: fallbackUnit)
+    return [value: converted, unit: 'inHg']
+}
+
+private BigDecimal kphToMph(BigDecimal value) {
+    if (value == null) return null
+    (value / 1.609344G) as BigDecimal
+}
+
+private BigDecimal knotsToMph(BigDecimal value) {
+    if (value == null) return null
+    (value * 1.150779448023542G) as BigDecimal
+}
+
+private String lightningInputUnitSetting() {
+    normalizeLightningUnitSetting(settings.lightningInputUnit) ?: 'mi'
+}
+
+private String lightningDisplayUnitSetting() {
+    normalizeLightningUnitSetting(settings.lightningDisplayUnit) ?: 'mi'
+}
+
+private String normalizeLightningUnitSetting(Object raw) {
+    if (!(raw instanceof CharSequence)) {
+        return null
+    }
+    String value = raw.toString().trim().toLowerCase()
+    if (!value) return null
+    if (['mi', 'mile', 'miles'].contains(value)) return 'mi'
+    if (['km', 'kilometer', 'kilometers'].contains(value)) return 'km'
+    return null
+}
+
+private BigDecimal convertInputLightningDistance(BigDecimal value, String inputUnit) {
+    if (value == null) return null
+    String normalized = normalizeLightningUnitSetting(inputUnit) ?: 'mi'
+    switch (normalized) {
+        case 'km':
+            return kilometersToMiles(value)
+        default:
+            return value
+    }
+}
+
+private BigDecimal kilometersToMiles(BigDecimal value) {
+    if (value == null) return null
+    (value / 1.609344G) as BigDecimal
+}
+
+private BigDecimal milesToKilometers(BigDecimal value) {
+    if (value == null) return null
+    (value * 1.609344G) as BigDecimal
 }
 
 private void updateWindHistory(BigDecimal speed, BigDecimal direction, long timestamp) {

@@ -27,6 +27,76 @@
   const DEFAULT_TRACK_UNIT = 'px';
   const TILE_MEASURE_TOLERANCE = 1;
 
+  const TEMPERATURE_UNITS = ['F', 'C'];
+  const TEMPERATURE_UNIT_STORAGE_KEYS = {
+    input: 'wdashTempInputUnit',
+    display: 'wdashTempDisplayUnit'
+  };
+
+  const temperatureUnitState = {
+    input: readStoredTemperatureUnit('input') || 'F',
+    display: readStoredTemperatureUnit('display') || 'F',
+    metadataInput: null,
+    metadataDisplay: null,
+    displayOverride: false
+  };
+
+  const RAIN_UNITS = ['in', 'mm'];
+  const RAIN_UNIT_STORAGE_KEYS = {
+    input: 'wdashRainInputUnit',
+    display: 'wdashRainDisplayUnit'
+  };
+
+  const rainUnitState = {
+    input: readStoredRainUnit('input') || 'in',
+    display: readStoredRainUnit('display') || 'in',
+    metadataInput: null,
+    metadataDisplay: null,
+    displayOverride: false
+  };
+
+  const WIND_UNITS = ['mph', 'kph', 'kts'];
+  const WIND_UNIT_STORAGE_KEYS = {
+    input: 'wdashWindInputUnit',
+    display: 'wdashWindDisplayUnit'
+  };
+
+  const windUnitState = {
+    input: readStoredWindUnit('input') || 'mph',
+    display: readStoredWindUnit('display') || 'mph',
+    metadataInput: null,
+    metadataDisplay: null,
+    displayOverride: false
+  };
+
+  const PRESSURE_UNITS = ['inhg', 'mb'];
+  const PRESSURE_UNIT_STORAGE_KEYS = {
+    input: 'wdashPressureInputUnit',
+    display: 'wdashPressureDisplayUnit'
+  };
+
+  const pressureUnitState = {
+    input: readStoredPressureUnit('input') || 'inhg',
+    display: readStoredPressureUnit('display') || 'inhg',
+    metadataInput: null,
+    metadataDisplay: null,
+    displayOverride: false
+  };
+
+  const LIGHTNING_UNITS = ['mi', 'km'];
+  const LIGHTNING_UNIT_STORAGE_KEYS = {
+    input: 'wdashLightningInputUnit',
+    display: 'wdashLightningDisplayUnit'
+  };
+
+  const lightningUnitState = {
+    input: readStoredLightningUnit('input') || 'mi',
+    display: readStoredLightningUnit('display') || 'mi',
+    metadataInput: null,
+    metadataDisplay: null,
+    displayOverride: false
+  };
+
   const tileMeasurementState = {
     width: null,
     height: null
@@ -150,7 +220,6 @@
     'ambientSensors',
     'totalAmbientSensors',
     'ambientRotationSeconds',
-    'ambientTemperatureUnit',
     'ambientHumidityUnit',
     'outdoorAirQuality',
     'indoorAirQuality',
@@ -158,6 +227,21 @@
     'layout',
     'outlook24h'
   ]);
+
+  const RAIN_FILL_STATES_IN = [
+    { threshold: 1.2, ratio: 1 },
+    { threshold: 1.0, ratio: 6 / 7 },
+    { threshold: 0.8, ratio: 5 / 7 },
+    { threshold: 0.6, ratio: 4 / 7 },
+    { threshold: 0.4, ratio: 3 / 7 },
+    { threshold: 0.2, ratio: 2 / 7 },
+    { threshold: 0, ratio: 1 / 7 }
+  ];
+
+  const RAIN_FILL_STATES_MM = RAIN_FILL_STATES_IN.map(state => ({
+    threshold: convertRainDepth(state.threshold, 'in', 'mm'),
+    ratio: state.ratio
+  }));
 
   const LIGHTNING_BOLT_ICON = `
     <svg viewBox="0 0 48 48" class="wdash-lightning-bolt-svg" focusable="false" aria-hidden="true">
@@ -239,7 +323,7 @@
     sensors: [],
     index: 0,
     interval: DEFAULT_AMBIENT_ROTATION_INTERVAL_MS,
-    tempUnit: '°F',
+    tempUnit: `°${getDisplayTemperatureUnit()}`,
     humidityUnit: '%',
     countdownTimer: null,
     nextSwitchAt: null,
@@ -319,6 +403,26 @@
   let pressureMode = 'relative';
   let lastSuccessfulPayload = null;
 
+  function isDashboardValueErrorMessage(message) {
+    if (!message) return false;
+    const text = String(message);
+    return (
+      text.includes("Cannot set properties of undefined (setting 'value')") ||
+      text.includes('value is not defined') ||
+      text.includes("can't access property \"value\"")
+    );
+  }
+
+  function isDashboardValueErrorSource(filename) {
+    if (!filename) return true;
+    const source = String(filename);
+    if (source.indexOf('app.js') !== -1) return true;
+    if (source.indexOf('access_token=') !== -1) return true;
+    if (/\/tile-\d+/i.test(source)) return true;
+    if (/\btileId=/i.test(source)) return true;
+    return false;
+  }
+
     if (!IS_TEST_ENV) {
       patchDashboardGlitches();
       whenDomReady(init);
@@ -335,97 +439,54 @@
   function patchDashboardGlitches() {
     if (typeof window === 'undefined') return;
 
-    if (!window.__wdashHistoryPatched) {
-      const installPatchedHistory = original => {
-        if (typeof original !== 'function') return;
-        if (window.__wdashHistoryPatched) return;
+    const noopHistory = function noopAddToDashboardHistory() { return undefined; };
 
-        const patched = function patchedAddToDashboardHistory(...args) {
-          try {
-            return original.apply(this, args);
-          } catch (err) {
-            console.warn('[WeatherDashboard] Suppressed dashboard history error', err);
-            return undefined;
-          }
-        };
-
-        const descriptor = Object.getOwnPropertyDescriptor(window, 'addToDashboardHistory');
-        let installed = false;
-
-        if (!descriptor || descriptor.configurable) {
-          try {
-            Object.defineProperty(window, 'addToDashboardHistory', {
-              configurable: true,
-              writable: true,
-              value: patched
-            });
-            installed = true;
-          } catch (err) {
-            // Fall through to assignment attempt below.
-          }
-        }
-
-        if (!installed) {
-          try {
-            window.addToDashboardHistory = patched;
-            installed = window.addToDashboardHistory === patched;
-          } catch (err) {
-            console.warn('[WeatherDashboard] Unable to patch dashboard history', err);
-          }
-        }
-
-        if (installed) {
-          patched.__wdashOriginal = original;
-          window.__wdashHistoryPatched = true;
+    const installNoopHistory = () => {
+      if (window.__wdashHistoryInstalling) return;
+      window.__wdashHistoryInstalling = true;
+      const descriptor = {
+        configurable: true,
+        get() {
+          return noopHistory;
+        },
+        set(value) {
+          if (value === noopHistory) return;
+          setTimeout(() => {
+            window.__wdashHistorySuppressed = false;
+            installNoopHistory();
+          }, 0);
         }
       };
 
-      if (typeof window.addToDashboardHistory === 'function') {
-        installPatchedHistory(window.addToDashboardHistory);
-      } else if (!window.__wdashHistoryPatchedPending) {
-        Object.defineProperty(window, 'addToDashboardHistory', {
-          configurable: true,
-          get() {
-            return undefined;
-          },
-          set(value) {
-            if (typeof value === 'function') {
-              installPatchedHistory(value);
-            } else {
-              try {
-                Object.defineProperty(window, 'addToDashboardHistory', {
-                  configurable: true,
-                  writable: true,
-                  value: value
-                });
-              } catch (err) {
-                try {
-                  window.addToDashboardHistory = value;
-                } catch (assignErr) {
-                  console.warn('[WeatherDashboard] Unable to store dashboard history handler', assignErr);
-                }
-              }
-            }
-          }
-        });
-        window.__wdashHistoryPatchedPending = true;
+      try {
+        Object.defineProperty(window, 'addToDashboardHistory', descriptor);
+      } catch (err) {
+        try {
+          window.addToDashboardHistory = noopHistory;
+        } catch (assignErr) {
+          // ignore assignment failures
+        }
       }
-    }
+
+      window.__wdashHistoryInstalling = false;
+      window.__wdashHistorySuppressed = true;
+      window.__wdashHistoryPatched = true;
+    };
+
+    installNoopHistory();
 
     if (!window.__wdashSocketGuard) {
       window.addEventListener('error', event => {
         if (!event) return;
         const message = String(event.message || '');
-        const isDashboardValueError = (
-          message.includes("Cannot set properties of undefined (setting 'value')") ||
-          message.includes('value is not defined') ||
-          message.includes("can't access property \"value\"")
-        );
-        if (isDashboardValueError && event.filename && event.filename.indexOf('app.js') !== -1) {
+        const filename = event.filename || '';
+        const isDashboardValueError = isDashboardValueErrorMessage(message) && isDashboardValueErrorSource(filename);
+        if (isDashboardValueError) {
           event.preventDefault();
           if (typeof event.stopImmediatePropagation === 'function') {
             event.stopImmediatePropagation();
           }
+          installNoopHistory();
           console.warn('[WeatherDashboard] Ignored dashboard socket value update error', {
             message: event.message,
             filename: event.filename
@@ -469,6 +530,12 @@
     applyLayoutOverrides();
     setupScaling(displayTile, content);
 
+    refreshTemperatureUnitUI();
+    refreshRainUnitUI();
+    refreshWindUnitUI();
+    refreshPressureUnitUI();
+    refreshLightningUnitUI();
+
     ensureDataTileObservers();
     watchForTileInsertions();
 
@@ -495,6 +562,11 @@
     let maskMode = null;
 
     try {
+      applyTemperatureUnitsFromMetadata(payload?.metadata);
+      applyRainUnitsFromMetadata(payload?.metadata);
+      applyWindUnitsFromMetadata(payload?.metadata);
+      applyPressureUnitsFromMetadata(payload?.metadata);
+      applyLightningUnitsFromMetadata(payload?.metadata);
       applyLayoutOverrides(payload?.metadata);
       applyScale();
 
@@ -1642,7 +1714,6 @@
     const ambientMeta = {
       total: null,
       rotation: null,
-      tempUnit: null,
       humidityUnit: null
     };
     let layout = null;
@@ -1654,7 +1725,6 @@
         const total = Number(segment.totalAmbientSensors);
         if (Number.isFinite(total)) ambientMeta.total = total;
         if (segment.ambientRotationSeconds != null) ambientMeta.rotation = segment.ambientRotationSeconds;
-        if (segment.ambientTemperatureUnit != null) ambientMeta.tempUnit = segment.ambientTemperatureUnit;
         if (segment.ambientHumidityUnit != null) ambientMeta.humidityUnit = segment.ambientHumidityUnit;
 
         segment.ambientSensors.forEach(sensor => {
@@ -1669,7 +1739,6 @@
           key === 'ambientSensors' ||
           key === 'totalAmbientSensors' ||
           key === 'ambientRotationSeconds' ||
-          key === 'ambientTemperatureUnit' ||
           key === 'ambientHumidityUnit' ||
           key === 'segmentIndex' ||
           key === 'segmentSize'
@@ -1702,7 +1771,6 @@
     }
 
     if (ambientMeta.rotation != null) result.ambientRotationSeconds = ambientMeta.rotation;
-    if (ambientMeta.tempUnit != null) result.ambientTemperatureUnit = ambientMeta.tempUnit;
     if (ambientMeta.humidityUnit != null) result.ambientHumidityUnit = ambientMeta.humidityUnit;
     if (Number.isFinite(ambientMeta.total)) result.totalAmbientSensors = ambientMeta.total;
 
@@ -1721,7 +1789,7 @@
     const indoor = data?.indoor;
     if (!indoor || typeof indoor !== 'object') return sensors;
 
-    const hasTemp = Number.isFinite(toNumber(indoor.temperatureF)) || Number.isFinite(toNumber(indoor.temperatureC));
+    const hasTemp = Number.isFinite(toNumber(indoor.temperature));
     const hasHumidity = Number.isFinite(toNumber(indoor.humidity));
     if (!hasTemp && !hasHumidity) return sensors;
 
@@ -1847,13 +1915,13 @@
 
   function buildTempWindCard(data) {
     const outdoor = data.outdoor || {};
-    const temp = toNumber(outdoor.temperatureF);
-    const high = toNumber(outdoor.dailyHighF);
-    const low = toNumber(outdoor.dailyLowF);
-    const feels = toNumber(outdoor.feelsLikeF);
-    const dew = toNumber(outdoor.dewPointF);
+    const tempPair = resolveTemperaturePair(outdoor.temperature);
+    const highPair = resolveTemperaturePair(outdoor.dailyHigh);
+    const lowPair = resolveTemperaturePair(outdoor.dailyLow);
+    const feelsPair = resolveTemperaturePair(outdoor.feelsLike);
+    const dewPair = resolveTemperaturePair(outdoor.dewPoint);
     const humidity = toNumber(outdoor.humidity);
-    const trend = toNumber(outdoor.trendFPerHour);
+    const trendPair = resolveTemperatureDelta(outdoor.trendPerHour);
 
     const wind = data.wind || {};
     const avg = wind.average || {};
@@ -1869,18 +1937,35 @@
 
     const bearingLabel = dirText || (Number.isFinite(dirDegrees) ? degreesToCardinal(dirDegrees) : '--');
 
-    const tempColor = colorForTemp(temp);
-    const indicator = gaugeIndicator(temp);
-    const dewText = formatTemperature(dew);
+    const displayWindUnit = getDisplayWindUnit();
+    const windUnitLabel = formatWindUnitLabel(displayWindUnit);
+    const speedDisplay = convertWindSpeed(speed, 'mph', displayWindUnit);
+    const gustDisplay = convertWindSpeed(gust, 'mph', displayWindUnit);
+    const avgSpeedDisplay = convertWindSpeed(avgSpeed, 'mph', displayWindUnit);
+    const dailyMaxGustDisplay = convertWindSpeed(dailyMaxGust, 'mph', displayWindUnit);
+
+    const tempF = tempPair.f;
+    const tempColor = colorForTemp(tempF);
+    const indicator = gaugeIndicator(tempF);
+    const dewText = formatTemperature(dewPair.f);
     const humidityText = formatPercent(humidity, 0);
-    const trendText = formatSigned(trend, 1, '°/hr');
-    const feelsText = formatTemperature(feels);
-    const highText = formatTemperature(high);
-    const lowText = formatTemperature(low);
-    const gustText = Number.isFinite(gust) ? `${formatNumber(gust, 1)} mph` : '--';
-    const avgSpeedText = Number.isFinite(avgSpeed) ? `${formatNumber(avgSpeed, 1)} mph` : '--';
+    const trendSuffix = `°${getDisplayTemperatureUnit()}/hr`;
+    const trendText = formatSigned(convertTemperatureDelta(trendPair.f, 'F', getDisplayTemperatureUnit()), 1, trendSuffix);
+    const feelsText = formatTemperature(feelsPair.f);
+    const highText = formatTemperature(highPair.f);
+    const lowText = formatTemperature(lowPair.f);
+    const gustText = Number.isFinite(gustDisplay) ? `${formatNumber(gustDisplay, 1)} ${windUnitLabel}` : '--';
+    const avgSpeedText = Number.isFinite(avgSpeedDisplay) ? `${formatNumber(avgSpeedDisplay, 1)} ${windUnitLabel}` : '--';
     const avgCombinedText = `${avgDirText || '--'} ${avgSpeedText}`;
-    const dailyMaxGustText = Number.isFinite(dailyMaxGust) ? `${formatNumber(dailyMaxGust, 1)} mph` : '--';
+    const dailyMaxGustText = Number.isFinite(dailyMaxGustDisplay) ? `${formatNumber(dailyMaxGustDisplay, 1)} ${windUnitLabel}` : '--';
+
+    const mainTempText = formatTemperature(tempF);
+    const currentDisplayUnit = getDisplayTemperatureUnit();
+    const indicatorAltUnit = getOppositeTemperatureUnit(currentDisplayUnit);
+    const indicatorLabelUnit = describeTemperatureUnit(indicatorAltUnit) || indicatorAltUnit;
+    const indicatorLabel = indicatorLabelUnit
+      ? `Switch temperature display to ${indicatorLabelUnit}`
+      : 'Switch temperature display';
 
     const generatedAt = data.metadata?.generatedAt;
     const stationReportedAt = data.metadata?.weatherStationTime || generatedAt;
@@ -1912,6 +1997,12 @@
       </div>
     `;
 
+    const windIndicatorLabelUnit = describeWindUnit(getNextWindUnit(displayWindUnit)) || getNextWindUnit(displayWindUnit);
+    const windIndicatorLabel = windIndicatorLabelUnit
+      ? `Switch wind display to ${windIndicatorLabelUnit}`
+      : 'Switch wind display';
+    const windIndicatorText = formatWindUnitIndicator(displayWindUnit);
+
     return `
       <section class="wdash-card wdash-card--temp-wind">
         <header class="wdash-card-header wdash-card-header--temp-wind">
@@ -1922,6 +2013,7 @@
         </header>
         <div class="wdash-temp-wind-main">
           <div class="wdash-temp">
+            <button type="button" class="wdash-temp-unit-indicator wdash-temp-unit-indicator--gauge" data-temp-unit-indicator="true" aria-label="${escapeHtml(indicatorLabel)}" title="${escapeHtml(indicatorLabel)}">&deg;${escapeHtml(currentDisplayUnit)}</button>
             <div class="wdash-gauge" style="--gauge-indicator:${indicator};--gauge-color-a:${tempColor.colors[0]};--gauge-color-b:${tempColor.colors[1]};--gauge-color-mid:${tempColor.mid};--gauge-band-progress:${tempColor.progress};">
               <svg class="wdash-gauge-svg" viewBox="0 0 100 100" aria-hidden="true">
                 <defs>
@@ -1942,7 +2034,9 @@
                   <span class="wdash-temp-extrema-value">${highText}</span>
                 </div>
                 <div class="wdash-gauge-current">
-                  <span class="wdash-gauge-value">${formatTemperature(temp)}</span>
+                  <span class="wdash-gauge-value">
+                    <span class="wdash-gauge-value-number">${mainTempText}</span>
+                  </span>
                 </div>
                 <div class="wdash-temp-extrema wdash-temp-extrema--low">
                   <span class="wdash-temp-extrema-label">Low</span>
@@ -1952,6 +2046,7 @@
             </div>
           </div>
           <div class="wdash-wind">
+            <button type="button" class="wdash-temp-unit-indicator wdash-wind-unit-indicator" data-wind-unit-indicator="true"${windIndicatorLabel ? ` aria-label="${escapeHtml(windIndicatorLabel)}" title="${escapeHtml(windIndicatorLabel)}"` : ''}>${escapeHtml(windIndicatorText)}</button>
             <div class="wdash-wind-compass" aria-label="Wind direction ${bearingLabel} ${formatDegrees(dirDegrees)}">
               ${windCompassSvg(dirDegrees, avgDir)}
               <div class="wdash-wind-overlay">
@@ -1960,8 +2055,8 @@
                   <span class="wdash-wind-heading"> ${formatDegrees(dirDegrees)}</span>
                 </span>
                 <span class="wdash-wind-speed">
-                  <span class="wdash-wind-speed-value">${formatNumber(speed, 1)}</span>
-                  <span class="wdash-unit">mph</span>
+                  <span class="wdash-wind-speed-value">${Number.isFinite(speedDisplay) ? formatNumber(speedDisplay, 1) : '--'}</span>
+                  <span class="wdash-unit wdash-wind-speed-unit">${escapeHtml(windUnitLabel)}</span>
                 </span>
                 <span class="wdash-wind-gust">
                   <span class="wdash-wind-gust-label">Gust: </span>
@@ -2110,7 +2205,7 @@
       index = Math.max(0, Math.min(sensors.length - 1, seed.index));
     }
     const sensor = index >= 0 ? sensors[index] || {} : {};
-    const tempUnit = data.ambientTemperatureUnit || '°F';
+    const tempPair = resolveTemperaturePair(sensor.temperature);
     const humidityUnit = data.ambientHumidityUnit || '%';
     const sensorName = typeof sensor.name === 'string' ? sensor.name.trim() : '';
     const nameDisplay = hasSensors
@@ -2119,7 +2214,7 @@
     const rotationText = hasSensors
       ? (sensors.length > 1 ? `Sensor ${index + 1} of ${sensors.length}` : '')
       : 'No sensors configured';
-    const tempDisplay = formatAmbientValue(sensor.temperatureF, tempUnit, 1);
+    const tempDisplay = formatTemperature(tempPair.f);
     const humiditySource = Number.isFinite(sensor.humidity)
       ? sensor.humidity
       : (seed && Number.isFinite(seed.humidity) ? seed.humidity : null);
@@ -2197,7 +2292,7 @@
               </svg>
               <span class="wdash-ambient-reading wdash-ambient-reading--humidity">${escapeHtml(humidityDisplay)}</span>
               <span class="wdash-ambient-label">Humidity</span>
-              <button type="button" class="wdash-ambient-timer" aria-label="${escapeHtml(timerLabel)}" aria-pressed="false"${timerDisabledAttr}>
+              <button type="button" class="wdash-ambient-timer" aria-label="${escapeHtml(timerLabel)}" title="${escapeHtml(timerLabel)}" aria-pressed="false"${timerDisabledAttr}>
                 <svg class="wdash-ambient-timer-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                   <!-- Simplified sync-style icon: two curved strokes with chevrons drawn as short stroked segments -->
                   <g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -2232,12 +2327,18 @@
     const eventUtc = eventParts ? convertLocalPartsToUtc(eventParts, zone) : NaN;
     const daysAgo = Number.isFinite(eventUtc) ? calculateDaysAgo(nowUtc, eventUtc) : null;
 
-    const distance = toNumber(lightning.distance);
+    const distanceMiles = toNumber(lightning.distanceMi ?? lightning.distance);
+    const distanceKilometers = toNumber(lightning.distanceKm);
     const count = toNumber(lightning.count);
     const battery = toNumber(lightning.battery);
 
     const daysAgoDisplay = Number.isFinite(daysAgo) ? String(daysAgo) : '--';
-    const distanceDisplay = Number.isFinite(distance) ? `${formatNumber(distance, 1)} mi` : '--';
+    let distanceDisplay = '--';
+    if (Number.isFinite(distanceMiles)) {
+      distanceDisplay = formatLightningDistance(distanceMiles, { sourceUnit: 'mi' });
+    } else if (Number.isFinite(distanceKilometers)) {
+      distanceDisplay = formatLightningDistance(distanceKilometers, { sourceUnit: 'km' });
+    }
     const countDisplay = Number.isFinite(count) ? formatNumber(count, 0) : '--';
     const batteryIcon = renderBatteryIcon({
       level: Number.isFinite(battery) ? clamp(battery, 0, 100) : null,
@@ -2248,8 +2349,17 @@
         : 'Lightning sensor battery level unavailable'
     });
 
+    const displayUnit = getDisplayLightningUnit();
+    const nextUnit = getOppositeLightningUnit(displayUnit);
+    const nextUnitLabel = describeLightningUnit(nextUnit);
+    const indicatorLabel = nextUnitLabel
+      ? `Switch lightning distance display to ${nextUnitLabel}`
+      : 'Switch lightning distance display';
+    const indicatorText = formatLightningUnitIndicator(displayUnit);
+
     return `
       <section class="wdash-card wdash-card--lightning">
+        <button type="button" class="wdash-temp-unit-indicator wdash-lightning-unit-indicator" data-lightning-unit-indicator="true" aria-label="${escapeHtml(indicatorLabel)}" title="${escapeHtml(indicatorLabel)}">${escapeHtml(indicatorText)}</button>
         <header class="wdash-card-header wdash-card-header--lightning">
           <h3>Lightning</h3>
           <span class="wdash-lightning-header-icon" aria-hidden="true">${renderLightningBoltIcon()}</span>
@@ -2271,38 +2381,35 @@
 
   function buildRainCard(data) {
     const rain = data.rain || {};
-    const rate = toNumber(rain.rateInPerHour);
+    const displayUnit = getDisplayRainUnit();
     const hourlyIn = toNumber(rain.hourlyIn);
+    const hourlyFillValue = convertRainDepth(hourlyIn, 'in', displayUnit);
+    const fillStates = displayUnit === 'mm' ? RAIN_FILL_STATES_MM : RAIN_FILL_STATES_IN;
 
-    // Determine the fill ratio based on 8 discrete states of hourly rainfall
     let fillRatio = 0;
-    if (hourlyIn > 1.2) {
-      fillRatio = 1; // State 8: > 1.2
-    } else if (hourlyIn > 1.0) {
-      fillRatio = 6 / 7; // State 7: > 1.0 to 1.2
-    } else if (hourlyIn > 0.8) {
-      fillRatio = 5 / 7; // State 6: > 0.8 to 1.0
-    } else if (hourlyIn > 0.6) {
-      fillRatio = 4 / 7; // State 5: > 0.6 to 0.8
-    } else if (hourlyIn > 0.4) {
-      fillRatio = 3 / 7; // State 4: > 0.4 to 0.6
-    } else if (hourlyIn > 0.2) {
-      fillRatio = 2 / 7; // State 3: > 0.2 to 0.4
-    } else if (hourlyIn > 0) {
-      fillRatio = 1 / 7; // State 2: > 0 to 0.2
-    } // State 1: 0 (default)
+    if (Number.isFinite(hourlyFillValue)) {
+      for (const state of fillStates) {
+        if (hourlyFillValue > state.threshold) {
+          fillRatio = state.ratio;
+          break;
+        }
+      }
+    }
 
     const DROP_HEIGHT = 140;
     const DROP_BOTTOM_Y = 150;
     const fillHeight = DROP_HEIGHT * fillRatio;
     const fillY = DROP_BOTTOM_Y - fillHeight;
 
+    const formatDepth = value => formatRain(value, { sourceUnit: 'in' });
+    const formatRate = value => formatRain(value, { sourceUnit: 'in', perHour: true });
+
     const rightColStats = [
-      { label: 'Event', value: formatRain(rain.eventIn) },
-      { label: 'Hourly', value: formatRain(rain.hourlyIn) },
-      { label: 'Weekly', value: formatRain(rain.weeklyIn) },
-      { label: 'Monthly', value: formatRain(rain.monthlyIn) },
-      { label: 'Yearly', value: formatRain(rain.yearlyIn) }
+      { label: 'Event', value: formatDepth(rain.eventIn) },
+      { label: 'Hourly', value: formatDepth(rain.hourlyIn) },
+      { label: 'Weekly', value: formatDepth(rain.weeklyIn) },
+      { label: 'Monthly', value: formatDepth(rain.monthlyIn) },
+      { label: 'Yearly', value: formatDepth(rain.yearlyIn) }
     ];
 
     const rainBatterySlot = buildBatterySlot(toNumber(rain.battery), {
@@ -2312,8 +2419,20 @@
       titlePrefix: 'Rain sensor battery'
     });
 
+    const altUnit = getOppositeRainUnit(displayUnit);
+    const altUnitLabel = describeRainUnit(altUnit);
+    const indicatorLabel = altUnitLabel ? `Switch rain display to ${altUnitLabel}` : 'Switch rain display';
+    const indicatorText = formatRainUnitIndicator(displayUnit);
+
+    const dailyDepth = formatRainParts(rain.dailyIn, { sourceUnit: 'in' });
+    const dailyDepthHtml = dailyDepth.isValid
+      ? `<span class="wdash-rain-daily-value-amount">${escapeHtml(dailyDepth.valueText)}</span>`
+          + `<span class="wdash-rain-daily-value-unit">${escapeHtml(dailyDepth.unitText)}</span>`
+      : `<span class="wdash-rain-daily-value-amount">--</span>`;
+
     return `
       <section class="wdash-card wdash-card--rain">
+        <button type="button" class="wdash-temp-unit-indicator wdash-rain-unit-indicator" data-rain-unit-indicator="true" aria-label="${escapeHtml(indicatorLabel)}" title="${escapeHtml(indicatorLabel)}">${escapeHtml(indicatorText)}</button>
         <div class="wdash-rain-main">
           <div class="wdash-rain-col wdash-rain-col--drop">
             <svg viewBox="0 0 120 160" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Rain rate visualization">
@@ -2329,12 +2448,12 @@
           <div class="wdash-rain-col wdash-rain-col--center">
             <div class="wdash-rain-rate-wrapper">
               ${buildMetricRow([
-                { label: 'Rate', value: formatRain(rate) }
+                { label: 'Rate', value: formatRate(rain.rateInPerHour) }
               ], 'wdash-rain-stats wdash-metric-row--table', {
               })}
             </div>
             <div class="wdash-rain-daily-metric">
-              <div class="wdash-rain-daily-value">${formatRain(rain.dailyIn)}</div>
+              <div class="wdash-rain-daily-value">${dailyDepthHtml}</div>
               <div class="wdash-rain-daily-label">Daily</div>
               ${rainBatterySlot}
             </div>
@@ -2353,22 +2472,30 @@
     const rate = toNumber(pressure.trendInHgPerHour);
     const change = toNumber(pressure.changeInTrendWindow);
     const outlook = data.outlook24h || {};
+    const displayUnit = getDisplayPressureUnit();
+    const nextUnit = getOppositePressureUnit(displayUnit);
+    const indicatorLabelUnit = describePressureUnit(nextUnit);
+    const indicatorLabel = indicatorLabelUnit ? `Switch barometer display to ${indicatorLabelUnit}` : 'Switch barometer display';
+    const indicatorText = formatPressureUnitIndicator(displayUnit);
     const headerSummary = (() => {
       const source = outlook.shortSummary || outlook.summary || outlook.text;
       const limited = truncateText(source, 40);
       return limited || '';
     })();
     const mode = pressureMode === 'absolute' ? 'absolute' : 'relative';
-    const relative = escapeHtml(formatPressure(pressure.relativeInHg));
-    const absolute = escapeHtml(formatPressure(pressure.absoluteInHg));
+    const relative = escapeHtml(formatPressure(pressure.relativeInHg, { sourceUnit: 'inhg' }));
+    const absolute = escapeHtml(formatPressure(pressure.absoluteInHg, { sourceUnit: 'inhg' }));
+    const rateText = formatPressureChange(rate, { sourceUnit: 'inhg', perHour: true });
+    const changeText = formatPressureChange(change, { sourceUnit: 'inhg' });
     const stats = [
       { label: 'Tendency', value: trend },
-      { label: 'Rate', value: formatSigned(rate, 3, 'inHg/hr') },
-      { label: 'Change', value: formatSigned(change, 3, 'inHg') }
+      { label: 'Rate', value: rateText },
+      { label: 'Change', value: changeText }
     ];
 
     return `
       <section class="wdash-card wdash-card--pressure" data-pressure-mode="${mode}">
+        <button type="button" class="wdash-temp-unit-indicator wdash-pressure-unit-indicator" data-pressure-unit-indicator="true" aria-label="${escapeHtml(indicatorLabel)}" title="${escapeHtml(indicatorLabel)}">${escapeHtml(indicatorText)}</button>
         ${cardHeader(
           CARD_TITLES.pressure,
           data,
@@ -2980,12 +3107,1238 @@
 
   function setupInteractiveComponents(container) {
     setupPressureToggle(container);
+    setupPressureUnitIndicator(container);
     setupAmbientControls(container);
     setupTempWindGaugeSizing(container);
+    setupTemperatureUnitIndicator(container);
+    setupWindUnitIndicator(container);
+    setupRainUnitIndicator(container);
+    setupLightningUnitIndicator(container);
     // ensure ambient ring sizing is applied on setup
     applyAmbientRingSizing();
     // also size outdoor gauge/compass
     applyOutdoorRingSizing();
+  }
+
+  function setupTemperatureUnitIndicator(container) {
+    if (!container) return;
+    const indicator = container.querySelector('[data-temp-unit-indicator="true"]');
+    if (!indicator) return;
+    if (indicator.dataset.tempUnitListenerBound === 'true') {
+      syncTemperatureUnitIndicators();
+      return;
+    }
+
+    indicator.addEventListener('click', handleTemperatureIndicatorClick);
+    indicator.dataset.tempUnitListenerBound = 'true';
+    syncTemperatureUnitIndicators();
+  }
+
+  function handleTemperatureIndicatorClick(event) {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
+    const next = getOppositeTemperatureUnit(getDisplayTemperatureUnit());
+    setTemperatureDisplayUnit(next);
+  }
+
+  function refreshTemperatureUnitUI() {
+    syncTemperatureUnitIndicators();
+  }
+
+  function syncTemperatureUnitIndicators() {
+    const buttons = document.querySelectorAll('#' + DISPLAY_TILE_ID + ' [data-temp-unit-indicator="true"]');
+    if (!buttons.length) return;
+    const current = getDisplayTemperatureUnit();
+    const next = getOppositeTemperatureUnit(current);
+    const label = `Switch temperature display to ${describeTemperatureUnit(next)}`;
+
+    buttons.forEach(button => {
+      button.textContent = formatTemperatureUnitIndicator(current);
+      if (label) {
+        button.setAttribute('aria-label', label);
+        button.setAttribute('title', label);
+      } else {
+        button.removeAttribute('aria-label');
+        button.removeAttribute('title');
+      }
+    });
+  }
+
+  function setupWindUnitIndicator(container) {
+    if (!container) return;
+    const indicator = container.querySelector('[data-wind-unit-indicator="true"]');
+    if (!indicator) return;
+    if (indicator.dataset.windUnitListenerBound === 'true') {
+      syncWindUnitIndicators();
+      return;
+    }
+
+    indicator.addEventListener('click', handleWindIndicatorClick);
+    indicator.dataset.windUnitListenerBound = 'true';
+    syncWindUnitIndicators();
+  }
+
+  function handleWindIndicatorClick(event) {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
+    const next = getNextWindUnit(getDisplayWindUnit());
+    setWindDisplayUnit(next);
+  }
+
+  function refreshWindUnitUI() {
+    syncWindUnitIndicators();
+  }
+
+  function syncWindUnitIndicators() {
+    const buttons = document.querySelectorAll('#' + DISPLAY_TILE_ID + ' [data-wind-unit-indicator="true"]');
+    if (!buttons.length) return;
+    const current = getDisplayWindUnit();
+    const next = getNextWindUnit(current);
+    const labelUnit = describeWindUnit(next);
+    const label = labelUnit ? `Switch wind display to ${labelUnit}` : 'Switch wind display';
+    const text = formatWindUnitIndicator(current);
+
+    buttons.forEach(button => {
+      button.textContent = text;
+      if (label) {
+        button.setAttribute('aria-label', label);
+        button.setAttribute('title', label);
+      } else {
+        button.removeAttribute('aria-label');
+        button.removeAttribute('title');
+      }
+    });
+  }
+
+  function setupPressureUnitIndicator(container) {
+    if (!container) return;
+    const indicator = container.querySelector('[data-pressure-unit-indicator="true"]');
+    if (!indicator) return;
+    if (indicator.dataset.pressureUnitListenerBound === 'true') {
+      syncPressureUnitIndicators();
+      return;
+    }
+
+    indicator.addEventListener('click', handlePressureIndicatorClick);
+    indicator.dataset.pressureUnitListenerBound = 'true';
+    syncPressureUnitIndicators();
+  }
+
+  function handlePressureIndicatorClick(event) {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
+    const next = getOppositePressureUnit(getDisplayPressureUnit());
+    setPressureDisplayUnit(next);
+  }
+
+  function refreshPressureUnitUI() {
+    syncPressureUnitIndicators();
+  }
+
+  function syncPressureUnitIndicators() {
+    const buttons = document.querySelectorAll('#' + DISPLAY_TILE_ID + ' [data-pressure-unit-indicator="true"]');
+    if (!buttons.length) return;
+    const current = getDisplayPressureUnit();
+    const next = getOppositePressureUnit(current);
+    const labelUnit = describePressureUnit(next);
+    const label = labelUnit ? `Switch barometer display to ${labelUnit}` : 'Switch barometer display';
+    const text = formatPressureUnitIndicator(current);
+
+    buttons.forEach(button => {
+      button.textContent = text;
+      if (label) {
+        button.setAttribute('aria-label', label);
+        button.setAttribute('title', label);
+      } else {
+        button.removeAttribute('aria-label');
+        button.removeAttribute('title');
+      }
+    });
+  }
+
+  function setupRainUnitIndicator(container) {
+    if (!container) return;
+    const indicator = container.querySelector('[data-rain-unit-indicator="true"]');
+    if (!indicator) return;
+    if (indicator.dataset.rainUnitListenerBound === 'true') {
+      syncRainUnitIndicators();
+      return;
+    }
+
+    indicator.addEventListener('click', handleRainIndicatorClick);
+    indicator.dataset.rainUnitListenerBound = 'true';
+    syncRainUnitIndicators();
+  }
+
+  function handleRainIndicatorClick(event) {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
+    const next = getOppositeRainUnit(getDisplayRainUnit());
+    setRainDisplayUnit(next);
+  }
+
+  function refreshRainUnitUI() {
+    syncRainUnitIndicators();
+  }
+
+  function syncRainUnitIndicators() {
+    const buttons = document.querySelectorAll('#' + DISPLAY_TILE_ID + ' [data-rain-unit-indicator="true"]');
+    if (!buttons.length) return;
+    const current = getDisplayRainUnit();
+    const next = getOppositeRainUnit(current);
+    const labelUnit = describeRainUnit(next);
+    const label = labelUnit ? `Switch rain display to ${labelUnit}` : 'Switch rain display';
+    const text = formatRainUnitIndicator(current);
+
+    buttons.forEach(button => {
+      button.textContent = text;
+      if (label) {
+        button.setAttribute('aria-label', label);
+        button.setAttribute('title', label);
+      } else {
+        button.removeAttribute('aria-label');
+        button.removeAttribute('title');
+      }
+    });
+  }
+
+  function setupLightningUnitIndicator(container) {
+    if (!container) return;
+    const indicator = container.querySelector('[data-lightning-unit-indicator="true"]');
+    if (!indicator) return;
+    if (indicator.dataset.lightningUnitListenerBound === 'true') {
+      syncLightningUnitIndicators();
+      return;
+    }
+
+    indicator.addEventListener('click', handleLightningIndicatorClick);
+    indicator.dataset.lightningUnitListenerBound = 'true';
+    syncLightningUnitIndicators();
+  }
+
+  function handleLightningIndicatorClick(event) {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
+    const next = getOppositeLightningUnit(getDisplayLightningUnit());
+    setLightningDisplayUnit(next);
+  }
+
+  function refreshLightningUnitUI() {
+    syncLightningUnitIndicators();
+  }
+
+  function syncLightningUnitIndicators() {
+    const buttons = document.querySelectorAll('#' + DISPLAY_TILE_ID + ' [data-lightning-unit-indicator="true"]');
+    if (!buttons.length) return;
+    const current = getDisplayLightningUnit();
+    const next = getOppositeLightningUnit(current);
+    const labelUnit = describeLightningUnit(next);
+    const label = labelUnit ? `Switch lightning distance display to ${labelUnit}` : 'Switch lightning distance display';
+    const text = formatLightningUnitIndicator(current);
+
+    buttons.forEach(button => {
+      button.textContent = text;
+      if (label) {
+        button.setAttribute('aria-label', label);
+        button.setAttribute('title', label);
+      } else {
+        button.removeAttribute('aria-label');
+        button.removeAttribute('title');
+      }
+    });
+  }
+
+  function applyTemperatureUnitsFromMetadata(metadata) {
+    if (!metadata || typeof metadata !== 'object') return;
+
+    const unitsSource = isPlainObject(metadata.temperatureUnits) ? metadata.temperatureUnits : null;
+    const inputCandidate = unitsSource?.input ?? unitsSource?.source ?? unitsSource?.sensor ?? metadata.temperatureInputUnit;
+    const displayCandidate = unitsSource?.display ?? unitsSource?.default ?? unitsSource?.output ?? metadata.temperatureDisplayUnit;
+
+    const normalizedInput = normalizeTemperatureUnit(inputCandidate);
+    const normalizedDisplay = normalizeTemperatureUnit(displayCandidate);
+
+    let changed = false;
+
+    const effectiveInput = normalizedInput || normalizedDisplay;
+    if (effectiveInput) {
+      temperatureUnitState.metadataInput = effectiveInput;
+      if (effectiveInput !== temperatureUnitState.input) {
+        temperatureUnitState.input = effectiveInput;
+        persistTemperatureUnit('input', effectiveInput);
+        changed = true;
+      }
+    }
+
+    if (normalizedDisplay) {
+      const previousMetadataDisplay = temperatureUnitState.metadataDisplay;
+      const metadataChanged = normalizedDisplay !== previousMetadataDisplay;
+      temperatureUnitState.metadataDisplay = normalizedDisplay;
+      if (metadataChanged) {
+        temperatureUnitState.displayOverride = false;
+      }
+      const overrideActive = temperatureUnitState.displayOverride === true;
+      if ((!overrideActive || metadataChanged) && normalizedDisplay !== temperatureUnitState.display) {
+        temperatureUnitState.display = normalizedDisplay;
+        persistTemperatureUnit('display', normalizedDisplay);
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      refreshTemperatureUnitUI();
+    }
+  }
+
+  function applyRainUnitsFromMetadata(metadata) {
+    if (!metadata || typeof metadata !== 'object') return;
+
+    const unitsSource = isPlainObject(metadata.rainUnits) ? metadata.rainUnits : null;
+    const inputCandidate = unitsSource?.input ?? unitsSource?.source ?? unitsSource?.sensor ?? metadata.rainInputUnit;
+    const displayCandidate = unitsSource?.display ?? unitsSource?.default ?? unitsSource?.output ?? metadata.rainDisplayUnit;
+
+    const normalizedInput = normalizeRainUnit(inputCandidate);
+    const normalizedDisplay = normalizeRainUnit(displayCandidate);
+
+    let changed = false;
+
+    if (normalizedInput) {
+      rainUnitState.metadataInput = normalizedInput;
+      if (normalizedInput !== rainUnitState.input) {
+        rainUnitState.input = normalizedInput;
+        persistRainUnit('input', normalizedInput);
+        changed = true;
+      }
+    }
+
+    if (normalizedDisplay) {
+      const previousMetadataDisplay = rainUnitState.metadataDisplay;
+      const metadataChanged = normalizedDisplay !== previousMetadataDisplay;
+      rainUnitState.metadataDisplay = normalizedDisplay;
+      if (metadataChanged) {
+        rainUnitState.displayOverride = false;
+      }
+      const overrideActive = rainUnitState.displayOverride === true;
+      if ((!overrideActive || metadataChanged) && normalizedDisplay !== rainUnitState.display) {
+        rainUnitState.display = normalizedDisplay;
+        persistRainUnit('display', normalizedDisplay);
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      refreshRainUnitUI();
+    }
+  }
+
+  function applyWindUnitsFromMetadata(metadata) {
+    if (!metadata || typeof metadata !== 'object') return;
+
+    const unitsSource = isPlainObject(metadata.windUnits) ? metadata.windUnits : null;
+    const inputCandidate = unitsSource?.input ?? unitsSource?.source ?? unitsSource?.sensor ?? metadata.windInputUnit;
+    const displayCandidate = unitsSource?.display ?? unitsSource?.default ?? unitsSource?.output ?? metadata.windDisplayUnit;
+
+    const normalizedInput = normalizeWindUnit(inputCandidate);
+    const normalizedDisplay = normalizeWindUnit(displayCandidate);
+
+    let changed = false;
+
+    if (normalizedInput) {
+      windUnitState.metadataInput = normalizedInput;
+      if (normalizedInput !== windUnitState.input) {
+        windUnitState.input = normalizedInput;
+        persistWindUnit('input', normalizedInput);
+        changed = true;
+      }
+    }
+
+    if (normalizedDisplay) {
+      const previousMetadataDisplay = windUnitState.metadataDisplay;
+      const metadataChanged = normalizedDisplay !== previousMetadataDisplay;
+      windUnitState.metadataDisplay = normalizedDisplay;
+      if (metadataChanged) {
+        windUnitState.displayOverride = false;
+      }
+      const overrideActive = windUnitState.displayOverride === true;
+      if ((!overrideActive || metadataChanged) && normalizedDisplay !== windUnitState.display) {
+        windUnitState.display = normalizedDisplay;
+        persistWindUnit('display', normalizedDisplay);
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      refreshWindUnitUI();
+    }
+  }
+
+  function applyPressureUnitsFromMetadata(metadata) {
+    if (!metadata || typeof metadata !== 'object') return;
+
+    const unitsSource = isPlainObject(metadata.pressureUnits) ? metadata.pressureUnits : null;
+    const inputCandidate = unitsSource?.input ?? unitsSource?.source ?? unitsSource?.sensor ?? metadata.pressureInputUnit;
+    const displayCandidate = unitsSource?.display ?? unitsSource?.default ?? unitsSource?.output ?? metadata.pressureDisplayUnit;
+
+    const normalizedInput = normalizePressureUnit(inputCandidate);
+    const normalizedDisplay = normalizePressureUnit(displayCandidate);
+
+    let changed = false;
+
+    if (normalizedInput) {
+      pressureUnitState.metadataInput = normalizedInput;
+      if (normalizedInput !== pressureUnitState.input) {
+        pressureUnitState.input = normalizedInput;
+        persistPressureUnit('input', normalizedInput);
+        changed = true;
+      }
+    }
+
+    if (normalizedDisplay) {
+      const previousMetadataDisplay = pressureUnitState.metadataDisplay;
+      const metadataChanged = normalizedDisplay !== previousMetadataDisplay;
+      pressureUnitState.metadataDisplay = normalizedDisplay;
+      if (metadataChanged) {
+        pressureUnitState.displayOverride = false;
+      }
+      const overrideActive = pressureUnitState.displayOverride === true;
+      if ((!overrideActive || metadataChanged) && normalizedDisplay !== pressureUnitState.display) {
+        pressureUnitState.display = normalizedDisplay;
+        persistPressureUnit('display', normalizedDisplay);
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      refreshPressureUnitUI();
+    }
+  }
+
+  function applyLightningUnitsFromMetadata(metadata) {
+    if (!metadata || typeof metadata !== 'object') return;
+
+    const unitsSource = isPlainObject(metadata.lightningUnits) ? metadata.lightningUnits : null;
+    const inputCandidate = unitsSource?.input ?? unitsSource?.source ?? unitsSource?.sensor ?? metadata.lightningInputUnit;
+    const displayCandidate = unitsSource?.display ?? unitsSource?.default ?? unitsSource?.output ?? metadata.lightningDisplayUnit;
+
+    const normalizedInput = normalizeLightningUnit(inputCandidate);
+    const normalizedDisplay = normalizeLightningUnit(displayCandidate);
+
+    let changed = false;
+
+    if (normalizedInput) {
+      lightningUnitState.metadataInput = normalizedInput;
+      if (normalizedInput !== lightningUnitState.input) {
+        lightningUnitState.input = normalizedInput;
+        persistLightningUnit('input', normalizedInput);
+        changed = true;
+      }
+    }
+
+    if (normalizedDisplay) {
+      const previousMetadataDisplay = lightningUnitState.metadataDisplay;
+      const metadataChanged = normalizedDisplay !== previousMetadataDisplay;
+      lightningUnitState.metadataDisplay = normalizedDisplay;
+      if (metadataChanged) {
+        lightningUnitState.displayOverride = false;
+      }
+      const overrideActive = lightningUnitState.displayOverride === true;
+      if ((!overrideActive || metadataChanged) && normalizedDisplay !== lightningUnitState.display) {
+        lightningUnitState.display = normalizedDisplay;
+        persistLightningUnit('display', normalizedDisplay);
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      refreshLightningUnitUI();
+    }
+  }
+
+  function setTemperatureInputUnit(unit) {
+    const normalized = normalizeTemperatureUnit(unit);
+    if (!normalized || normalized === temperatureUnitState.input) {
+      refreshTemperatureUnitUI();
+      return;
+    }
+    temperatureUnitState.input = normalized;
+    persistTemperatureUnit('input', normalized);
+    refreshTemperatureUnitUI();
+    if (!IS_TEST_ENV) {
+      safeRenderFromData();
+    }
+  }
+
+  function setTemperatureDisplayUnit(unit) {
+    const normalized = normalizeTemperatureUnit(unit);
+    if (!normalized) {
+      refreshTemperatureUnitUI();
+      return;
+    }
+
+    if (normalized === temperatureUnitState.display) {
+      const metadataDefault = temperatureUnitState.metadataDisplay;
+      temperatureUnitState.displayOverride = metadataDefault ? normalized !== metadataDefault : temperatureUnitState.displayOverride;
+      refreshTemperatureUnitUI();
+      return;
+    }
+
+    const metadataDefault = temperatureUnitState.metadataDisplay;
+    temperatureUnitState.display = normalized;
+    temperatureUnitState.displayOverride = metadataDefault ? normalized !== metadataDefault : true;
+    persistTemperatureUnit('display', normalized);
+    refreshTemperatureUnitUI();
+    if (!IS_TEST_ENV) {
+      safeRenderFromData();
+    }
+  }
+
+  function setRainInputUnit(unit) {
+    const normalized = normalizeRainUnit(unit);
+    if (!normalized || normalized === rainUnitState.input) {
+      refreshRainUnitUI();
+      return;
+    }
+    rainUnitState.input = normalized;
+    persistRainUnit('input', normalized);
+    refreshRainUnitUI();
+    if (!IS_TEST_ENV) {
+      safeRenderFromData();
+    }
+  }
+
+  function setRainDisplayUnit(unit) {
+    const normalized = normalizeRainUnit(unit);
+    if (!normalized) {
+      refreshRainUnitUI();
+      return;
+    }
+
+    if (normalized === rainUnitState.display) {
+      const metadataDefault = rainUnitState.metadataDisplay;
+      rainUnitState.displayOverride = metadataDefault ? normalized !== metadataDefault : rainUnitState.displayOverride;
+      refreshRainUnitUI();
+      return;
+    }
+
+    const metadataDefault = rainUnitState.metadataDisplay;
+    rainUnitState.display = normalized;
+    rainUnitState.displayOverride = metadataDefault ? normalized !== metadataDefault : true;
+    persistRainUnit('display', normalized);
+    refreshRainUnitUI();
+    if (!IS_TEST_ENV) {
+      safeRenderFromData();
+    }
+  }
+
+  function setWindInputUnit(unit) {
+    const normalized = normalizeWindUnit(unit);
+    if (!normalized || normalized === windUnitState.input) {
+      refreshWindUnitUI();
+      return;
+    }
+    windUnitState.input = normalized;
+    persistWindUnit('input', normalized);
+    refreshWindUnitUI();
+    if (!IS_TEST_ENV) {
+      safeRenderFromData();
+    }
+  }
+
+  function setWindDisplayUnit(unit) {
+    const normalized = normalizeWindUnit(unit);
+    if (!normalized) {
+      refreshWindUnitUI();
+      return;
+    }
+
+    if (normalized === windUnitState.display) {
+      const metadataDefault = windUnitState.metadataDisplay;
+      windUnitState.displayOverride = metadataDefault ? normalized !== metadataDefault : windUnitState.displayOverride;
+      refreshWindUnitUI();
+      return;
+    }
+
+    const metadataDefault = windUnitState.metadataDisplay;
+    windUnitState.display = normalized;
+    windUnitState.displayOverride = metadataDefault ? normalized !== metadataDefault : true;
+    persistWindUnit('display', normalized);
+    refreshWindUnitUI();
+    if (!IS_TEST_ENV) {
+      safeRenderFromData();
+    }
+  }
+
+  function setPressureInputUnit(unit) {
+    const normalized = normalizePressureUnit(unit);
+    if (!normalized || normalized === pressureUnitState.input) {
+      refreshPressureUnitUI();
+      return;
+    }
+    pressureUnitState.input = normalized;
+    persistPressureUnit('input', normalized);
+    refreshPressureUnitUI();
+    if (!IS_TEST_ENV) {
+      safeRenderFromData();
+    }
+  }
+
+  function setPressureDisplayUnit(unit) {
+    const normalized = normalizePressureUnit(unit);
+    if (!normalized) {
+      refreshPressureUnitUI();
+      return;
+    }
+
+    if (normalized === pressureUnitState.display) {
+      const metadataDefault = pressureUnitState.metadataDisplay;
+      pressureUnitState.displayOverride = metadataDefault ? normalized !== metadataDefault : pressureUnitState.displayOverride;
+      refreshPressureUnitUI();
+      return;
+    }
+
+    const metadataDefault = pressureUnitState.metadataDisplay;
+    pressureUnitState.display = normalized;
+    pressureUnitState.displayOverride = metadataDefault ? normalized !== metadataDefault : true;
+    persistPressureUnit('display', normalized);
+    refreshPressureUnitUI();
+    if (!IS_TEST_ENV) {
+      safeRenderFromData();
+    }
+  }
+
+  function setLightningInputUnit(unit) {
+    const normalized = normalizeLightningUnit(unit);
+    if (!normalized || normalized === lightningUnitState.input) {
+      refreshLightningUnitUI();
+      return;
+    }
+    lightningUnitState.input = normalized;
+    persistLightningUnit('input', normalized);
+    refreshLightningUnitUI();
+    if (!IS_TEST_ENV) {
+      safeRenderFromData();
+    }
+  }
+
+  function setLightningDisplayUnit(unit) {
+    const normalized = normalizeLightningUnit(unit);
+    if (!normalized) {
+      refreshLightningUnitUI();
+      return;
+    }
+
+    if (normalized === lightningUnitState.display) {
+      const metadataDefault = lightningUnitState.metadataDisplay;
+      lightningUnitState.displayOverride = metadataDefault ? normalized !== metadataDefault : lightningUnitState.displayOverride;
+      refreshLightningUnitUI();
+      return;
+    }
+
+    const metadataDefault = lightningUnitState.metadataDisplay;
+    lightningUnitState.display = normalized;
+    lightningUnitState.displayOverride = metadataDefault ? normalized !== metadataDefault : true;
+    persistLightningUnit('display', normalized);
+    refreshLightningUnitUI();
+    if (!IS_TEST_ENV) {
+      safeRenderFromData();
+    }
+  }
+
+  function getInputTemperatureUnit() {
+    const normalized = normalizeTemperatureUnit(temperatureUnitState.input);
+    return normalized || 'F';
+  }
+
+  function getDisplayTemperatureUnit() {
+    const normalized = normalizeTemperatureUnit(temperatureUnitState.display);
+    return normalized || 'F';
+  }
+
+  function getOppositeTemperatureUnit(unit) {
+    return normalizeTemperatureUnit(unit) === 'C' ? 'F' : 'C';
+  }
+
+  function getInputRainUnit() {
+    const normalized = normalizeRainUnit(rainUnitState.input);
+    return normalized || 'in';
+  }
+
+  function getDisplayRainUnit() {
+    const normalized = normalizeRainUnit(rainUnitState.display);
+    return normalized || 'in';
+  }
+
+  function getOppositeRainUnit(unit) {
+    return normalizeRainUnit(unit) === 'mm' ? 'in' : 'mm';
+  }
+
+  function getInputWindUnit() {
+    const normalized = normalizeWindUnit(windUnitState.input);
+    return normalized || 'mph';
+  }
+
+  function getDisplayWindUnit() {
+    const normalized = normalizeWindUnit(windUnitState.display);
+    return normalized || 'mph';
+  }
+
+  function getNextWindUnit(unit) {
+    const normalized = normalizeWindUnit(unit) || 'mph';
+    const index = WIND_UNITS.indexOf(normalized);
+    if (index === -1) return 'mph';
+    return WIND_UNITS[(index + 1) % WIND_UNITS.length];
+  }
+
+  function getInputPressureUnit() {
+    const normalized = normalizePressureUnit(pressureUnitState.input);
+    return normalized || 'inhg';
+  }
+
+  function getDisplayPressureUnit() {
+    const normalized = normalizePressureUnit(pressureUnitState.display);
+    return normalized || 'inhg';
+  }
+
+  function getOppositePressureUnit(unit) {
+    return normalizePressureUnit(unit) === 'mb' ? 'inhg' : 'mb';
+  }
+
+  function getInputLightningUnit() {
+    const normalized = normalizeLightningUnit(lightningUnitState.input);
+    return normalized || 'mi';
+  }
+
+  function getDisplayLightningUnit() {
+    const normalized = normalizeLightningUnit(lightningUnitState.display);
+    return normalized || 'mi';
+  }
+
+  function getOppositeLightningUnit(unit) {
+    return normalizeLightningUnit(unit) === 'km' ? 'mi' : 'km';
+  }
+
+  function normalizeTemperatureUnit(value) {
+    if (typeof value !== 'string') return null;
+    const normalized = value.trim().toUpperCase();
+    return TEMPERATURE_UNITS.includes(normalized) ? normalized : null;
+  }
+
+  function describeTemperatureUnit(unit) {
+    const normalized = normalizeTemperatureUnit(unit);
+    if (normalized === 'C') return 'Celsius';
+    if (normalized === 'F') return 'Fahrenheit';
+    return '';
+  }
+
+  function formatTemperatureUnitIndicator(unit) {
+    const normalized = normalizeTemperatureUnit(unit);
+    return normalized ? `°${normalized}` : '';
+  }
+
+  function normalizeRainUnit(value) {
+    if (typeof value !== 'string') return null;
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) return null;
+    if (normalized === 'in' || normalized === 'inch' || normalized === 'inches') return 'in';
+    if (normalized === 'mm' || normalized === 'millimeter' || normalized === 'millimeters') return 'mm';
+    return null;
+  }
+
+  function describeRainUnit(unit) {
+    const normalized = normalizeRainUnit(unit);
+    if (normalized === 'mm') return 'millimeters';
+    if (normalized === 'in') return 'inches';
+    return '';
+  }
+
+  function formatRainUnitIndicator(unit) {
+    const normalized = normalizeRainUnit(unit);
+    return normalized || '';
+  }
+
+  function normalizeLightningUnit(value) {
+    if (typeof value !== 'string') return null;
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) return null;
+    if (normalized === 'mi' || normalized === 'mile' || normalized === 'miles') return 'mi';
+    if (normalized === 'km' || normalized === 'kilometer' || normalized === 'kilometers') return 'km';
+    return null;
+  }
+
+  function describeLightningUnit(unit) {
+    const normalized = normalizeLightningUnit(unit);
+    if (normalized === 'km') return 'kilometers';
+    if (normalized === 'mi') return 'miles';
+    return '';
+  }
+
+  function formatLightningUnitIndicator(unit) {
+    const normalized = normalizeLightningUnit(unit);
+    if (normalized === 'km') return 'km';
+    if (normalized === 'mi') return 'mi';
+    return '';
+  }
+
+  function normalizeWindUnit(value) {
+    if (typeof value !== 'string') return null;
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) return null;
+    if (normalized === 'mph' || normalized === 'mi' || normalized === 'mile' || normalized === 'miles') return 'mph';
+    if (normalized === 'kph' || normalized === 'kmh' || normalized === 'km' || normalized === 'kilometer' || normalized === 'kilometers') return 'kph';
+    if (normalized === 'kts' || normalized === 'kt' || normalized === 'knot' || normalized === 'knots') return 'kts';
+    return null;
+  }
+
+  function describeWindUnit(unit) {
+    const normalized = normalizeWindUnit(unit);
+    if (normalized === 'kph') return 'kilometers per hour';
+    if (normalized === 'kts') return 'knots';
+    if (normalized === 'mph') return 'miles per hour';
+    return '';
+  }
+
+  function formatWindUnitIndicator(unit) {
+    const normalized = normalizeWindUnit(unit);
+    if (normalized === 'kph') return 'km';
+    if (normalized === 'kts') return 'kt';
+    if (normalized === 'mph') return 'mi';
+    return '';
+  }
+
+  function formatWindUnitLabel(unit) {
+    const normalized = normalizeWindUnit(unit);
+    if (normalized === 'kph') return 'kph';
+    if (normalized === 'kts') return 'kts';
+    if (normalized === 'mph') return 'mph';
+    return '';
+  }
+
+  function normalizePressureUnit(value) {
+    const normalized = normalizePressureUnitForConversion(value);
+    if (!normalized) return null;
+    if (normalized === 'inhg' || normalized === 'mmhg') return 'inhg';
+    if (normalized === 'mb' || normalized === 'kpa') return 'mb';
+    return normalized === 'inhg' ? 'inhg' : null;
+  }
+
+  function describePressureUnit(unit) {
+    const normalized = normalizePressureUnit(unit);
+    if (normalized === 'mb') return 'millibars';
+    if (normalized === 'inhg') return 'inches of mercury';
+    return '';
+  }
+
+  function formatPressureUnitIndicator(unit) {
+    const normalized = normalizePressureUnit(unit);
+    if (normalized === 'mb') return 'mb';
+    if (normalized === 'inhg') return 'in';
+    return '';
+  }
+
+  function formatPressureUnitLabel(unit) {
+    const normalized = normalizePressureUnit(unit);
+    if (normalized === 'mb') return 'mb';
+    if (normalized === 'inhg') return 'inHg';
+    return '';
+  }
+
+  function pressureValueDecimals(unit) {
+    const normalized = normalizePressureUnit(unit);
+    return normalized === 'mb' ? 1 : 2;
+  }
+
+  function pressureChangeDecimals(unit) {
+    const normalized = normalizePressureUnit(unit);
+    return normalized === 'mb' ? 2 : 3;
+  }
+
+  function normalizePressureUnitForConversion(value) {
+    if (typeof value !== 'string') return null;
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) return null;
+    if (normalized === 'inhg' || normalized === 'in' || normalized === 'hg' || normalized === 'inch' || normalized === 'inches') return 'inhg';
+    if (normalized === 'mb' || normalized === 'mbar' || normalized === 'millibar' || normalized === 'millibars' || normalized === 'hpa' || normalized === 'hectopascal' || normalized === 'hectopascals') return 'mb';
+    if (normalized === 'kpa' || normalized === 'kilopascal' || normalized === 'kilopascals') return 'kpa';
+    if (normalized === 'mmhg' || normalized === 'mm') return 'mmhg';
+    return null;
+  }
+
+  function convertPressure(value, fromUnit, toUnit) {
+    const numeric = toNumber(value);
+    if (!Number.isFinite(numeric)) return NaN;
+    const fromNormalized = normalizePressureUnitForConversion(fromUnit) || 'inhg';
+    const toNormalized = normalizePressureUnitForConversion(toUnit) || 'inhg';
+
+    let valueInInHg;
+    switch (fromNormalized) {
+      case 'mb':
+        valueInInHg = numeric / 33.8638866667;
+        break;
+      case 'kpa':
+        valueInInHg = numeric / 3.3863886667;
+        break;
+      case 'mmhg':
+        valueInInHg = numeric / 25.4;
+        break;
+      case 'inhg':
+      default:
+        valueInInHg = numeric;
+        break;
+    }
+
+    switch (toNormalized) {
+      case 'mb':
+        return valueInInHg * 33.8638866667;
+      case 'kpa':
+        return valueInInHg * 3.3863886667;
+      case 'mmhg':
+        return valueInInHg * 25.4;
+      case 'inhg':
+      default:
+        return valueInInHg;
+    }
+  }
+
+  function readStoredTemperatureUnit(type) {
+    const key = TEMPERATURE_UNIT_STORAGE_KEYS[type];
+    if (!key) return null;
+    try {
+      if (typeof window === 'undefined' || !window.localStorage) return null;
+    } catch (e) {
+      return null;
+    }
+    try {
+      const stored = window.localStorage.getItem(key);
+      return normalizeTemperatureUnit(stored);
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function persistTemperatureUnit(type, unit) {
+    const key = TEMPERATURE_UNIT_STORAGE_KEYS[type];
+    const normalized = normalizeTemperatureUnit(unit);
+    if (!key || !normalized) return;
+    try {
+      if (typeof window === 'undefined' || !window.localStorage) return;
+    } catch (e) {
+      return;
+    }
+    try {
+      window.localStorage.setItem(key, normalized);
+    } catch (err) { /* ignore */ }
+  }
+
+  function readStoredRainUnit(type) {
+    const key = RAIN_UNIT_STORAGE_KEYS[type];
+    if (!key) return null;
+    try {
+      if (typeof window === 'undefined' || !window.localStorage) return null;
+    } catch (e) {
+      return null;
+    }
+    try {
+      const stored = window.localStorage.getItem(key);
+      return normalizeRainUnit(stored);
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function persistRainUnit(type, unit) {
+    const key = RAIN_UNIT_STORAGE_KEYS[type];
+    const normalized = normalizeRainUnit(unit);
+    if (!key || !normalized) return;
+    try {
+      if (typeof window === 'undefined' || !window.localStorage) return;
+    } catch (e) {
+      return;
+    }
+    try {
+      window.localStorage.setItem(key, normalized);
+    } catch (err) { /* ignore */ }
+  }
+
+  function readStoredWindUnit(type) {
+    const key = WIND_UNIT_STORAGE_KEYS[type];
+    if (!key) return null;
+    try {
+      if (typeof window === 'undefined' || !window.localStorage) return null;
+    } catch (e) {
+      return null;
+    }
+    try {
+      const stored = window.localStorage.getItem(key);
+      return normalizeWindUnit(stored);
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function persistWindUnit(type, unit) {
+    const key = WIND_UNIT_STORAGE_KEYS[type];
+    const normalized = normalizeWindUnit(unit);
+    if (!key || !normalized) return;
+    try {
+      if (typeof window === 'undefined' || !window.localStorage) return;
+    } catch (e) {
+      return;
+    }
+    try {
+      window.localStorage.setItem(key, normalized);
+    } catch (err) { /* ignore */ }
+  }
+
+  function readStoredPressureUnit(type) {
+    const key = PRESSURE_UNIT_STORAGE_KEYS[type];
+    if (!key) return null;
+    try {
+      if (typeof window === 'undefined' || !window.localStorage) return null;
+    } catch (e) {
+      return null;
+    }
+    try {
+      const stored = window.localStorage.getItem(key);
+      return normalizePressureUnit(stored);
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function persistPressureUnit(type, unit) {
+    const key = PRESSURE_UNIT_STORAGE_KEYS[type];
+    const normalized = normalizePressureUnit(unit);
+    if (!key || !normalized) return;
+    try {
+      if (typeof window === 'undefined' || !window.localStorage) return;
+    } catch (e) {
+      return;
+    }
+    try {
+      window.localStorage.setItem(key, normalized);
+    } catch (err) { /* ignore */ }
+  }
+
+  function readStoredLightningUnit(type) {
+    const key = LIGHTNING_UNIT_STORAGE_KEYS[type];
+    if (!key) return null;
+    try {
+      if (typeof window === 'undefined' || !window.localStorage) return null;
+    } catch (e) {
+      return null;
+    }
+    try {
+      const stored = window.localStorage.getItem(key);
+      return normalizeLightningUnit(stored);
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function persistLightningUnit(type, unit) {
+    const key = LIGHTNING_UNIT_STORAGE_KEYS[type];
+    const normalized = normalizeLightningUnit(unit);
+    if (!key || !normalized) return;
+    try {
+      if (typeof window === 'undefined' || !window.localStorage) return;
+    } catch (e) {
+      return;
+    }
+    try {
+      window.localStorage.setItem(key, normalized);
+    } catch (err) { /* ignore */ }
+  }
+
+  function resolveTemperaturePair(valueF, valueC) {
+    if (arguments.length <= 1 || valueC === undefined) {
+      const sourceUnit = getInputTemperatureUnit();
+      const value = toNumber(valueF);
+      if (!Number.isFinite(value)) {
+        return { f: NaN, c: NaN };
+      }
+      return {
+        f: convertTemperatureValue(value, sourceUnit, 'F'),
+        c: convertTemperatureValue(value, sourceUnit, 'C')
+      };
+    }
+
+    const preferred = getInputTemperatureUnit();
+    const f = toNumber(valueF);
+    const c = toNumber(valueC);
+
+    if (preferred === 'C') {
+      if (Number.isFinite(c)) {
+        return { f: celsiusToFahrenheit(c), c };
+      }
+      if (Number.isFinite(f)) {
+        return { f, c: fahrenheitToCelsius(f) };
+      }
+    } else {
+      if (Number.isFinite(f)) {
+        return { f, c: fahrenheitToCelsius(f) };
+      }
+      if (Number.isFinite(c)) {
+        return { f: celsiusToFahrenheit(c), c };
+      }
+    }
+
+    if (Number.isFinite(f)) {
+      return { f, c: Number.isFinite(c) ? c : fahrenheitToCelsius(f) };
+    }
+    if (Number.isFinite(c)) {
+      return { f: celsiusToFahrenheit(c), c };
+    }
+
+    return { f: NaN, c: NaN };
+  }
+
+  function resolveTemperatureDelta(valueF, valueC) {
+    if (arguments.length <= 1 || valueC === undefined) {
+      const sourceUnit = getInputTemperatureUnit();
+      const value = toNumber(valueF);
+      if (!Number.isFinite(value)) {
+        return { f: NaN, c: NaN };
+      }
+      return {
+        f: convertTemperatureDelta(value, sourceUnit, 'F'),
+        c: convertTemperatureDelta(value, sourceUnit, 'C')
+      };
+    }
+
+    const preferred = getInputTemperatureUnit();
+    const f = toNumber(valueF);
+    const c = toNumber(valueC);
+
+    if (preferred === 'C') {
+      if (Number.isFinite(c)) {
+        return { f: celsiusDeltaToFahrenheit(c), c };
+      }
+      if (Number.isFinite(f)) {
+        return { f, c: fahrenheitDeltaToCelsius(f) };
+      }
+    } else {
+      if (Number.isFinite(f)) {
+        return { f, c: fahrenheitDeltaToCelsius(f) };
+      }
+      if (Number.isFinite(c)) {
+        return { f: celsiusDeltaToFahrenheit(c), c };
+      }
+    }
+
+    if (Number.isFinite(f)) {
+      return { f, c: fahrenheitDeltaToCelsius(f) };
+    }
+    if (Number.isFinite(c)) {
+      return { f: celsiusDeltaToFahrenheit(c), c };
+    }
+
+    return { f: NaN, c: NaN };
+  }
+
+  function convertTemperatureValue(value, fromUnit, toUnit) {
+    if (!Number.isFinite(value)) return NaN;
+    const from = normalizeTemperatureUnit(fromUnit) || 'F';
+    const to = normalizeTemperatureUnit(toUnit) || 'F';
+    if (from === to) return value;
+    if (from === 'F') {
+      return fahrenheitToCelsius(value);
+    }
+    return celsiusToFahrenheit(value);
+  }
+
+  function convertTemperatureDelta(value, fromUnit, toUnit) {
+    if (!Number.isFinite(value)) return NaN;
+    const from = normalizeTemperatureUnit(fromUnit) || 'F';
+    const to = normalizeTemperatureUnit(toUnit) || 'F';
+    if (from === to) return value;
+    if (from === 'F') {
+      return fahrenheitDeltaToCelsius(value);
+    }
+    return celsiusDeltaToFahrenheit(value);
+  }
+
+  function convertRainDepth(value, fromUnit, toUnit) {
+    const numeric = toNumber(value);
+    if (!Number.isFinite(numeric)) return NaN;
+    const from = normalizeRainUnit(fromUnit) || 'in';
+    const to = normalizeRainUnit(toUnit) || 'in';
+    if (from === to) return numeric;
+    if (from === 'in' && to === 'mm') {
+      return numeric * 25.4;
+    }
+    if (from === 'mm' && to === 'in') {
+      return numeric / 25.4;
+    }
+    return numeric;
+  }
+
+  function convertLightningDistance(value, fromUnit, toUnit) {
+    const numeric = toNumber(value);
+    if (!Number.isFinite(numeric)) return NaN;
+    const from = normalizeLightningUnit(fromUnit) || 'mi';
+    const to = normalizeLightningUnit(toUnit) || 'mi';
+    if (from === to) return numeric;
+    if (from === 'mi' && to === 'km') {
+      return numeric * 1.609344;
+    }
+    if (from === 'km' && to === 'mi') {
+      return numeric / 1.609344;
+    }
+    return numeric;
+  }
+
+  function convertWindSpeed(value, fromUnit, toUnit) {
+    const numeric = toNumber(value);
+    if (!Number.isFinite(numeric)) return NaN;
+    const from = normalizeWindUnit(fromUnit) || 'mph';
+    const to = normalizeWindUnit(toUnit) || 'mph';
+    if (from === to) return numeric;
+
+    let mphValue = numeric;
+    if (from === 'kph') {
+      mphValue = numeric / 1.609344;
+    } else if (from === 'kts') {
+      mphValue = numeric * 1.150779448023542;
+    }
+
+    if (to === 'kph') {
+      return mphValue * 1.609344;
+    }
+    if (to === 'kts') {
+      return mphValue / 1.150779448023542;
+    }
+    return mphValue;
+  }
+
+  function fahrenheitToCelsius(value) {
+    return (value - 32) * (5 / 9);
+  }
+
+  function celsiusToFahrenheit(value) {
+    return (value * (9 / 5)) + 32;
+  }
+
+  function fahrenheitDeltaToCelsius(value) {
+    return value * (5 / 9);
+  }
+
+  function celsiusDeltaToFahrenheit(value) {
+    return value * (9 / 5);
   }
 
   function setupHubClock(data) {
@@ -3544,13 +4897,13 @@
     const wind = data?.wind || {};
     const avg = wind.average || {};
 
-    const temp = toNumber(outdoor.temperatureF);
-    const high = toNumber(outdoor.dailyHighF);
-    const low = toNumber(outdoor.dailyLowF);
-    const feels = toNumber(outdoor.feelsLikeF);
-    const dew = toNumber(outdoor.dewPointF);
+    const tempPair = resolveTemperaturePair(outdoor.temperature);
+    const highPair = resolveTemperaturePair(outdoor.dailyHigh);
+    const lowPair = resolveTemperaturePair(outdoor.dailyLow);
+    const feelsPair = resolveTemperaturePair(outdoor.feelsLike);
+    const dewPair = resolveTemperaturePair(outdoor.dewPoint);
     const humidity = toNumber(outdoor.humidity);
-    const trend = toNumber(outdoor.trendFPerHour);
+    const trendPair = resolveTemperatureDelta(outdoor.trendPerHour);
     const batteryLevel = toNumber(outdoor.battery);
 
     const speed = toNumber(wind.speedMph);
@@ -3565,13 +4918,20 @@
 
     const bearingLabel = dirText || (Number.isFinite(dirDegrees) ? degreesToCardinal(dirDegrees) : '--');
     const headingText = Number.isFinite(dirDegrees) ? formatDegrees(dirDegrees) : '--°';
-    const gustText = Number.isFinite(gust) ? `${formatNumber(gust, 1)} mph` : '--';
-    const avgSpeedText = Number.isFinite(avgSpeed) ? `${formatNumber(avgSpeed, 1)} mph` : '--';
+    const displayWindUnit = getDisplayWindUnit();
+    const windUnitLabel = formatWindUnitLabel(displayWindUnit);
+    const speedDisplay = convertWindSpeed(speed, 'mph', displayWindUnit);
+    const gustDisplay = convertWindSpeed(gust, 'mph', displayWindUnit);
+    const avgSpeedDisplay = convertWindSpeed(avgSpeed, 'mph', displayWindUnit);
+    const dailyMaxGustDisplay = convertWindSpeed(dailyMaxGust, 'mph', displayWindUnit);
+    const gustText = Number.isFinite(gustDisplay) ? `${formatNumber(gustDisplay, 1)} ${windUnitLabel}` : '--';
+    const avgSpeedText = Number.isFinite(avgSpeedDisplay) ? `${formatNumber(avgSpeedDisplay, 1)} ${windUnitLabel}` : '--';
     const avgCombinedText = `${avgDirText || '--'} ${avgSpeedText}`.trim();
-    const dailyMaxGustText = Number.isFinite(dailyMaxGust) ? `${formatNumber(dailyMaxGust, 1)} mph` : '--';
+    const dailyMaxGustText = Number.isFinite(dailyMaxGustDisplay) ? `${formatNumber(dailyMaxGustDisplay, 1)} ${windUnitLabel}` : '--';
 
-    const tempColor = colorForTemp(temp);
-    const gaugeIndicatorValue = gaugeIndicator(temp);
+    const tempF = tempPair.f;
+    const tempColor = colorForTemp(tempF);
+    const gaugeIndicatorValue = gaugeIndicator(tempF);
     const gauge = card.querySelector('.wdash-gauge');
     if (gauge && gauge.style) {
       gauge.style.setProperty('--gauge-indicator', gaugeIndicatorValue);
@@ -3585,15 +4945,28 @@
       }
     }
 
-    setTextContent(card.querySelector('.wdash-gauge-value'), formatTemperature(temp));
-    setTextContent(card.querySelector('.wdash-temp-extrema--high .wdash-temp-extrema-value'), formatTemperature(high));
-    setTextContent(card.querySelector('.wdash-temp-extrema--low .wdash-temp-extrema-value'), formatTemperature(low));
+    const gaugeValueEl = card.querySelector('.wdash-gauge-value-number');
+    if (gaugeValueEl) gaugeValueEl.textContent = formatTemperature(tempF);
+    setTextContent(card.querySelector('.wdash-temp-extrema--high .wdash-temp-extrema-value'), formatTemperature(highPair.f));
+    setTextContent(card.querySelector('.wdash-temp-extrema--low .wdash-temp-extrema-value'), formatTemperature(lowPair.f));
+
+    const indicatorButton = card.querySelector('[data-temp-unit-indicator="true"]');
+    if (indicatorButton) {
+      const currentUnit = getDisplayTemperatureUnit();
+      const altUnit = getOppositeTemperatureUnit(currentUnit);
+      const labelUnit = describeTemperatureUnit(altUnit) || altUnit;
+      const label = labelUnit ? `Switch temperature display to ${labelUnit}` : 'Switch temperature display';
+      const indicatorText = formatTemperatureUnitIndicator(currentUnit);
+      if (indicatorButton.textContent !== indicatorText) indicatorButton.textContent = indicatorText;
+      indicatorButton.setAttribute('aria-label', label);
+      indicatorButton.setAttribute('title', label);
+    }
 
     const detailValues = [
-      formatTemperature(feels),
-      formatTemperature(dew),
+      formatTemperature(feelsPair.f),
+      formatTemperature(dewPair.f),
       formatPercent(humidity, 0),
-      formatSigned(trend, 1, '°/hr'),
+      formatSigned(convertTemperatureDelta(trendPair.f, 'F', getDisplayTemperatureUnit()), 1, `°${getDisplayTemperatureUnit()}/hr`),
       avgCombinedText,
       dailyMaxGustText
     ];
@@ -3629,8 +5002,25 @@
       const text = headingText ? ` ${headingText}` : ' --°';
       if (headingEl.textContent !== text) headingEl.textContent = text;
     }
-    setTextContent(card.querySelector('.wdash-wind-speed-value'), Number.isFinite(speed) ? formatNumber(speed, 1) : '--');
+    setTextContent(card.querySelector('.wdash-wind-speed-value'), Number.isFinite(speedDisplay) ? formatNumber(speedDisplay, 1) : '--');
+    setTextContent(card.querySelector('.wdash-wind-speed-unit'), windUnitLabel);
     setTextContent(card.querySelector('.wdash-wind-gust-value'), gustText);
+
+    const windIndicatorButton = card.querySelector('[data-wind-unit-indicator="true"]');
+    if (windIndicatorButton) {
+      const next = getNextWindUnit(displayWindUnit);
+      const labelUnit = describeWindUnit(next) || next;
+      const label = labelUnit ? `Switch wind display to ${labelUnit}` : 'Switch wind display';
+      const indicatorText = formatWindUnitIndicator(displayWindUnit);
+      if (windIndicatorButton.textContent !== indicatorText) windIndicatorButton.textContent = indicatorText;
+      if (label) {
+        windIndicatorButton.setAttribute('aria-label', label);
+        windIndicatorButton.setAttribute('title', label);
+      } else {
+        windIndicatorButton.removeAttribute('aria-label');
+        windIndicatorButton.removeAttribute('title');
+      }
+    }
 
     if (compass) {
       const currentArrow = compass.querySelector('.wdash-compass-arrow--current');
@@ -4001,6 +5391,7 @@
       ? (ambientRotation.paused ? 'Resume ambient sensor rotation' : 'Pause ambient sensor rotation')
       : 'Ambient sensor rotation unavailable';
     button.setAttribute('aria-label', label);
+    button.setAttribute('title', label);
     button.setAttribute('aria-pressed', disabled ? 'false' : String(ambientRotation.paused));
 
     const countdownEl = button.querySelector('.wdash-ambient-timer-countdown');
@@ -4062,7 +5453,7 @@
 
     const sensors = resolveAmbientSensors(data);
     ambientRotation.sensors = sensors;
-    ambientRotation.tempUnit = data?.ambientTemperatureUnit || '°F';
+    ambientRotation.tempUnit = `°${getDisplayTemperatureUnit()}`;
     ambientRotation.humidityUnit = data?.ambientHumidityUnit || '%';
     ambientRotation.interval = resolveAmbientRotationIntervalMs(data);
 
@@ -4140,7 +5531,7 @@
     const batteryEl = scope.querySelector('.wdash-ambient-battery');
 
     if (!sensor) {
-      if (tempEl) tempEl.textContent = formatAmbientValue(null, ambientRotation.tempUnit, 1);
+      if (tempEl) tempEl.textContent = formatTemperature(null);
       if (humidityEl) humidityEl.textContent = formatAmbientValue(null, ambientRotation.humidityUnit, 0);
       if (nameEl) nameEl.textContent = 'No sensors configured';
       if (rotationEl) rotationEl.textContent = '';
@@ -4162,7 +5553,8 @@
     container.classList.remove('wdash-ambient--empty');
     if (card) card.classList.remove('wdash-ambient--empty');
     const sensorName = sensor && typeof sensor.name === 'string' ? sensor.name.trim() : '';
-    if (tempEl) tempEl.textContent = formatAmbientValue(sensor.temperatureF, ambientRotation.tempUnit, 1);
+    const tempPair = resolveTemperaturePair(sensor.temperature);
+    if (tempEl) tempEl.textContent = formatTemperature(tempPair.f);
     if (humidityEl) humidityEl.textContent = formatAmbientValue(sensor.humidity, ambientRotation.humidityUnit, 0);
     if (nameEl) nameEl.textContent = sensorName.length ? sensorName : 'Ambient Sensor';
     if (rotationEl) {
@@ -4190,8 +5582,7 @@
 
       // Temperature: set stroke color to a blended mid color from the temperature band
       if (tempFill && tempTrack) {
-        const t = toNumber(sensor.temperatureF);
-        const tempColors = colorForTemp(t);
+        const tempColors = colorForTemp(tempPair.f);
         const mid = tempColors.mid || mixColors(tempColors.colors[0], tempColors.colors[1], 0.5);
         // If the temp fill uses a gradient, attempt to update its stops; otherwise fall back to mid color
         const svg = tempFill.ownerSVGElement;
@@ -4308,6 +5699,7 @@
   }
 
   function setupAirQualityRotation(data) {
+    const hadTimer = Boolean(airQualityRotation.timer);
     airQualityRotation.lastData = data;
     airQualityRotation.interval = DEFAULT_AIR_QUALITY_ROTATION_INTERVAL_MS;
     const sources = resolveAirQualitySources(data);
@@ -4318,12 +5710,18 @@
     }
 
     if (sources.length > 1) {
-      scheduleAirQualityRotation();
+      if (!airQualityRotation.timer) {
+        scheduleAirQualityRotation();
+      }
     } else {
       stopAirQualityRotationTimer();
       if (!sources.length) {
         airQualityRotation.index = 0;
       }
+    }
+
+    if (hadTimer || !airQualityRotation.timer) {
+      updateAirQualityCard();
     }
   }
 
@@ -5085,6 +6483,7 @@
 .wdash-source-tile { opacity: 0 !important; pointer-events: none !important; }
 .wdash-root { position: relative; width: 100%; height: 100%; --wdash-base-width: 1200px; --wdash-base-height: 900px; --wdash-scale: 1; --wdash-render-width: var(--wdash-base-width); --wdash-render-height: var(--wdash-base-height); background: rgba(4, 9, 20, 0.85); border-radius: 12px; overflow: hidden; box-sizing: border-box; display: flex; align-items: center; justify-content: center; }
 .wdash-frame { position: relative; width: var(--wdash-render-width); height: var(--wdash-render-height); overflow: hidden; box-sizing: border-box; }
+.wdash-temp-unit-indicator:focus-visible { outline: 2px solid rgba(90,170,255,0.9); outline-offset: 2px; }
   .wdash { width: var(--wdash-base-width); height: var(--wdash-base-height); font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif; color: #f4f6ff; background: linear-gradient(145deg, rgba(27,35,58,0.95), rgba(13,18,32,0.95)); backdrop-filter: blur(4px); border-radius: 12px; --wdash-frame-gap-desktop: 14px; --wdash-frame-gap-tablet: 14px; --wdash-frame-gap-mobile: 14px; --wdash-frame-gap: var(--wdash-frame-gap-desktop); padding: var(--wdash-frame-gap, 18px); box-sizing: border-box; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05); transform-origin: top left; transform: scale(var(--wdash-scale)); }
 .wdash-grid { display: grid; gap: var(--wdash-grid-gap-desktop, ${DEFAULT_GAPS.desktop}); height: 100%; width: 100%; grid-template-columns: var(--wdash-grid-columns-desktop, ${DEFAULT_COLUMNS.desktop}); grid-template-rows: var(--wdash-grid-rows-desktop, ${DEFAULT_TEMPLATES.desktop.rows}); grid-template-areas: var(--wdash-grid-areas-desktop, ${DEFAULT_TEMPLATES.desktop.areas}); }
 .wdash-grid[data-empty="true"] { display: flex; align-items: center; justify-content: center; }
@@ -5119,29 +6518,39 @@
 .wdash-card--temp-wind .wdash-metric-row--gauge { max-width: 100%; }
 .wdash-card--temp-wind .wdash-temp-wind-main { padding-block: 2px; position: relative; z-index: 1; }
 .wdash-card--ambient { grid-area: ambient; gap: 12px; align-items: stretch; }
-.wdash-card--lightning { grid-area: lightning; gap: 8px; align-items: stretch; min-width: 0; display: none; }
+.wdash-card--lightning { grid-area: lightning; gap: 8px; align-items: stretch; min-width: 0; display: none; position: relative; }
 .wdash[data-layout-has-lightning="true"] .wdash-card--lightning { display: flex; }
 .wdash-card-header--lightning { align-items: flex-start; }
 .wdash-lightning-header-icon { display: flex; align-items: flex-start; justify-content: flex-end; margin-left: auto; }
 .wdash-lightning-header-icon .wdash-lightning-bolt-svg { width: 30px; height: auto; transform: scaleY(1.15) rotate(10deg); transform-origin: center; filter: drop-shadow(0 4px 10px rgba(0,0,0,0.45)); }
-.wdash-card--rain { grid-area: rain; }
+.wdash-card--rain { grid-area: rain; position: relative; }
 .wdash-rain-battery { display: inline-flex; align-items: center; justify-content: center; }
-.wdash-card--pressure { grid-area: pressure; }
+.wdash-card--pressure { grid-area: pressure; position: relative; }
 .wdash-card--solar { grid-area: solar; }
 .wdash-card--air { grid-area: air; gap: 8px; }
 .wdash-temp, .wdash-wind, .wdash-solar, .wdash-pressure { display: flex; flex-direction: column; gap: 10px; flex: 1; }
 .wdash-card--temp-wind .wdash-temp, .wdash-card--temp-wind .wdash-wind { align-items: stretch; justify-content: center; min-width: 0; min-height: 0; }
+.wdash-card--temp-wind .wdash-temp { position: relative; }
 .wdash-pressure { gap: 10px; }
 .wdash-temp-wind-main { display: flex; gap: 14px; flex: 1; align-items: stretch; min-height: 0; }
 .wdash-temp-wind-main > .wdash-temp, .wdash-temp-wind-main > .wdash-wind { flex: 1; min-width: 0; min-height: 0; }
 .wdash-temp-wind-details { display: flex; justify-content: space-between; gap: 12px; }
 .wdash-temp { align-items: center; }
-.wdash-wind { align-items: center; }
+.wdash-wind { align-items: center; position: relative; }
 .wdash-gauge, .wdash-wind-compass { position: relative; width: 100%; height: 100%; margin: 0 auto; }
   .wdash-gauge-svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .wdash-gauge-center { position: absolute; inset: var(--temp-wind-gauge-center-inset, 26%); border-radius: 50%; background: rgba(5,10,20,0.85); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 12px 10px; gap: 6px; text-align: center; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04); }
-.wdash-gauge-current { display: flex; flex-direction: column; gap: 4px; align-items: center; }
-.wdash-gauge-value { font-size: 2.32rem; font-weight: 800; letter-spacing: -0.02em; }
+.wdash-gauge-current { position: relative; display: flex; align-items: center; justify-content: center; width: 100%; }
+.wdash-gauge-value { font-size: 2.32rem; font-weight: 800; letter-spacing: -0.02em; display: block; width: 100%; text-align: center; }
+.wdash-gauge-value-number { display: block; text-align: center; }
+.wdash-temp-unit-indicator { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.24); border-radius: 50%; color: #f5f9ff; font-size: 0.78rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; width: 27px; height: 27px; cursor: pointer; transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
+.wdash-temp-unit-indicator--gauge { position: absolute; top: 0; left: 0; transform: none; z-index: 2; }
+.wdash-wind-unit-indicator { position: absolute; top: 6px; right: 6px; z-index: 2; }
+.wdash-pressure-unit-indicator { position: absolute; left: 6px; bottom: 6px; z-index: 2; }
+.wdash-rain-unit-indicator { position: absolute; top: 6px; left: 6px; z-index: 2; }
+.wdash-lightning-unit-indicator { position: absolute; left: 6px; bottom: 6px; z-index: 2; }
+.wdash-temp-unit-indicator:hover { background: rgba(255,255,255,0.16); border-color: rgba(255,255,255,0.35); }
+.wdash-temp-unit-indicator:active { background: rgba(77,167,255,0.28); border-color: rgba(77,167,255,0.6); }
 .wdash-gauge-label { font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.12em; color: #9badcf; }
 .wdash-temp-extrema { display: flex; flex-direction: column; align-items: center; gap: 1px; }
 .wdash-temp-extrema-label { font-size: 0.6rem; letter-spacing: 0.12em; text-transform: uppercase; color: #8ea0c8; }
@@ -5250,7 +6659,9 @@
 .wdash-rain-col--center { display: flex; flex-direction: column; justify-content: space-between; height: 100%; text-align: center; }
 .wdash-rain-rate-wrapper { width: 75%; margin: 0 auto; }
 .wdash-rain-daily-metric { flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; }
-.wdash-rain-daily-value { font-size: 2.8rem; font-weight: 800; line-height: 1; }
+.wdash-rain-daily-value { display: inline-flex; align-items: baseline; gap: 0.35rem; }
+.wdash-rain-daily-value-amount { font-size: 2.8rem; font-weight: 800; line-height: 1; }
+.wdash-rain-daily-value-unit { font-size: 0.9rem; font-weight: 600; color: #f4f6ff; line-height: 1.2; }
 .wdash-rain-daily-label { font-size: 0.9rem; font-weight: 700; color: #c9d8ff; }
 .wdash-rain-daily-metric .wdash-battery-slot { margin-top: 2px; }
 .wdash-rain-col--stats { align-self: start; }
@@ -5470,9 +6881,22 @@
     return slice ? `${slice}…` : trimmed.slice(0, maxLength);
   }
 
-  function formatTemperature(value) {
-    if (!Number.isFinite(value)) return '--°';
-    return `${value.toFixed(1)}°`;
+  function formatTemperature(value, options = {}) {
+    const decimalsInput = Number(options.decimals);
+    const decimals = Number.isFinite(decimalsInput) ? decimalsInput : 1;
+    const includeUnit = options.includeUnit === true;
+    const sourceUnit = normalizeTemperatureUnit(options.sourceUnit) || 'F';
+    const targetUnit = normalizeTemperatureUnit(options.unit) || getDisplayTemperatureUnit();
+    const numeric = toNumber(value);
+    if (!Number.isFinite(numeric)) {
+      return includeUnit ? `--°${targetUnit}` : '--°';
+    }
+    const converted = convertTemperatureValue(numeric, sourceUnit, targetUnit);
+    if (!Number.isFinite(converted)) {
+      return includeUnit ? `--°${targetUnit}` : '--°';
+    }
+    const suffix = includeUnit ? `°${targetUnit}` : '°';
+    return `${converted.toFixed(decimals)}${suffix}`;
   }
 
   function parseDateTime(value) {
@@ -5491,14 +6915,75 @@
     return `${value.toFixed(decimals)}%`;
   }
 
-  function formatRain(value) {
-    if (!Number.isFinite(value)) return '--';
-    return `${value.toFixed(2)} in`;
+  function formatRainParts(value, options = {}) {
+    const perHour = options.perHour === true;
+    const decimalsInput = Number(options.decimals);
+    const decimals = Number.isFinite(decimalsInput) ? decimalsInput : 2;
+    const sourceUnit = normalizeRainUnit(options.sourceUnit) || 'in';
+    const targetUnit = normalizeRainUnit(options.unit) || getDisplayRainUnit();
+    const numeric = toNumber(value);
+    if (!Number.isFinite(numeric)) {
+      return { isValid: false, perHour, valueText: '--', unitText: '' };
+    }
+    const converted = convertRainDepth(numeric, sourceUnit, targetUnit);
+    if (!Number.isFinite(converted)) {
+      return { isValid: false, perHour, valueText: '--', unitText: '' };
+    }
+    const unitText = targetUnit === 'mm' ? 'mm' : 'in';
+    return {
+      isValid: true,
+      perHour,
+      valueText: converted.toFixed(decimals),
+      unitText
+    };
   }
 
-  function formatPressure(value) {
-    if (!Number.isFinite(value)) return '--';
-    return `${value.toFixed(2)} inHg`;
+  function formatRain(value, options = {}) {
+    const parts = formatRainParts(value, options);
+    if (!parts.isValid) return '--';
+    const unitText = parts.perHour ? `${parts.unitText}/hr` : parts.unitText;
+    return `${parts.valueText} ${unitText}`;
+  }
+
+  function formatLightningDistance(value, options = {}) {
+    const decimalsInput = Number(options.decimals);
+    const decimals = Number.isFinite(decimalsInput) ? decimalsInput : 1;
+    const sourceUnit = normalizeLightningUnit(options.sourceUnit) || 'mi';
+    const targetUnit = normalizeLightningUnit(options.unit) || getDisplayLightningUnit();
+    const numeric = toNumber(value);
+    if (!Number.isFinite(numeric)) return '--';
+    const converted = convertLightningDistance(numeric, sourceUnit, targetUnit);
+    if (!Number.isFinite(converted)) return '--';
+    const unitLabel = targetUnit === 'km' ? 'km' : 'mi';
+    return `${converted.toFixed(decimals)} ${unitLabel}`;
+  }
+
+  function formatPressure(value, options = {}) {
+    const sourceUnit = normalizePressureUnitForConversion(options.sourceUnit) || 'inhg';
+    const targetUnit = normalizePressureUnit(options.displayUnit) || getDisplayPressureUnit();
+    const numeric = toNumber(value);
+    if (!Number.isFinite(numeric)) return '--';
+    const converted = convertPressure(numeric, sourceUnit, targetUnit);
+    if (!Number.isFinite(converted)) return '--';
+    const decimalsInput = Number(options.decimals);
+    const decimals = Number.isFinite(decimalsInput) ? decimalsInput : pressureValueDecimals(targetUnit);
+    const label = formatPressureUnitLabel(targetUnit);
+    return `${converted.toFixed(decimals)} ${label}`;
+  }
+
+  function formatPressureChange(value, options = {}) {
+    const sourceUnit = normalizePressureUnitForConversion(options.sourceUnit) || 'inhg';
+    const targetUnit = normalizePressureUnit(options.displayUnit) || getDisplayPressureUnit();
+    const perHour = options.perHour === true;
+    const numeric = toNumber(value);
+    if (!Number.isFinite(numeric)) return '--';
+    const converted = convertPressure(numeric, sourceUnit, targetUnit);
+    if (!Number.isFinite(converted)) return '--';
+    const decimalsInput = Number(options.decimals);
+    const decimals = Number.isFinite(decimalsInput) ? decimalsInput : pressureChangeDecimals(targetUnit);
+    const unitLabel = formatPressureUnitLabel(targetUnit);
+    const suffix = perHour ? `${unitLabel}/hr` : unitLabel;
+    return formatSigned(converted, decimals, suffix);
   }
 
   function formatSigned(value, decimals = 1, suffix = '') {
@@ -6071,7 +7556,54 @@
       measureDisplayTileBaseDimensions,
       resetTileMeasurement,
       logLayoutDiagnostics,
-      buildLayoutDiagnosticsContext
+      buildLayoutDiagnosticsContext,
+      applyTemperatureUnitsFromMetadata,
+      applyRainUnitsFromMetadata,
+      applyWindUnitsFromMetadata,
+      applyPressureUnitsFromMetadata,
+      applyLightningUnitsFromMetadata,
+      setTemperatureDisplayUnit,
+      setTemperatureInputUnit,
+      setRainDisplayUnit,
+      setRainInputUnit,
+      setWindDisplayUnit,
+      setWindInputUnit,
+      setPressureDisplayUnit,
+      setPressureInputUnit,
+      setLightningDisplayUnit,
+      setLightningInputUnit,
+      getDisplayTemperatureUnit,
+      getInputTemperatureUnit,
+      getDisplayRainUnit,
+      getInputRainUnit,
+      getDisplayWindUnit,
+      getInputWindUnit,
+      getDisplayPressureUnit,
+      getInputPressureUnit,
+      getDisplayLightningUnit,
+      getInputLightningUnit,
+      formatRain,
+      convertRainDepth,
+      convertWindSpeed,
+      formatPressure,
+      formatPressureChange,
+      convertPressure,
+      convertLightningDistance,
+      formatLightningDistance,
+      setupAirQualityRotation,
+      scheduleAirQualityRotation,
+      stopAirQualityRotationTimer,
+      clearAirQualityRotation,
+      updateAirQualityCard,
+      getAirQualityRotationState: () => ({
+        timer: airQualityRotation.timer,
+        index: airQualityRotation.index,
+        sources: Array.isArray(airQualityRotation.sources)
+          ? airQualityRotation.sources.slice()
+          : [],
+        interval: airQualityRotation.interval,
+        lastData: airQualityRotation.lastData
+      })
     });
   }
 })();
