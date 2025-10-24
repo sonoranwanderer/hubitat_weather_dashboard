@@ -440,103 +440,41 @@
   function patchDashboardGlitches() {
     if (typeof window === 'undefined') return;
 
-    if (!window.__wdashHistoryPatched) {
-      const disableDashboardHistory = () => {
-        if (window.__wdashHistorySuppressed) return;
-        window.__wdashHistorySuppressed = true;
-        const noop = function noopAddToDashboardHistory() { return undefined; };
+    const noopHistory = function noopAddToDashboardHistory() { return undefined; };
+
+    const installNoopHistory = () => {
+      if (window.__wdashHistoryInstalling) return;
+      window.__wdashHistoryInstalling = true;
+      const descriptor = {
+        configurable: true,
+        get() {
+          return noopHistory;
+        },
+        set(value) {
+          if (value === noopHistory) return;
+          setTimeout(() => {
+            window.__wdashHistorySuppressed = false;
+            installNoopHistory();
+          }, 0);
+        }
+      };
+
+      try {
+        Object.defineProperty(window, 'addToDashboardHistory', descriptor);
+      } catch (err) {
         try {
-          Object.defineProperty(window, 'addToDashboardHistory', {
-            configurable: true,
-            writable: true,
-            value: noop
-          });
-        } catch (err) {
-          try {
-            window.addToDashboardHistory = noop;
-          } catch (assignErr) { /* ignore */ }
+          window.addToDashboardHistory = noopHistory;
+        } catch (assignErr) {
+          // ignore assignment failures
         }
-        window.__wdashHistoryPatched = true;
-      };
-
-      const installPatchedHistory = original => {
-        if (typeof original !== 'function') return;
-        if (window.__wdashHistoryPatched) return;
-
-        const patched = function patchedAddToDashboardHistory(...args) {
-          try {
-            return original.apply(this, args);
-          } catch (err) {
-            if (isDashboardValueErrorMessage(err && err.message)) {
-              disableDashboardHistory();
-            }
-            console.warn('[WeatherDashboard] Suppressed dashboard history error', err);
-            return undefined;
-          }
-        };
-
-        const descriptor = Object.getOwnPropertyDescriptor(window, 'addToDashboardHistory');
-        let installed = false;
-
-        if (!descriptor || descriptor.configurable) {
-          try {
-            Object.defineProperty(window, 'addToDashboardHistory', {
-              configurable: true,
-              writable: true,
-              value: patched
-            });
-            installed = true;
-          } catch (err) {
-            // Fall through to assignment attempt below.
-          }
-        }
-
-        if (!installed) {
-          try {
-            window.addToDashboardHistory = patched;
-            installed = window.addToDashboardHistory === patched;
-          } catch (err) {
-            console.warn('[WeatherDashboard] Unable to patch dashboard history', err);
-          }
-        }
-
-        if (installed) {
-          patched.__wdashOriginal = original;
-          window.__wdashHistoryPatched = true;
-        }
-      };
-
-      if (typeof window.addToDashboardHistory === 'function') {
-        installPatchedHistory(window.addToDashboardHistory);
-      } else if (!window.__wdashHistoryPatchedPending) {
-        Object.defineProperty(window, 'addToDashboardHistory', {
-          configurable: true,
-          get() {
-            return undefined;
-          },
-          set(value) {
-            if (typeof value === 'function') {
-              installPatchedHistory(value);
-            } else {
-              try {
-                Object.defineProperty(window, 'addToDashboardHistory', {
-                  configurable: true,
-                  writable: true,
-                  value: value
-                });
-              } catch (err) {
-                try {
-                  window.addToDashboardHistory = value;
-                } catch (assignErr) {
-                  console.warn('[WeatherDashboard] Unable to store dashboard history handler', assignErr);
-                }
-              }
-            }
-          }
-        });
-        window.__wdashHistoryPatchedPending = true;
       }
-    }
+
+      window.__wdashHistoryInstalling = false;
+      window.__wdashHistorySuppressed = true;
+      window.__wdashHistoryPatched = true;
+    };
+
+    installNoopHistory();
 
     if (!window.__wdashSocketGuard) {
       window.addEventListener('error', event => {
@@ -549,7 +487,7 @@
           if (typeof event.stopImmediatePropagation === 'function') {
             event.stopImmediatePropagation();
           }
-          disableDashboardHistory();
+          installNoopHistory();
           console.warn('[WeatherDashboard] Ignored dashboard socket value update error', {
             message: event.message,
             filename: event.filename
