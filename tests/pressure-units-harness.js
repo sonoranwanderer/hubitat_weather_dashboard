@@ -33,7 +33,7 @@ function approxEqual(actual, expected, epsilon = 1e-6) {
     throw new Error('applyPressureUnitsFromMetadata hook missing');
   }
 
-  applyPressureUnitsFromMetadata({ pressureUnits: { input: 'inhg', display: 'inhg' } });
+  applyPressureUnitsFromMetadata({ pressureDisplayUnit: 'inhg' });
   assert(getDisplayPressureUnit() === 'inhg', 'display unit should default to inches of mercury');
   assert(getInputPressureUnit() === 'inhg', 'input unit should default to inches of mercury');
 
@@ -58,13 +58,13 @@ function approxEqual(actual, expected, epsilon = 1e-6) {
   setPressureInputUnit('mb');
   assert(getInputPressureUnit() === 'mb', 'input unit should switch to millibars');
 
-  applyPressureUnitsFromMetadata({ pressureUnits: { display: 'inhg' } });
+  applyPressureUnitsFromMetadata({ pressureDisplayUnit: 'inhg' });
   assert(getDisplayPressureUnit() === 'mb', 'manual override should persist when metadata reiterates inches of mercury');
 
   setPressureDisplayUnit('inhg');
   assert(getDisplayPressureUnit() === 'inhg', 'display unit should switch back to inches of mercury');
 
-  applyPressureUnitsFromMetadata({ pressureUnits: { display: 'mb' } });
+  applyPressureUnitsFromMetadata({ pressureDisplayUnit: 'mb' });
   assert(getDisplayPressureUnit() === 'mb', 'metadata change should update display unit to millibars');
 
   setPressureDisplayUnit('inhg');

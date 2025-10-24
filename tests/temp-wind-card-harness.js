@@ -360,8 +360,6 @@ function assertEqual(actual, expected, message) {
     },
     metadata: {
       weatherStationTime: '2025-10-21T12:45:00Z',
-      temperatureUnits: { input: 'C', display: 'C' },
-      temperatureInputUnit: 'C',
       temperatureDisplayUnit: 'C'
     }
   };
@@ -430,7 +428,7 @@ function assertEqual(actual, expected, message) {
   assertEqual(detailNodesWindKts[4].textContent, formatAverageWind(dataC.wind.average.directionCardinal, dataC.wind.average.speedMph, 'kts'), 'average wind mismatch after switching to kts');
   assertEqual(detailNodesWindKts[5].textContent, formatWind(dataC.wind.dailyMaxGustMph, 'kts'), 'max gust mismatch after switching to kts');
 
-  hooks.applyWindUnitsFromMetadata({ windUnits: { display: 'mph' }, windDisplayUnit: 'mph' });
+  hooks.applyWindUnitsFromMetadata({ windDisplayUnit: 'mph' });
   updateTempWindCard();
 
   assertEqual(windUnitButton.textContent, windIndicatorText('mph'), 'wind unit indicator mismatch after resetting to metadata mph');

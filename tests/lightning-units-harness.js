@@ -32,7 +32,7 @@ function approxEqual(actual, expected, epsilon = 1e-6) {
     throw new Error('applyLightningUnitsFromMetadata hook missing');
   }
 
-  applyLightningUnitsFromMetadata({ lightningUnits: { input: 'mi', display: 'mi' } });
+  applyLightningUnitsFromMetadata({ lightningDisplayUnit: 'mi' });
   assert(getDisplayLightningUnit() === 'mi', 'display unit should default to miles');
   assert(getInputLightningUnit() === 'mi', 'input unit should default to miles');
 
@@ -57,13 +57,13 @@ function approxEqual(actual, expected, epsilon = 1e-6) {
   setLightningInputUnit('km');
   assert(getInputLightningUnit() === 'km', 'input unit should switch to kilometers');
 
-  applyLightningUnitsFromMetadata({ lightningUnits: { display: 'mi' } });
+  applyLightningUnitsFromMetadata({ lightningDisplayUnit: 'mi' });
   assert(getDisplayLightningUnit() === 'km', 'manual override should persist when metadata reiterates miles');
 
   setLightningDisplayUnit('mi');
   assert(getDisplayLightningUnit() === 'mi', 'display unit should return to miles');
 
-  applyLightningUnitsFromMetadata({ lightningUnits: { display: 'km' } });
+  applyLightningUnitsFromMetadata({ lightningDisplayUnit: 'km' });
   assert(getDisplayLightningUnit() === 'km', 'metadata change should update display unit to kilometers');
 
   setLightningDisplayUnit('mi');

@@ -1710,79 +1710,29 @@ private Map buildMetadata(Date generated, TimeZone tz, String stationUpdatedAt, 
     if (layoutOverride) {
         metadata.layout = layoutOverride
     }
-    String inputUnit = temperatureInputUnitSetting()
-    String displayUnit = temperatureDisplayUnitSetting()
-    Map temperatureUnits = [:]
-    if (inputUnit) {
-        temperatureUnits.input = inputUnit
-        metadata.temperatureInputUnit = inputUnit
-    }
-    if (displayUnit) {
-        temperatureUnits.display = displayUnit
-        metadata.temperatureDisplayUnit = displayUnit
-    }
-    if (temperatureUnits) {
-        metadata.temperatureUnits = temperatureUnits
+    String temperatureDisplay = temperatureDisplayUnitSetting()
+    if (temperatureDisplay) {
+        metadata.temperatureDisplayUnit = temperatureDisplay
     }
 
-    String rainInput = rainInputUnitSetting()
     String rainDisplay = rainDisplayUnitSetting()
-    Map rainUnits = [:]
-    if (rainInput) {
-        rainUnits.input = rainInput
-        metadata.rainInputUnit = rainInput
-    }
     if (rainDisplay) {
-        rainUnits.display = rainDisplay
         metadata.rainDisplayUnit = rainDisplay
     }
-    if (rainUnits) {
-        metadata.rainUnits = rainUnits
-    }
 
-    String windInput = windInputUnitSetting()
     String windDisplay = windDisplayUnitSetting()
-    Map windUnits = [:]
-    if (windInput) {
-        windUnits.input = windInput
-        metadata.windInputUnit = windInput
-    }
     if (windDisplay) {
-        windUnits.display = windDisplay
         metadata.windDisplayUnit = windDisplay
     }
-    if (windUnits) {
-        metadata.windUnits = windUnits
-    }
 
-    String pressureInput = pressureInputUnitSetting()
     String pressureDisplay = pressureDisplayUnitSetting()
-    Map pressureUnits = [:]
-    if (pressureInput) {
-        pressureUnits.input = pressureInput
-        metadata.pressureInputUnit = pressureInput
-    }
     if (pressureDisplay) {
-        pressureUnits.display = pressureDisplay
         metadata.pressureDisplayUnit = pressureDisplay
     }
-    if (pressureUnits) {
-        metadata.pressureUnits = pressureUnits
-    }
 
-    String lightningInput = lightningInputUnitSetting()
     String lightningDisplay = lightningDisplayUnitSetting()
-    Map lightningUnits = [:]
-    if (lightningInput) {
-        lightningUnits.input = lightningInput
-        metadata.lightningInputUnit = lightningInput
-    }
     if (lightningDisplay) {
-        lightningUnits.display = lightningDisplay
         metadata.lightningDisplayUnit = lightningDisplay
-    }
-    if (lightningUnits) {
-        metadata.lightningUnits = lightningUnits
     }
     metadata
 }

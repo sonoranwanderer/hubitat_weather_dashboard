@@ -32,7 +32,7 @@ function approxEqual(actual, expected, epsilon = 1e-6) {
     throw new Error('applyRainUnitsFromMetadata hook missing');
   }
 
-  applyRainUnitsFromMetadata({ rainUnits: { input: 'in', display: 'in' } });
+  applyRainUnitsFromMetadata({ rainDisplayUnit: 'in' });
   assert(getDisplayRainUnit() === 'in', 'display unit should default to inches');
   assert(getInputRainUnit() === 'in', 'input unit should default to inches');
 
@@ -57,13 +57,13 @@ function approxEqual(actual, expected, epsilon = 1e-6) {
   setRainInputUnit('mm');
   assert(getInputRainUnit() === 'mm', 'input unit should switch to millimeters');
 
-  applyRainUnitsFromMetadata({ rainUnits: { display: 'in' } });
+  applyRainUnitsFromMetadata({ rainDisplayUnit: 'in' });
   assert(getDisplayRainUnit() === 'mm', 'manual override should persist when metadata reaffirms inches');
 
   setRainDisplayUnit('in');
   assert(getDisplayRainUnit() === 'in', 'display unit should return to inches');
 
-  applyRainUnitsFromMetadata({ rainUnits: { display: 'mm' } });
+  applyRainUnitsFromMetadata({ rainDisplayUnit: 'mm' });
   assert(getDisplayRainUnit() === 'mm', 'metadata change should update display unit to millimeters');
 
   setRainDisplayUnit('in');
