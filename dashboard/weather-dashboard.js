@@ -1949,6 +1949,7 @@
         </header>
         <div class="wdash-temp-wind-main">
           <div class="wdash-temp">
+            <button type="button" class="wdash-temp-unit-indicator wdash-temp-unit-indicator--gauge" data-temp-unit-indicator="true" aria-label="${escapeHtml(indicatorLabel)}" title="${escapeHtml(indicatorLabel)}">${escapeHtml(currentDisplayUnit)}</button>
             <div class="wdash-gauge" style="--gauge-indicator:${indicator};--gauge-color-a:${tempColor.colors[0]};--gauge-color-b:${tempColor.colors[1]};--gauge-color-mid:${tempColor.mid};--gauge-band-progress:${tempColor.progress};">
               <svg class="wdash-gauge-svg" viewBox="0 0 100 100" aria-hidden="true">
                 <defs>
@@ -1972,7 +1973,6 @@
                   <span class="wdash-gauge-value">
                     <span class="wdash-gauge-value-number">${mainTempText}</span>
                   </span>
-                  <button type="button" class="wdash-temp-unit-indicator wdash-temp-unit-indicator--gauge" data-temp-unit-indicator="true" aria-label="${escapeHtml(indicatorLabel)}" title="${escapeHtml(indicatorLabel)}">${escapeHtml(currentDisplayUnit)}</button>
                 </div>
                 <div class="wdash-temp-extrema wdash-temp-extrema--low">
                   <span class="wdash-temp-extrema-label">Low</span>
@@ -5473,7 +5473,7 @@
 .wdash-gauge-value { font-size: 2.32rem; font-weight: 800; letter-spacing: -0.02em; display: block; width: 100%; text-align: center; }
 .wdash-gauge-value-number { display: block; text-align: center; }
 .wdash-temp-unit-indicator { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.24); border-radius: 50%; color: #f5f9ff; font-size: 0.78rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; width: 27px; height: 27px; cursor: pointer; transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
-.wdash-temp-unit-indicator--gauge { position: absolute; top: 0; left: 0; transform: none; }
+.wdash-temp-unit-indicator--gauge { position: absolute; top: 0; left: 0; transform: none; z-index: 2; }
 .wdash-temp-unit-indicator:hover { background: rgba(255,255,255,0.16); border-color: rgba(255,255,255,0.35); }
 .wdash-temp-unit-indicator:active { background: rgba(77,167,255,0.28); border-color: rgba(77,167,255,0.6); }
 .wdash-gauge-label { font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.12em; color: #9badcf; }

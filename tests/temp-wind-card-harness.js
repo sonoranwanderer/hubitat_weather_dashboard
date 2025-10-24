@@ -49,7 +49,6 @@ function buildTempWindStructure(doc) {
   unitButton.setAttribute('data-temp-unit-indicator', 'true');
   gaugeValue.appendChild(gaugeValueNumber);
   gaugeCurrent.appendChild(gaugeValue);
-  gaugeCurrent.appendChild(unitButton);
   const lowWrap = createElement(doc, 'div', ['wdash-temp-extrema', 'wdash-temp-extrema--low']);
   lowWrap.appendChild(createSpan(doc, 'wdash-temp-extrema-label'));
   lowWrap.appendChild(createSpan(doc, 'wdash-temp-extrema-value'));
@@ -57,6 +56,7 @@ function buildTempWindStructure(doc) {
   gaugeCenter.appendChild(gaugeCurrent);
   gaugeCenter.appendChild(lowWrap);
   gauge.appendChild(gaugeCenter);
+  tempSection.appendChild(unitButton);
   tempSection.appendChild(gauge);
 
   const windSection = createElement(doc, 'div', ['wdash-wind']);
