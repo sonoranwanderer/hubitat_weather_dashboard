@@ -209,7 +209,7 @@ function assertEqual(actual, expected, message) {
   const gaugeValueEl = card.querySelector('.wdash-gauge-value-number');
   const gaugeUnitButton = card.querySelector('.wdash-temp-unit-indicator');
   assertEqual(gaugeValueEl.textContent, formatTemperature(dataA.outdoor.temperatureF), 'gauge value mismatch after dataA');
-  assertEqual(gaugeUnitButton.textContent, 'F', 'unit indicator mismatch after dataA');
+  assertEqual(gaugeUnitButton.textContent, '°F', 'unit indicator mismatch after dataA');
   assertEqual(card.querySelector('.wdash-temp-extrema--high .wdash-temp-extrema-value').textContent, formatTemperature(dataA.outdoor.dailyHighF), 'high value mismatch after dataA');
   assertEqual(card.querySelector('.wdash-temp-extrema--low .wdash-temp-extrema-value').textContent, formatTemperature(dataA.outdoor.dailyLowF), 'low value mismatch after dataA');
 
@@ -327,7 +327,7 @@ function assertEqual(actual, expected, message) {
 
   const gaugeIndicatorC = card.querySelector('.wdash-gauge').style.getPropertyValue('--gauge-indicator');
   assertEqual(gaugeIndicatorC, gaugeIndicator(dataC.outdoor.temperatureF), 'gauge indicator mismatch after dataC');
-  assertEqual(gaugeUnitButton.textContent, 'C', 'unit indicator mismatch after metadata default');
+  assertEqual(gaugeUnitButton.textContent, '°C', 'unit indicator mismatch after metadata default');
   assertEqual(gaugeValueEl.textContent, formatTemperature(dataC.outdoor.temperatureF, 'C'), 'gauge value mismatch after metadata default');
 
   const detailNodesMetadata = card.querySelectorAll('.wdash-temp-wind-details .wdash-metric-value');
@@ -339,7 +339,7 @@ function assertEqual(actual, expected, message) {
   hooks.setTemperatureDisplayUnit('F');
   updateTempWindCard();
 
-  assertEqual(gaugeUnitButton.textContent, 'F', 'unit indicator mismatch after switching to Fahrenheit');
+  assertEqual(gaugeUnitButton.textContent, '°F', 'unit indicator mismatch after switching to Fahrenheit');
   assertEqual(gaugeValueEl.textContent, formatTemperature(dataC.outdoor.temperatureF), 'gauge value mismatch after switching to Fahrenheit');
 
   const detailNodesF = card.querySelectorAll('.wdash-temp-wind-details .wdash-metric-value');
@@ -350,7 +350,7 @@ function assertEqual(actual, expected, message) {
 
   hooks.setTemperatureDisplayUnit('C');
   updateTempWindCard();
-  assertEqual(gaugeUnitButton.textContent, 'C', 'unit indicator mismatch after switching back to Celsius');
+  assertEqual(gaugeUnitButton.textContent, '°C', 'unit indicator mismatch after switching back to Celsius');
   assertEqual(gaugeValueEl.textContent, formatTemperature(dataC.outdoor.temperatureF, 'C'), 'gauge value mismatch after switching back to Celsius');
 
   const detailNodesBackToC = card.querySelectorAll('.wdash-temp-wind-details .wdash-metric-value');

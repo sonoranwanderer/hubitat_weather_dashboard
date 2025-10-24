@@ -1949,7 +1949,7 @@
         </header>
         <div class="wdash-temp-wind-main">
           <div class="wdash-temp">
-            <button type="button" class="wdash-temp-unit-indicator wdash-temp-unit-indicator--gauge" data-temp-unit-indicator="true" aria-label="${escapeHtml(indicatorLabel)}" title="${escapeHtml(indicatorLabel)}">${escapeHtml(currentDisplayUnit)}</button>
+            <button type="button" class="wdash-temp-unit-indicator wdash-temp-unit-indicator--gauge" data-temp-unit-indicator="true" aria-label="${escapeHtml(indicatorLabel)}" title="${escapeHtml(indicatorLabel)}">&deg;${escapeHtml(currentDisplayUnit)}</button>
             <div class="wdash-gauge" style="--gauge-indicator:${indicator};--gauge-color-a:${tempColor.colors[0]};--gauge-color-b:${tempColor.colors[1]};--gauge-color-mid:${tempColor.mid};--gauge-band-progress:${tempColor.progress};">
               <svg class="wdash-gauge-svg" viewBox="0 0 100 100" aria-hidden="true">
                 <defs>
@@ -3055,7 +3055,7 @@
     const label = `Switch temperature display to ${describeTemperatureUnit(next)}`;
 
     buttons.forEach(button => {
-      button.textContent = current;
+      button.textContent = formatTemperatureUnitIndicator(current);
       if (label) {
         button.setAttribute('aria-label', label);
         button.setAttribute('title', label);
@@ -3170,6 +3170,11 @@
     if (normalized === 'C') return 'Celsius';
     if (normalized === 'F') return 'Fahrenheit';
     return '';
+  }
+
+  function formatTemperatureUnitIndicator(unit) {
+    const normalized = normalizeTemperatureUnit(unit);
+    return normalized ? `°${normalized}` : '';
   }
 
   function readStoredTemperatureUnit(type) {
@@ -3911,7 +3916,8 @@
       const altUnit = getOppositeTemperatureUnit(currentUnit);
       const labelUnit = describeTemperatureUnit(altUnit) || altUnit;
       const label = labelUnit ? `Switch temperature display to ${labelUnit}` : 'Switch temperature display';
-      if (indicatorButton.textContent !== currentUnit) indicatorButton.textContent = currentUnit;
+      const indicatorText = formatTemperatureUnitIndicator(currentUnit);
+      if (indicatorButton.textContent !== indicatorText) indicatorButton.textContent = indicatorText;
       indicatorButton.setAttribute('aria-label', label);
       indicatorButton.setAttribute('title', label);
     }
