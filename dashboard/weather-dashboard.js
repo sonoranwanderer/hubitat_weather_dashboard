@@ -41,6 +41,20 @@
     displayOverride: false
   };
 
+  const RAIN_UNITS = ['in', 'mm'];
+  const RAIN_UNIT_STORAGE_KEYS = {
+    input: 'wdashRainInputUnit',
+    display: 'wdashRainDisplayUnit'
+  };
+
+  const rainUnitState = {
+    input: readStoredRainUnit('input') || 'in',
+    display: readStoredRainUnit('display') || 'in',
+    metadataInput: null,
+    metadataDisplay: null,
+    displayOverride: false
+  };
+
   const tileMeasurementState = {
     width: null,
     height: null
@@ -172,6 +186,21 @@
     'layout',
     'outlook24h'
   ]);
+
+  const RAIN_FILL_STATES_IN = [
+    { threshold: 1.2, ratio: 1 },
+    { threshold: 1.0, ratio: 6 / 7 },
+    { threshold: 0.8, ratio: 5 / 7 },
+    { threshold: 0.6, ratio: 4 / 7 },
+    { threshold: 0.4, ratio: 3 / 7 },
+    { threshold: 0.2, ratio: 2 / 7 },
+    { threshold: 0, ratio: 1 / 7 }
+  ];
+
+  const RAIN_FILL_STATES_MM = RAIN_FILL_STATES_IN.map(state => ({
+    threshold: convertRainDepth(state.threshold, 'in', 'mm'),
+    ratio: state.ratio
+  }));
 
   const LIGHTNING_BOLT_ICON = `
     <svg viewBox="0 0 48 48" class="wdash-lightning-bolt-svg" focusable="false" aria-hidden="true">
@@ -484,6 +513,7 @@
     setupScaling(displayTile, content);
 
     refreshTemperatureUnitUI();
+    refreshRainUnitUI();
 
     ensureDataTileObservers();
     watchForTileInsertions();
@@ -512,6 +542,7 @@
 
     try {
       applyTemperatureUnitsFromMetadata(payload?.metadata);
+      applyRainUnitsFromMetadata(payload?.metadata);
       applyLayoutOverrides(payload?.metadata);
       applyScale();
 
@@ -2301,38 +2332,35 @@
 
   function buildRainCard(data) {
     const rain = data.rain || {};
-    const rate = toNumber(rain.rateInPerHour);
+    const displayUnit = getDisplayRainUnit();
     const hourlyIn = toNumber(rain.hourlyIn);
+    const hourlyFillValue = convertRainDepth(hourlyIn, 'in', displayUnit);
+    const fillStates = displayUnit === 'mm' ? RAIN_FILL_STATES_MM : RAIN_FILL_STATES_IN;
 
-    // Determine the fill ratio based on 8 discrete states of hourly rainfall
     let fillRatio = 0;
-    if (hourlyIn > 1.2) {
-      fillRatio = 1; // State 8: > 1.2
-    } else if (hourlyIn > 1.0) {
-      fillRatio = 6 / 7; // State 7: > 1.0 to 1.2
-    } else if (hourlyIn > 0.8) {
-      fillRatio = 5 / 7; // State 6: > 0.8 to 1.0
-    } else if (hourlyIn > 0.6) {
-      fillRatio = 4 / 7; // State 5: > 0.6 to 0.8
-    } else if (hourlyIn > 0.4) {
-      fillRatio = 3 / 7; // State 4: > 0.4 to 0.6
-    } else if (hourlyIn > 0.2) {
-      fillRatio = 2 / 7; // State 3: > 0.2 to 0.4
-    } else if (hourlyIn > 0) {
-      fillRatio = 1 / 7; // State 2: > 0 to 0.2
-    } // State 1: 0 (default)
+    if (Number.isFinite(hourlyFillValue)) {
+      for (const state of fillStates) {
+        if (hourlyFillValue > state.threshold) {
+          fillRatio = state.ratio;
+          break;
+        }
+      }
+    }
 
     const DROP_HEIGHT = 140;
     const DROP_BOTTOM_Y = 150;
     const fillHeight = DROP_HEIGHT * fillRatio;
     const fillY = DROP_BOTTOM_Y - fillHeight;
 
+    const formatDepth = value => formatRain(value, { sourceUnit: 'in' });
+    const formatRate = value => formatRain(value, { sourceUnit: 'in', perHour: true });
+
     const rightColStats = [
-      { label: 'Event', value: formatRain(rain.eventIn) },
-      { label: 'Hourly', value: formatRain(rain.hourlyIn) },
-      { label: 'Weekly', value: formatRain(rain.weeklyIn) },
-      { label: 'Monthly', value: formatRain(rain.monthlyIn) },
-      { label: 'Yearly', value: formatRain(rain.yearlyIn) }
+      { label: 'Event', value: formatDepth(rain.eventIn) },
+      { label: 'Hourly', value: formatDepth(rain.hourlyIn) },
+      { label: 'Weekly', value: formatDepth(rain.weeklyIn) },
+      { label: 'Monthly', value: formatDepth(rain.monthlyIn) },
+      { label: 'Yearly', value: formatDepth(rain.yearlyIn) }
     ];
 
     const rainBatterySlot = buildBatterySlot(toNumber(rain.battery), {
@@ -2342,8 +2370,14 @@
       titlePrefix: 'Rain sensor battery'
     });
 
+    const altUnit = getOppositeRainUnit(displayUnit);
+    const altUnitLabel = describeRainUnit(altUnit);
+    const indicatorLabel = altUnitLabel ? `Switch rain display to ${altUnitLabel}` : 'Switch rain display';
+    const indicatorText = formatRainUnitIndicator(displayUnit);
+
     return `
       <section class="wdash-card wdash-card--rain">
+        <button type="button" class="wdash-temp-unit-indicator wdash-rain-unit-indicator" data-rain-unit-indicator="true" aria-label="${escapeHtml(indicatorLabel)}" title="${escapeHtml(indicatorLabel)}">${escapeHtml(indicatorText)}</button>
         <div class="wdash-rain-main">
           <div class="wdash-rain-col wdash-rain-col--drop">
             <svg viewBox="0 0 120 160" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Rain rate visualization">
@@ -2359,12 +2393,12 @@
           <div class="wdash-rain-col wdash-rain-col--center">
             <div class="wdash-rain-rate-wrapper">
               ${buildMetricRow([
-                { label: 'Rate', value: formatRain(rate) }
+                { label: 'Rate', value: formatRate(rain.rateInPerHour) }
               ], 'wdash-rain-stats wdash-metric-row--table', {
               })}
             </div>
             <div class="wdash-rain-daily-metric">
-              <div class="wdash-rain-daily-value">${formatRain(rain.dailyIn)}</div>
+              <div class="wdash-rain-daily-value">${formatDepth(rain.dailyIn)}</div>
               <div class="wdash-rain-daily-label">Daily</div>
               ${rainBatterySlot}
             </div>
@@ -3013,6 +3047,7 @@
     setupAmbientControls(container);
     setupTempWindGaugeSizing(container);
     setupTemperatureUnitIndicator(container);
+    setupRainUnitIndicator(container);
     // ensure ambient ring sizing is applied on setup
     applyAmbientRingSizing();
     // also size outdoor gauge/compass
@@ -3066,6 +3101,55 @@
     });
   }
 
+  function setupRainUnitIndicator(container) {
+    if (!container) return;
+    const indicator = container.querySelector('[data-rain-unit-indicator="true"]');
+    if (!indicator) return;
+    if (indicator.dataset.rainUnitListenerBound === 'true') {
+      syncRainUnitIndicators();
+      return;
+    }
+
+    indicator.addEventListener('click', handleRainIndicatorClick);
+    indicator.dataset.rainUnitListenerBound = 'true';
+    syncRainUnitIndicators();
+  }
+
+  function handleRainIndicatorClick(event) {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
+    const next = getOppositeRainUnit(getDisplayRainUnit());
+    setRainDisplayUnit(next);
+  }
+
+  function refreshRainUnitUI() {
+    syncRainUnitIndicators();
+  }
+
+  function syncRainUnitIndicators() {
+    const buttons = document.querySelectorAll('#' + DISPLAY_TILE_ID + ' [data-rain-unit-indicator="true"]');
+    if (!buttons.length) return;
+    const current = getDisplayRainUnit();
+    const next = getOppositeRainUnit(current);
+    const labelUnit = describeRainUnit(next);
+    const label = labelUnit ? `Switch rain display to ${labelUnit}` : 'Switch rain display';
+    const text = formatRainUnitIndicator(current);
+
+    buttons.forEach(button => {
+      button.textContent = text;
+      if (label) {
+        button.setAttribute('aria-label', label);
+        button.setAttribute('title', label);
+      } else {
+        button.removeAttribute('aria-label');
+        button.removeAttribute('title');
+      }
+    });
+  }
+
   function applyTemperatureUnitsFromMetadata(metadata) {
     if (!metadata || typeof metadata !== 'object') return;
 
@@ -3107,6 +3191,47 @@
     }
   }
 
+  function applyRainUnitsFromMetadata(metadata) {
+    if (!metadata || typeof metadata !== 'object') return;
+
+    const unitsSource = isPlainObject(metadata.rainUnits) ? metadata.rainUnits : null;
+    const inputCandidate = unitsSource?.input ?? unitsSource?.source ?? unitsSource?.sensor ?? metadata.rainInputUnit;
+    const displayCandidate = unitsSource?.display ?? unitsSource?.default ?? unitsSource?.output ?? metadata.rainDisplayUnit;
+
+    const normalizedInput = normalizeRainUnit(inputCandidate);
+    const normalizedDisplay = normalizeRainUnit(displayCandidate);
+
+    let changed = false;
+
+    if (normalizedInput) {
+      rainUnitState.metadataInput = normalizedInput;
+      if (normalizedInput !== rainUnitState.input) {
+        rainUnitState.input = normalizedInput;
+        persistRainUnit('input', normalizedInput);
+        changed = true;
+      }
+    }
+
+    if (normalizedDisplay) {
+      const previousMetadataDisplay = rainUnitState.metadataDisplay;
+      const metadataChanged = normalizedDisplay !== previousMetadataDisplay;
+      rainUnitState.metadataDisplay = normalizedDisplay;
+      if (metadataChanged) {
+        rainUnitState.displayOverride = false;
+      }
+      const overrideActive = rainUnitState.displayOverride === true;
+      if ((!overrideActive || metadataChanged) && normalizedDisplay !== rainUnitState.display) {
+        rainUnitState.display = normalizedDisplay;
+        persistRainUnit('display', normalizedDisplay);
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      refreshRainUnitUI();
+    }
+  }
+
   function setTemperatureInputUnit(unit) {
     const normalized = normalizeTemperatureUnit(unit);
     if (!normalized || normalized === temperatureUnitState.input) {
@@ -3145,6 +3270,44 @@
     }
   }
 
+  function setRainInputUnit(unit) {
+    const normalized = normalizeRainUnit(unit);
+    if (!normalized || normalized === rainUnitState.input) {
+      refreshRainUnitUI();
+      return;
+    }
+    rainUnitState.input = normalized;
+    persistRainUnit('input', normalized);
+    refreshRainUnitUI();
+    if (!IS_TEST_ENV) {
+      safeRenderFromData();
+    }
+  }
+
+  function setRainDisplayUnit(unit) {
+    const normalized = normalizeRainUnit(unit);
+    if (!normalized) {
+      refreshRainUnitUI();
+      return;
+    }
+
+    if (normalized === rainUnitState.display) {
+      const metadataDefault = rainUnitState.metadataDisplay;
+      rainUnitState.displayOverride = metadataDefault ? normalized !== metadataDefault : rainUnitState.displayOverride;
+      refreshRainUnitUI();
+      return;
+    }
+
+    const metadataDefault = rainUnitState.metadataDisplay;
+    rainUnitState.display = normalized;
+    rainUnitState.displayOverride = metadataDefault ? normalized !== metadataDefault : true;
+    persistRainUnit('display', normalized);
+    refreshRainUnitUI();
+    if (!IS_TEST_ENV) {
+      safeRenderFromData();
+    }
+  }
+
   function getInputTemperatureUnit() {
     const normalized = normalizeTemperatureUnit(temperatureUnitState.input);
     return normalized || 'F';
@@ -3157,6 +3320,20 @@
 
   function getOppositeTemperatureUnit(unit) {
     return normalizeTemperatureUnit(unit) === 'C' ? 'F' : 'C';
+  }
+
+  function getInputRainUnit() {
+    const normalized = normalizeRainUnit(rainUnitState.input);
+    return normalized || 'in';
+  }
+
+  function getDisplayRainUnit() {
+    const normalized = normalizeRainUnit(rainUnitState.display);
+    return normalized || 'in';
+  }
+
+  function getOppositeRainUnit(unit) {
+    return normalizeRainUnit(unit) === 'mm' ? 'in' : 'mm';
   }
 
   function normalizeTemperatureUnit(value) {
@@ -3175,6 +3352,27 @@
   function formatTemperatureUnitIndicator(unit) {
     const normalized = normalizeTemperatureUnit(unit);
     return normalized ? `°${normalized}` : '';
+  }
+
+  function normalizeRainUnit(value) {
+    if (typeof value !== 'string') return null;
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) return null;
+    if (normalized === 'in' || normalized === 'inch' || normalized === 'inches') return 'in';
+    if (normalized === 'mm' || normalized === 'millimeter' || normalized === 'millimeters') return 'mm';
+    return null;
+  }
+
+  function describeRainUnit(unit) {
+    const normalized = normalizeRainUnit(unit);
+    if (normalized === 'mm') return 'millimeters';
+    if (normalized === 'in') return 'inches';
+    return '';
+  }
+
+  function formatRainUnitIndicator(unit) {
+    const normalized = normalizeRainUnit(unit);
+    return normalized || '';
   }
 
   function readStoredTemperatureUnit(type) {
@@ -3196,6 +3394,36 @@
   function persistTemperatureUnit(type, unit) {
     const key = TEMPERATURE_UNIT_STORAGE_KEYS[type];
     const normalized = normalizeTemperatureUnit(unit);
+    if (!key || !normalized) return;
+    try {
+      if (typeof window === 'undefined' || !window.localStorage) return;
+    } catch (e) {
+      return;
+    }
+    try {
+      window.localStorage.setItem(key, normalized);
+    } catch (err) { /* ignore */ }
+  }
+
+  function readStoredRainUnit(type) {
+    const key = RAIN_UNIT_STORAGE_KEYS[type];
+    if (!key) return null;
+    try {
+      if (typeof window === 'undefined' || !window.localStorage) return null;
+    } catch (e) {
+      return null;
+    }
+    try {
+      const stored = window.localStorage.getItem(key);
+      return normalizeRainUnit(stored);
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function persistRainUnit(type, unit) {
+    const key = RAIN_UNIT_STORAGE_KEYS[type];
+    const normalized = normalizeRainUnit(unit);
     if (!key || !normalized) return;
     try {
       if (typeof window === 'undefined' || !window.localStorage) return;
@@ -3289,6 +3517,21 @@
       return fahrenheitDeltaToCelsius(value);
     }
     return celsiusDeltaToFahrenheit(value);
+  }
+
+  function convertRainDepth(value, fromUnit, toUnit) {
+    const numeric = toNumber(value);
+    if (!Number.isFinite(numeric)) return NaN;
+    const from = normalizeRainUnit(fromUnit) || 'in';
+    const to = normalizeRainUnit(toUnit) || 'in';
+    if (from === to) return numeric;
+    if (from === 'in' && to === 'mm') {
+      return numeric * 25.4;
+    }
+    if (from === 'mm' && to === 'in') {
+      return numeric / 25.4;
+    }
+    return numeric;
   }
 
   function fahrenheitToCelsius(value) {
@@ -5458,7 +5701,7 @@
 .wdash-card-header--lightning { align-items: flex-start; }
 .wdash-lightning-header-icon { display: flex; align-items: flex-start; justify-content: flex-end; margin-left: auto; }
 .wdash-lightning-header-icon .wdash-lightning-bolt-svg { width: 30px; height: auto; transform: scaleY(1.15) rotate(10deg); transform-origin: center; filter: drop-shadow(0 4px 10px rgba(0,0,0,0.45)); }
-.wdash-card--rain { grid-area: rain; }
+.wdash-card--rain { grid-area: rain; position: relative; }
 .wdash-rain-battery { display: inline-flex; align-items: center; justify-content: center; }
 .wdash-card--pressure { grid-area: pressure; }
 .wdash-card--solar { grid-area: solar; }
@@ -5480,6 +5723,7 @@
 .wdash-gauge-value-number { display: block; text-align: center; }
 .wdash-temp-unit-indicator { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.24); border-radius: 50%; color: #f5f9ff; font-size: 0.78rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; width: 27px; height: 27px; cursor: pointer; transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
 .wdash-temp-unit-indicator--gauge { position: absolute; top: 0; left: 0; transform: none; z-index: 2; }
+.wdash-rain-unit-indicator { position: absolute; top: 6px; left: 6px; z-index: 2; }
 .wdash-temp-unit-indicator:hover { background: rgba(255,255,255,0.16); border-color: rgba(255,255,255,0.35); }
 .wdash-temp-unit-indicator:active { background: rgba(77,167,255,0.28); border-color: rgba(77,167,255,0.6); }
 .wdash-gauge-label { font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.12em; color: #9badcf; }
@@ -5844,9 +6088,19 @@
     return `${value.toFixed(decimals)}%`;
   }
 
-  function formatRain(value) {
-    if (!Number.isFinite(value)) return '--';
-    return `${value.toFixed(2)} in`;
+  function formatRain(value, options = {}) {
+    const perHour = options.perHour === true;
+    const decimalsInput = Number(options.decimals);
+    const decimals = Number.isFinite(decimalsInput) ? decimalsInput : 2;
+    const sourceUnit = normalizeRainUnit(options.sourceUnit) || 'in';
+    const targetUnit = normalizeRainUnit(options.unit) || getDisplayRainUnit();
+    const numeric = toNumber(value);
+    if (!Number.isFinite(numeric)) return '--';
+    const converted = convertRainDepth(numeric, sourceUnit, targetUnit);
+    if (!Number.isFinite(converted)) return '--';
+    const suffix = targetUnit === 'mm' ? 'mm' : 'in';
+    const formatted = converted.toFixed(decimals);
+    return perHour ? `${formatted} ${suffix}/hr` : `${formatted} ${suffix}`;
   }
 
   function formatPressure(value) {
@@ -6426,10 +6680,17 @@
       logLayoutDiagnostics,
       buildLayoutDiagnosticsContext,
       applyTemperatureUnitsFromMetadata,
+      applyRainUnitsFromMetadata,
       setTemperatureDisplayUnit,
       setTemperatureInputUnit,
+      setRainDisplayUnit,
+      setRainInputUnit,
       getDisplayTemperatureUnit,
-      getInputTemperatureUnit
+      getInputTemperatureUnit,
+      getDisplayRainUnit,
+      getInputRainUnit,
+      formatRain,
+      convertRainDepth
     });
   }
 })();

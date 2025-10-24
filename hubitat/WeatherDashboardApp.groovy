@@ -84,6 +84,12 @@ def mainPage() {
             input name: "temperatureDisplayUnit", type: "enum", title: "Default dashboard temperature unit", options: temperatureUnitOptions(), defaultValue: "F", required: true, submitOnChange: true, width: 6
         }
 
+        section("Rainfall units") {
+            paragraph "Tell the app which unit your rain sensors report and choose the dashboard's default display."
+            input name: "rainInputUnit", type: "enum", title: "Weather device rain depth unit", options: rainUnitOptions(), defaultValue: "in", required: true, submitOnChange: true, width: 6
+            input name: "rainDisplayUnit", type: "enum", title: "Default dashboard rain depth unit", options: rainUnitOptions(), defaultValue: "in", required: true, submitOnChange: true, width: 6
+        }
+
         section("Outdoor Air Quality (optional)") {
             attributeInputs("AQI", "attrOutdoorAQI", "aqi", deviceOptions)
             attributeInputs("AQI (24h Avg)", "attrOutdoorAQI24h", "aqi_avg_24h", deviceOptions)
@@ -269,6 +275,13 @@ private Map temperatureUnitOptions() {
     [
         'F': 'Fahrenheit (°F)',
         'C': 'Celsius (°C)'
+    ]
+}
+
+private Map rainUnitOptions() {
+    [
+        'in': 'Inch (in)',
+        'mm': 'Millimeter (mm)'
     ]
 }
 
@@ -1119,14 +1132,15 @@ private Map captureRawReadings() {
     readings.pressureRelative = readPressureSample("attrPressure")
     readings.pressureAbsolute = readPressureSample("attrAbsolutePressure")
 
+    boolean rainInputIsMillimeters = rainInputUnitSetting() == 'mm'
     readings.rain = [
-        rate   : readDecimalFor("attrRainRate"),
-        daily  : readDecimalFor("attrRainDaily"),
-        event  : readDecimalFor("attrRainEvent"),
-        hourly : readDecimalFor("attrRainHourly"),
-        weekly : readDecimalFor("attrRainWeekly"),
-        monthly: readDecimalFor("attrRainMonthly"),
-        yearly : readDecimalFor("attrRainYearly"),
+        rate   : convertInputRainDepth(readDecimalFor("attrRainRate"), rainInputIsMillimeters),
+        daily  : convertInputRainDepth(readDecimalFor("attrRainDaily"), rainInputIsMillimeters),
+        event  : convertInputRainDepth(readDecimalFor("attrRainEvent"), rainInputIsMillimeters),
+        hourly : convertInputRainDepth(readDecimalFor("attrRainHourly"), rainInputIsMillimeters),
+        weekly : convertInputRainDepth(readDecimalFor("attrRainWeekly"), rainInputIsMillimeters),
+        monthly: convertInputRainDepth(readDecimalFor("attrRainMonthly"), rainInputIsMillimeters),
+        yearly : convertInputRainDepth(readDecimalFor("attrRainYearly"), rainInputIsMillimeters),
         battery: readDecimalFor("attrBatteryRain")
     ]
 
@@ -1663,6 +1677,21 @@ private Map buildMetadata(Date generated, TimeZone tz, String stationUpdatedAt, 
     if (temperatureUnits) {
         metadata.temperatureUnits = temperatureUnits
     }
+
+    String rainInput = rainInputUnitSetting()
+    String rainDisplay = rainDisplayUnitSetting()
+    Map rainUnits = [:]
+    if (rainInput) {
+        rainUnits.input = rainInput
+        metadata.rainInputUnit = rainInput
+    }
+    if (rainDisplay) {
+        rainUnits.display = rainDisplay
+        metadata.rainDisplayUnit = rainDisplay
+    }
+    if (rainUnits) {
+        metadata.rainUnits = rainUnits
+    }
     metadata
 }
 
@@ -1818,6 +1847,35 @@ private String normalizeTemperatureUnitSetting(Object raw) {
     }
     String value = raw.toString().trim().toUpperCase()
     return (value == 'F' || value == 'C') ? value : null
+}
+
+private BigDecimal millimetersToInches(BigDecimal value) {
+    if (value == null) return null
+    (value / 25.4G) as BigDecimal
+}
+
+private BigDecimal convertInputRainDepth(BigDecimal value, boolean inputIsMillimeters) {
+    if (value == null) return null
+    inputIsMillimeters ? millimetersToInches(value) : value
+}
+
+private String rainInputUnitSetting() {
+    normalizeRainUnitSetting(settings.rainInputUnit) ?: 'in'
+}
+
+private String rainDisplayUnitSetting() {
+    normalizeRainUnitSetting(settings.rainDisplayUnit) ?: 'in'
+}
+
+private String normalizeRainUnitSetting(Object raw) {
+    if (!(raw instanceof CharSequence)) {
+        return null
+    }
+    String value = raw.toString().trim().toLowerCase()
+    if (!value) return null
+    if (['in', 'inch', 'inches'].contains(value)) return 'in'
+    if (['mm', 'millimeter', 'millimeters'].contains(value)) return 'mm'
+    return null
 }
 
 private void updateWindHistory(BigDecimal speed, BigDecimal direction, long timestamp) {
