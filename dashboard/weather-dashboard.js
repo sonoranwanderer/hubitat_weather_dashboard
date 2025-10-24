@@ -2149,7 +2149,7 @@
     const rotationText = hasSensors
       ? (sensors.length > 1 ? `Sensor ${index + 1} of ${sensors.length}` : '')
       : 'No sensors configured';
-    const tempDisplay = formatTemperature(tempPair.f, { includeUnit: true });
+    const tempDisplay = formatTemperature(tempPair.f);
     const humiditySource = Number.isFinite(sensor.humidity)
       ? sensor.humidity
       : (seed && Number.isFinite(seed.humidity) ? seed.humidity : null);
@@ -4473,7 +4473,7 @@
     const batteryEl = scope.querySelector('.wdash-ambient-battery');
 
     if (!sensor) {
-      if (tempEl) tempEl.textContent = formatTemperature(null, { includeUnit: true });
+      if (tempEl) tempEl.textContent = formatTemperature(null);
       if (humidityEl) humidityEl.textContent = formatAmbientValue(null, ambientRotation.humidityUnit, 0);
       if (nameEl) nameEl.textContent = 'No sensors configured';
       if (rotationEl) rotationEl.textContent = '';
@@ -4496,7 +4496,7 @@
     if (card) card.classList.remove('wdash-ambient--empty');
     const sensorName = sensor && typeof sensor.name === 'string' ? sensor.name.trim() : '';
     const tempPair = resolveTemperaturePair(sensor.temperatureF, sensor.temperatureC);
-    if (tempEl) tempEl.textContent = formatTemperature(tempPair.f, { includeUnit: true });
+    if (tempEl) tempEl.textContent = formatTemperature(tempPair.f);
     if (humidityEl) humidityEl.textContent = formatAmbientValue(sensor.humidity, ambientRotation.humidityUnit, 0);
     if (nameEl) nameEl.textContent = sensorName.length ? sensorName : 'Ambient Sensor';
     if (rotationEl) {
