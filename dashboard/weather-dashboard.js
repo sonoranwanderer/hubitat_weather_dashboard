@@ -2375,6 +2375,12 @@
     const indicatorLabel = altUnitLabel ? `Switch rain display to ${altUnitLabel}` : 'Switch rain display';
     const indicatorText = formatRainUnitIndicator(displayUnit);
 
+    const dailyDepth = formatRainParts(rain.dailyIn, { sourceUnit: 'in' });
+    const dailyDepthHtml = dailyDepth.isValid
+      ? `<span class="wdash-rain-daily-value-amount">${escapeHtml(dailyDepth.valueText)}</span>`
+          + `<span class="wdash-rain-daily-value-unit">${escapeHtml(dailyDepth.unitText)}</span>`
+      : `<span class="wdash-rain-daily-value-amount">--</span>`;
+
     return `
       <section class="wdash-card wdash-card--rain">
         <button type="button" class="wdash-temp-unit-indicator wdash-rain-unit-indicator" data-rain-unit-indicator="true" aria-label="${escapeHtml(indicatorLabel)}" title="${escapeHtml(indicatorLabel)}">${escapeHtml(indicatorText)}</button>
@@ -2398,7 +2404,7 @@
               })}
             </div>
             <div class="wdash-rain-daily-metric">
-              <div class="wdash-rain-daily-value">${formatDepth(rain.dailyIn)}</div>
+              <div class="wdash-rain-daily-value">${dailyDepthHtml}</div>
               <div class="wdash-rain-daily-label">Daily</div>
               ${rainBatterySlot}
             </div>
@@ -5834,7 +5840,9 @@
 .wdash-rain-col--center { display: flex; flex-direction: column; justify-content: space-between; height: 100%; text-align: center; }
 .wdash-rain-rate-wrapper { width: 75%; margin: 0 auto; }
 .wdash-rain-daily-metric { flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; }
-.wdash-rain-daily-value { font-size: 2.8rem; font-weight: 800; line-height: 1; }
+.wdash-rain-daily-value { display: inline-flex; align-items: baseline; gap: 0.35rem; }
+.wdash-rain-daily-value-amount { font-size: 2.8rem; font-weight: 800; line-height: 1; }
+.wdash-rain-daily-value-unit { font-size: 0.9rem; font-weight: 600; color: #f4f6ff; line-height: 1.2; }
 .wdash-rain-daily-label { font-size: 0.9rem; font-weight: 700; color: #c9d8ff; }
 .wdash-rain-daily-metric .wdash-battery-slot { margin-top: 2px; }
 .wdash-rain-col--stats { align-self: start; }
@@ -6088,19 +6096,34 @@
     return `${value.toFixed(decimals)}%`;
   }
 
-  function formatRain(value, options = {}) {
+  function formatRainParts(value, options = {}) {
     const perHour = options.perHour === true;
     const decimalsInput = Number(options.decimals);
     const decimals = Number.isFinite(decimalsInput) ? decimalsInput : 2;
     const sourceUnit = normalizeRainUnit(options.sourceUnit) || 'in';
     const targetUnit = normalizeRainUnit(options.unit) || getDisplayRainUnit();
     const numeric = toNumber(value);
-    if (!Number.isFinite(numeric)) return '--';
+    if (!Number.isFinite(numeric)) {
+      return { isValid: false, perHour, valueText: '--', unitText: '' };
+    }
     const converted = convertRainDepth(numeric, sourceUnit, targetUnit);
-    if (!Number.isFinite(converted)) return '--';
-    const suffix = targetUnit === 'mm' ? 'mm' : 'in';
-    const formatted = converted.toFixed(decimals);
-    return perHour ? `${formatted} ${suffix}/hr` : `${formatted} ${suffix}`;
+    if (!Number.isFinite(converted)) {
+      return { isValid: false, perHour, valueText: '--', unitText: '' };
+    }
+    const unitText = targetUnit === 'mm' ? 'mm' : 'in';
+    return {
+      isValid: true,
+      perHour,
+      valueText: converted.toFixed(decimals),
+      unitText
+    };
+  }
+
+  function formatRain(value, options = {}) {
+    const parts = formatRainParts(value, options);
+    if (!parts.isValid) return '--';
+    const unitText = parts.perHour ? `${parts.unitText}/hr` : parts.unitText;
+    return `${parts.valueText} ${unitText}`;
   }
 
   function formatPressure(value) {
