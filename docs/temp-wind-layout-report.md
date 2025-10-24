@@ -6,7 +6,7 @@ This revision replaces the earlier summary with an exhaustive inventory of every
 
 | Level | Source | Lines | Contribution to gauge space |
 | --- | --- | --- | --- |
-| Hubitat tile host | `renderDashboard()` markup | 367-374 | Injects `.wdash-root` inside the hub tile so the dashboard can manage its own scaling. |
+| Hubitat tile host | `renderFromData()` bootstrap | 367-374 | Injects `.wdash-root` inside the hub tile so the dashboard can manage its own scaling. |
 | `.wdash-root` | CSS template | 3449 | Flex container that fills the tile, provides `--wdash-base-width/height`, and centers the rendered frame. |
 | `.wdash-frame` | CSS template | 3450 | Holds the rendered dashboard at `--wdash-render-width/height`, clipping overflow. |
 | `.wdash` | CSS template | 3451 & 3685-3689 | Defines the base 1200×900 drawing plane, frame padding (`--wdash-frame-gap`), and applies breakpoint-specific padding via CSS variables. All child sizing, including the gauges, occurs within this scaled plane. |
