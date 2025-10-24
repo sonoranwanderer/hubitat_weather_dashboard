@@ -5704,6 +5704,7 @@
   }
 
   function setupAirQualityRotation(data) {
+    const hadTimer = Boolean(airQualityRotation.timer);
     airQualityRotation.lastData = data;
     airQualityRotation.interval = DEFAULT_AIR_QUALITY_ROTATION_INTERVAL_MS;
     const sources = resolveAirQualitySources(data);
@@ -5722,6 +5723,10 @@
       if (!sources.length) {
         airQualityRotation.index = 0;
       }
+    }
+
+    if (hadTimer || !airQualityRotation.timer) {
+      updateAirQualityCard();
     }
   }
 
