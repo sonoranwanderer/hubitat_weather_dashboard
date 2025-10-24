@@ -5714,7 +5714,9 @@
     }
 
     if (sources.length > 1) {
-      scheduleAirQualityRotation();
+      if (!airQualityRotation.timer) {
+        scheduleAirQualityRotation();
+      }
     } else {
       stopAirQualityRotationTimer();
       if (!sources.length) {
