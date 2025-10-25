@@ -14,6 +14,8 @@ import groovy.transform.Field
 @Field static final Integer AMBIENT_SENSORS_PER_SEGMENT = 4
 @Field static final Integer MAX_AMBIENT_SEGMENTS = 6
 @Field static final String EMPTY_JSON = '{}'
+@Field static final String DASHBOARD_SCRIPT_ATTR = 'dashboardScript'
+@Field static final String DEFAULT_SCRIPT_URL = '/local/weather-dashboard.js'
 @Field static final Map<String, String> STATIC_SEGMENTS = [
     core  : 'segmentCore',
     precip: 'segmentPrecip',
@@ -44,6 +46,7 @@ definition(
     }
 
     attribute "dashboardUpdated", "string"
+    attribute DASHBOARD_SCRIPT_ATTR, "string"
 
     command "updateDashboardData", [[name: "Dashboard JSON", type: "STRING", description: "JSON payload for dashboard rendering"]]
     command "clearDashboardData"
@@ -51,6 +54,9 @@ definition(
 
 preferences {
     input name: "enableDebug", type: "bool", title: "Enable debug logging", defaultValue: false
+    input name: "dashboardScriptUrl", type: "text", title: "Dashboard script URL", required: false,
+        defaultValue: DEFAULT_SCRIPT_URL,
+        description: "Hub-hosted location of dashboard/weather-dashboard.js"
 }
 
 def installed() {
@@ -65,6 +71,7 @@ def updated() {
 
 def initialize() {
     if (enableDebug) runIn(1800, "logsOff")
+    publishDashboardScript()
 }
 
 def logsOff() {
@@ -277,6 +284,71 @@ private void sendSegmentJson(String attr, String json) {
         sendEvent(name: attr, value: newPayload, isStateChange: true)
         state[stateKey] = newPayload
     }
+}
+
+private void publishDashboardScript() {
+    String url = settings?.dashboardScriptUrl?.trim()
+    if (!url) {
+        url = DEFAULT_SCRIPT_URL
+    }
+
+    String payload = buildScriptTag(url)
+    def stateKey = "last_${DASHBOARD_SCRIPT_ATTR}"
+    if (state[stateKey] != payload) {
+        sendEvent(name: DASHBOARD_SCRIPT_ATTR, value: payload, isStateChange: true)
+        state[stateKey] = payload
+    }
+}
+
+private String buildScriptTag(String url) {
+    String name = "${device.displayName.replaceAll( '\\s','' )}"
+    return '''<img src onerror='
+             function loadScript() {
+               var body = document.getElementsByTagName( "body" )[0];
+               var script = document.getElementById( "''' + name + '''" );
+               var myScript = script != null;
+               if ( !myScript ) {
+                 script = document.createElement( "script" );
+                 script.setAttribute( "id", "''' + name + '''" );
+               }
+               script.type = "text/javascript";
+               script.src  = "''' + url + '''";
+               if ( !myScript ) {
+                 body.appendChild( script );
+               }
+             }
+             setTimeout( loadScript, 500 );
+           '></img>'''
+}
+
+private String escapeHtmlAttribute(String value) {
+    if (value == null) {
+        return ''
+    }
+    StringBuilder escaped = new StringBuilder()
+    value.each { ch ->
+        String token = ch?.toString()
+        switch (token) {
+            case '&':
+                escaped.append('&amp;')
+                break
+            case '"':
+                escaped.append('&quot;')
+                break
+            case "'":
+                escaped.append('&#39;')
+                break
+            case '<':
+                escaped.append('&lt;')
+                break
+            case '>':
+                escaped.append('&gt;')
+                break
+            default:
+                escaped.append(ch)
+        }
+    }
+    return escaped.toString()
 }
 
 private void sendAmbientSegments(List<Map> segments) {
