@@ -293,7 +293,7 @@ private void publishDashboardScript() {
         url = DEFAULT_SCRIPT_URL
     }
 
-    String payload = buildScriptInjection(url)
+    String payload = buildScriptTag(url)
     def stateKey = "last_${DASHBOARD_SCRIPT_ATTR}"
     if (state[stateKey] != payload) {
         sendEvent(name: DASHBOARD_SCRIPT_ATTR, value: payload, isStateChange: true)
@@ -301,9 +301,39 @@ private void publishDashboardScript() {
     }
 }
 
-private String buildScriptInjection(String url) {
-    String escapedUrl = url.replace('\\', '\\\\').replace("'", "\\'")
-    return "<script>(function(){const existing=document.querySelector('script[data-weather-dashboard=\\\"true\\\"]');const src='${escapedUrl}';if(existing&&existing.getAttribute('src')===src){return;}if(existing){existing.remove();}const script=document.createElement('script');script.setAttribute('data-weather-dashboard','true');script.src=src;script.type='text/javascript';document.head.appendChild(script);}())</script>"
+private String buildScriptTag(String url) {
+    String escapedUrl = escapeHtmlAttribute(url)
+    return "<script src=\"${escapedUrl}\" data-weather-dashboard=\"true\" type=\"text/javascript\"></script>"
+}
+
+private String escapeHtmlAttribute(String value) {
+    if (value == null) {
+        return ''
+    }
+    StringBuilder escaped = new StringBuilder()
+    value.each { ch ->
+        String token = ch?.toString()
+        switch (token) {
+            case '&':
+                escaped.append('&amp;')
+                break
+            case '"':
+                escaped.append('&quot;')
+                break
+            case "'":
+                escaped.append('&#39;')
+                break
+            case '<':
+                escaped.append('&lt;')
+                break
+            case '>':
+                escaped.append('&gt;')
+                break
+            default:
+                escaped.append(ch)
+        }
+    }
+    return escaped.toString()
 }
 
 private void sendAmbientSegments(List<Map> segments) {
