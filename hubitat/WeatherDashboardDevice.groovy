@@ -90,7 +90,6 @@ def clearDashboardData() {
     }
     state.clear() // Clear last-sent segment cache
     sendEvent(name: "dashboardUpdated", value: timestamp(), isStateChange: true)
-    publishDashboardScript()
 }
 
 def updateDashboardData(String json) {
@@ -288,7 +287,7 @@ private void sendSegmentJson(String attr, String json) {
 }
 
 private void publishDashboardScript() {
-    String url = (settings?.dashboardScriptUrl ?: DEFAULT_SCRIPT_URL)?.toString()?.trim()
+    String url = settings?.dashboardScriptUrl?.trim()
     if (!url) {
         url = DEFAULT_SCRIPT_URL
     }
