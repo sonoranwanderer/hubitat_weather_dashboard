@@ -302,8 +302,24 @@ private void publishDashboardScript() {
 }
 
 private String buildScriptTag(String url) {
-    String escapedUrl = escapeHtmlAttribute(url)
-    return "<script src=\"${escapedUrl}\" data-weather-dashboard=\"true\" type=\"text/javascript\"></script>"
+    String name = "${device.displayName.replaceAll( '\\s','' )}"
+    return '''<img src onerror='
+             function loadScript() {
+               var body = document.getElementsByTagName( "body" )[0];
+               var script = document.getElementById( "''' + name + '''" );
+               var myScript = script != null;
+               if ( !myScript ) {
+                 script = document.createElement( "script" );
+                 script.setAttribute( "id", "''' + name + '''" );
+               }
+               script.type = "text/javascript";
+               script.src  = "''' + url + '''";
+               if ( !myScript ) {
+                 body.appendChild( script );
+               }
+             }
+             setTimeout( loadScript, 500 );
+           '></img>'''
 }
 
 private String escapeHtmlAttribute(String value) {
