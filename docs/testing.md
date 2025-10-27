@@ -2,7 +2,7 @@
 
 ## Automated checks
 
-Run the lightweight Node harnesses to ensure the archived `/v2` dashboard script can consume recorded payloads and renders core cards without throwing:
+Run the lightweight Node harnesses to confirm the archived `/v2` dashboard script can consume each recorded payload and render the core cards without errors:
 
 ```bash
 npm test
