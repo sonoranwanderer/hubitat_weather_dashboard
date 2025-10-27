@@ -479,7 +479,28 @@ function createTestEnvironment() {
 
 function loadWeatherDashboard(window, options = {}) {
   const rootDir = path.resolve(__dirname, '..', '..');
-  const scriptPath = options.scriptPath || path.join(rootDir, 'v2', 'dashboard', 'weather-dashboard.js');
+  if (options.scriptPath) {
+    const code = fs.readFileSync(options.scriptPath, 'utf8');
+    vm.runInThisContext(code, { filename: options.scriptPath });
+    return window.__WDASH_TEST_HOOKS__;
+  }
+
+  const variant = String(options.variant || process.env.WDASH_VARIANT || 'legacy').toLowerCase();
+  const defaultPath = variant === 'v2'
+    ? path.join(rootDir, 'v2', 'dashboard', 'weather-dashboard.js')
+    : path.join(rootDir, 'dashboard', 'weather-dashboard.js');
+
+  let scriptPath = defaultPath;
+
+  if (!fs.existsSync(scriptPath)) {
+    const fallbackPath = path.join(rootDir, 'dashboard', 'weather-dashboard.js');
+    if (fallbackPath !== scriptPath && fs.existsSync(fallbackPath)) {
+      scriptPath = fallbackPath;
+    } else {
+      throw new Error(`Weather dashboard script not found at ${scriptPath}`);
+    }
+  }
+
   const code = fs.readFileSync(scriptPath, 'utf8');
   vm.runInThisContext(code, { filename: scriptPath });
   return window.__WDASH_TEST_HOOKS__;
