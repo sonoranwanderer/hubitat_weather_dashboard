@@ -644,6 +644,135 @@ private String renderHistoryMetricsHtml() {
     return entries ? htmlList(entries) : null
 }
 
+private String renderForecastDiagnosticsHtml() {
+    Map diag = (state.forecastDiagnostics ?: [:]) as Map
+    if (!diag) {
+        return null
+    }
+
+    StringBuilder html = new StringBuilder()
+    String generated = diag.generatedAt ? formatTimestamp(diag.generatedAt as Long) : 'n/a'
+    html << "<b>Last forecast update:</b> ${htmlEncode(generated)}"
+
+    if (diag.category) {
+        html << "<br/><b>Category:</b> ${htmlEncode(diag.category.toString())}"
+    }
+    if (diag.summary) {
+        html << "<br/><b>Summary:</b> ${htmlEncode(diag.summary.toString())}"
+    }
+    if (diag.shortSummary && diag.shortSummary != diag.summary) {
+        html << "<br/><b>Dashboard summary:</b> ${htmlEncode(diag.shortSummary.toString())}"
+    }
+
+    Map history = (diag.history ?: [:]) as Map
+    List<String> historyLines = []
+    Integer recordedDays = history.historyDays != null ? (history.historyDays as Integer) : null
+    Integer requiredDays = history.requiredHistoryDays != null ? (history.requiredHistoryDays as Integer) : null
+    String coverage = history.historyCoveragePercent != null ? "${formatDecimal(history.historyCoveragePercent)}%" : null
+    Boolean ready = history.historyReady != null ? (history.historyReady as Boolean) : null
+
+    if (recordedDays != null || requiredDays != null) {
+        StringBuilder line = new StringBuilder('Baseline days collected: ')
+        line << (recordedDays != null ? recordedDays : 0)
+        if (requiredDays != null) {
+            line << " of ${requiredDays} required"
+        }
+        if (coverage) {
+            line << " (${coverage})"
+        }
+        if (ready != null) {
+            line << (ready ? ' — ready' : ' — still building')
+        }
+        historyLines << line.toString()
+    }
+    if (history.samplesToday != null) {
+        historyLines << "Samples today: ${history.samplesToday}"
+    }
+    if (history.lastUpdated) {
+        historyLines << "Last baseline sample: ${formatTimestamp(history.lastUpdated as Long)}"
+    }
+    if (history.currentDayKey) {
+        historyLines << "Current baseline day key: ${history.currentDayKey}"
+    }
+
+    if (historyLines) {
+        html << '<br/><br/><b>Baseline accumulation</b>'
+        html << htmlList(historyLines)
+    }
+
+    Map baseline = (diag.baseline ?: [:]) as Map
+    List<String> baselineLines = []
+    if (baseline.dailyAverageInHg != null) {
+        baselineLines << "Today's mean pressure: ${formatDecimal(baseline.dailyAverageInHg)} inHg"
+    }
+    if (baseline.thirtyDayAverageInHg != null) {
+        baselineLines << "30-day mean pressure: ${formatDecimal(baseline.thirtyDayAverageInHg)} inHg"
+    }
+    if (baseline.tendencyInHg != null) {
+        String tendency = formatDecimal(baseline.tendencyInHg)
+        if (baseline.tendencyHpa != null) {
+            tendency = "${tendency} (${formatDecimal(baseline.tendencyHpa)} hPa)"
+        }
+        baselineLines << "Tendency vs 30-day mean: ${tendency}"
+    }
+    if (baseline.trendText) {
+        baselineLines << "Baseline trend: ${baseline.trendText}"
+    }
+    if (baseline.iconLabel) {
+        String iconDescriptor = baseline.iconKey ? "${baseline.iconLabel} (${baseline.iconKey})" : baseline.iconLabel
+        baselineLines << "Baseline icon: ${iconDescriptor}"
+    }
+    if (baseline.forecastText) {
+        baselineLines << baseline.forecastText.toString()
+    }
+
+    if (baselineLines) {
+        html << '<br/><br/><b>Baseline comparison</b>'
+        html << htmlList(baselineLines)
+    }
+
+    Map inputs = (diag.inputs ?: [:]) as Map
+    List<String> inputLines = []
+    String pressureUnitLabel = inputs.pressureUnit ?: 'inHg'
+    if (inputs.pressure != null) {
+        inputLines << "Latest pressure sample: ${formatDecimal(inputs.pressure)} ${pressureUnitLabel}"
+    }
+    if (inputs.humidity != null) {
+        inputLines << "Humidity considered: ${formatDecimal(inputs.humidity)}%"
+    }
+    Map trendInput = (inputs.trend ?: [:]) as Map
+    if (trendInput) {
+        StringBuilder trendLine = new StringBuilder('Short-term trend analysis: ')
+        trendLine << (trendInput.label ?: 'n/a')
+        if (trendInput.ratePerHour != null) {
+            trendLine << " (${formatDecimal(trendInput.ratePerHour)} ${pressureUnitLabel}/hr)"
+        }
+        if (trendInput.changeTotal != null) {
+            trendLine << "; change ${formatDecimal(trendInput.changeTotal)} ${pressureUnitLabel}"
+        }
+        inputLines << trendLine.toString()
+    }
+
+    if (inputLines) {
+        html << '<br/><br/><b>Inputs analyzed</b>'
+        html << htmlList(inputLines)
+    }
+
+    List<String> components = (diag.summaryComponents instanceof List) ? (diag.summaryComponents.findAll { it } as List<String>) : []
+    if (components) {
+        html << '<br/><br/><b>Summary components</b>'
+        html << htmlList(components.collect { it.toString() })
+    }
+
+    List<String> reasons = (diag.reasoning instanceof List) ? (diag.reasoning.findAll { it } as List<String>) : []
+    if (reasons) {
+        html << '<br/><br/><b>Why this outlook?</b>'
+        html << htmlList(reasons.collect { it.toString() })
+    }
+
+    return html.toString()
+}
+
 private Integer safeToInt(def value, Integer defaultValue) {
     if (value == null) {
         return defaultValue
@@ -1858,6 +1987,12 @@ private BigDecimal round(value, int scale) {
     return (value as BigDecimal).setScale(scale, RoundingMode.HALF_UP)
 }
 
+private String formatDecimal(value) {
+    BigDecimal decimal = toBigDecimal(value)
+    if (decimal == null) return null
+    return decimal.stripTrailingZeros().toPlainString()
+}
+
 private BigDecimal fahrenheitToCelsius(BigDecimal tempF) {
     ((tempF - 32) * 5 / 9) as BigDecimal
 }
@@ -2209,6 +2344,29 @@ private void enforcePressureBaselineLimit(Map baseline) {
     }
 }
 
+private Map pressureBaselineHistoryStats(Map baseline) {
+    Map normalized = baseline ?: normalizePressureBaselineState(state.pressureBaseline)
+    List history = (normalized.history instanceof List) ? normalized.history : []
+    Integer recordedDays = history.size()
+    Integer requiredDays = (settings.pressureBaselineDays ?: 30) as Integer
+
+    Map stats = [
+        historyDays        : recordedDays,
+        requiredHistoryDays: requiredDays,
+        samplesToday       : (normalized.dailyCount ?: 0) as Integer,
+        lastUpdated        : normalized.lastUpdated,
+        currentDayKey      : normalized.currentDay
+    ]
+
+    if (requiredDays && requiredDays > 0) {
+        BigDecimal ratio = (recordedDays as BigDecimal) / (requiredDays as BigDecimal)
+        stats.historyCoveragePercent = round(ratio * 100.0G, 1)
+        stats.historyReady = recordedDays >= requiredDays
+    }
+
+    return stats
+}
+
 private Map computePressureBaselineSummary(String unit) {
     def baseline = normalizePressureBaselineState(state.pressureBaseline)
     enforcePressureBaselineLimit(baseline)
@@ -2263,9 +2421,8 @@ private Map computePressureBaselineSummary(String unit) {
         forecastText      : forecast.text
     ]
 
-    if (values) {
-        result.historyDays = values.size()
-    }
+    Map historyStats = pressureBaselineHistoryStats(baseline)
+    result.putAll(historyStats.findAll { it.value != null })
 
     state.pressureBaseline = baseline
     return result.findAll { it.value != null }
@@ -2395,25 +2552,155 @@ private Map computePressureTrend(long timestamp) {
 
 private Map computeOutlook(BigDecimal pressure, Map trend, BigDecimal humidity, Map baseline, String unit) {
     Map baselineInfo = baseline ?: computePressureBaselineSummary(unit)
+    Map historyStats = pressureBaselineHistoryStats(null)
+    Map history = historyStats ? (historyStats.findAll { it.value != null } as Map) : [:]
+
+    BigDecimal roundedPressure = pressure != null ? round(pressure, 3) : null
+    BigDecimal roundedHumidity = humidity != null ? round(humidity, 1) : null
+    String pressureUnit = unit ?: 'inHg'
+
+    Map diagnostics = [
+        generatedAt: now(),
+        inputs     : [:],
+        history    : history ?: [:],
+        reasoning  : []
+    ]
+
+    diagnostics.inputs.pressureUnit = pressureUnit
+    if (roundedPressure != null) {
+        diagnostics.inputs.pressure = roundedPressure
+    }
+    if (roundedHumidity != null) {
+        diagnostics.inputs.humidity = roundedHumidity
+    }
+
+    Map trendInputs = [:]
+    if (trend?.label) trendInputs.label = trend.label
+    if (trend?.ratePerHour != null) trendInputs.ratePerHour = round(trend.ratePerHour, 3)
+    if (trend?.changeTotal != null) trendInputs.changeTotal = round(trend.changeTotal, 3)
+    if (trendInputs) {
+        diagnostics.inputs.trend = trendInputs
+    }
+
+    Map baselineDetails = [:]
+    if (baselineInfo?.dailyAverage != null) baselineDetails.dailyAverageInHg = round(baselineInfo.dailyAverage, 3)
+    if (baselineInfo?.thirtyDayAverage != null) baselineDetails.thirtyDayAverageInHg = round(baselineInfo.thirtyDayAverage, 3)
+    if (baselineInfo?.tendencyInHg != null) baselineDetails.tendencyInHg = round(baselineInfo.tendencyInHg, 3)
+    if (baselineInfo?.tendencyHpa != null) baselineDetails.tendencyHpa = round(baselineInfo.tendencyHpa, 1)
+    if (baselineInfo?.trendText) baselineDetails.trendText = baselineInfo.trendText
+    if (baselineInfo?.forecastText) baselineDetails.forecastText = baselineInfo.forecastText
+    if (baselineInfo?.iconKey) baselineDetails.iconKey = baselineInfo.iconKey
+    if (baselineInfo?.iconLabel) baselineDetails.iconLabel = baselineInfo.iconLabel
+    if (baselineDetails) {
+        diagnostics.baseline = baselineDetails
+    }
+
     String trendNarrative = buildTrendNarrative(trend)
     String humidityNote = buildHumidityNote(humidity)
-
     String baselineNarrative = baselineInfo?.forecastText
-    String summary = [trendNarrative, baselineNarrative, humidityNote].findAll { it }
-        .join(' ')
 
-    if (!summary) {
-        if (pressure != null) {
-            if (pressure >= 30.2) {
-                summary = "High pressure dominant — fair skies expected."
-            } else if (pressure <= 29.5) {
-                summary = "Low pressure system — clouds or rain possible."
+    List<String> summaryPieces = []
+    List<String> reasoning = []
+
+    if (trendNarrative) {
+        summaryPieces << trendNarrative
+        StringBuilder reason = new StringBuilder('Short-term pressure trend')
+        if (trend?.label) {
+            reason << " (${trend.label})"
+        }
+        reason << ": ${trendNarrative}"
+        if (trendInputs.ratePerHour != null) {
+            reason << " — rate ${formatDecimal(trendInputs.ratePerHour)} ${pressureUnit}/hr"
+        }
+        if (trendInputs.changeTotal != null) {
+            Integer hours = (settings.pressureTrendHours ?: 3) as Integer
+            reason << " over ~${hours} h (${formatDecimal(trendInputs.changeTotal)} ${pressureUnit} change)"
+        }
+        reasoning << reason.toString()
+    } else if (trendInputs) {
+        StringBuilder reason = new StringBuilder("Short-term pressure trend measured as ${trendInputs.label ?: 'Steady'}")
+        if (trendInputs.ratePerHour != null) {
+            reason << " (${formatDecimal(trendInputs.ratePerHour)} ${pressureUnit}/hr)"
+        }
+        reasoning << reason.toString()
+    } else {
+        reasoning << 'No short-term pressure trend was available for this cycle.'
+    }
+
+    if (baselineInfo) {
+        if (baselineNarrative) {
+            summaryPieces << baselineNarrative
+        }
+        StringBuilder baselineReason = new StringBuilder('Baseline pressure history')
+        if (baselineInfo?.trendText) {
+            baselineReason << " indicates ${baselineInfo.trendText.toLowerCase()}"
+        }
+        List<String> comparisons = []
+        if (baselineDetails.dailyAverageInHg != null && baselineDetails.thirtyDayAverageInHg != null) {
+            comparisons << "today ${formatDecimal(baselineDetails.dailyAverageInHg)} vs 30-day ${formatDecimal(baselineDetails.thirtyDayAverageInHg)} ${pressureUnit}"
+        }
+        if (baselineDetails.tendencyInHg != null) {
+            String tendency = formatDecimal(baselineDetails.tendencyInHg)
+            if (baselineDetails.tendencyHpa != null) {
+                tendency = "${tendency} (${formatDecimal(baselineDetails.tendencyHpa)} hPa)"
             }
+            comparisons << "tendency ${tendency}"
+        }
+        if (comparisons) {
+            baselineReason << " — ${comparisons.join(', ')}"
+        }
+        if (baselineNarrative) {
+            baselineReason << ". ${baselineNarrative}"
+        } else if (!comparisons && !baselineInfo?.trendText) {
+            baselineReason << ' available but no forecast narrative yet.'
+        }
+        reasoning << baselineReason.toString()
+    } else if (history) {
+        Integer recordedDays = history.historyDays as Integer
+        Integer requiredDays = history.requiredHistoryDays as Integer
+        if (recordedDays != null && requiredDays != null) {
+            reasoning << "Pressure baseline still building: ${recordedDays} of ${requiredDays} days collected."
+        } else {
+            reasoning << 'Pressure baseline not yet available for diagnostics.'
         }
     }
 
+    if (humidityNote) {
+        summaryPieces << humidityNote
+        reasoning << "Humidity at ${formatDecimal(roundedHumidity)}% triggered heuristic: ${humidityNote}"
+    } else if (roundedHumidity != null) {
+        reasoning << "Humidity input (${formatDecimal(roundedHumidity)}%) did not trigger an adjustment."
+    }
+
+    List<String> combinedPieces = summaryPieces.findAll { it }
+    String summary = combinedPieces ? combinedPieces.join(' ') : null
+    List<String> summaryComponents = combinedPieces ? combinedPieces.collect { it } : []
+    String fallbackReason = null
+
     if (!summary) {
-        summary = "Little pressure change — current conditions likely to persist."
+        if (roundedPressure != null) {
+            if (roundedPressure >= 30.2G) {
+                summary = 'High pressure dominant — fair skies expected.'
+                summaryComponents = [summary]
+                fallbackReason = "Used absolute pressure fallback because ${formatDecimal(roundedPressure)} ${pressureUnit} ≥ 30.2 ${pressureUnit}."
+            } else if (roundedPressure <= 29.5G) {
+                summary = 'Low pressure system — clouds or rain possible.'
+                summaryComponents = [summary]
+                fallbackReason = "Used absolute pressure fallback because ${formatDecimal(roundedPressure)} ${pressureUnit} ≤ 29.5 ${pressureUnit}."
+            }
+        }
+    }
+    if (!summary) {
+        summary = 'Little pressure change — current conditions likely to persist.'
+        if (!summaryComponents) {
+            summaryComponents = [summary]
+        }
+        if (!fallbackReason) {
+            fallbackReason = 'Defaulted to steady-conditions message because no other signals were available.'
+        }
+    }
+    if (fallbackReason) {
+        reasoning << fallbackReason
     }
 
     String shortSummary
@@ -2474,6 +2761,20 @@ private Map computeOutlook(BigDecimal pressure, Map trend, BigDecimal humidity, 
     if (baselinePayload) {
         result.baseline = baselinePayload
     }
+
+    diagnostics.category = category
+    diagnostics.summary = summary
+    diagnostics.shortSummary = shortSummary
+    diagnostics.iconKey = baselineInfo?.iconKey
+    diagnostics.iconLabel = baselineInfo?.iconLabel
+    diagnostics.trendLabel = trendLabel
+    diagnostics.humidityNote = humidityNote
+    diagnostics.baselineNarrative = baselineNarrative
+    diagnostics.summaryComponents = summaryComponents
+    diagnostics.reasoning = reasoning.findAll { it }
+    diagnostics.fallbackReason = fallbackReason
+
+    state.forecastDiagnostics = diagnostics
 
     return result.findAll { it.value != null }
 }
@@ -2692,6 +2993,14 @@ def diagnosticsPage() {
                     paragraph "<b>History maintenance</b>"
                     paragraph historyHtml
                 }
+            }
+        }
+        section("Forecast diagnostics") {
+            String forecastHtml = renderForecastDiagnosticsHtml()
+            if (forecastHtml) {
+                paragraph forecastHtml
+            } else {
+                paragraph "Forecast diagnostics will appear after the app generates an outlook."
             }
         }
         section("Latest Payload") {
