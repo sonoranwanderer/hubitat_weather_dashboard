@@ -7558,6 +7558,12 @@
     const target = typeof window !== 'undefined' ? window : globalThis;
     target.__WDASH_TEST_HOOKS__ = target.__WDASH_TEST_HOOKS__ || {};
     Object.assign(target.__WDASH_TEST_HOOKS__, {
+      init,
+      safeRenderFromData,
+      renderFromData,
+      readPayloads,
+      mergePayloads,
+      buildCardMarkupList,
       updateTempWindCard,
       tempWindState,
       applyLayoutOverrides,
