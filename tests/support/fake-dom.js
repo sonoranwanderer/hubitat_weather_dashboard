@@ -474,7 +474,7 @@ function createTestEnvironment() {
 
 function loadWeatherDashboard(window, options = {}) {
   const rootDir = path.resolve(__dirname, '..', '..');
-  const scriptPath = options.scriptPath || path.join(rootDir, 'dashboard', 'weather-dashboard.js');
+  const scriptPath = options.scriptPath || path.join(rootDir, 'v2', 'dashboard', 'weather-dashboard.js');
   const code = fs.readFileSync(scriptPath, 'utf8');
   vm.runInThisContext(code, { filename: scriptPath });
   return window.__WDASH_TEST_HOOKS__;
