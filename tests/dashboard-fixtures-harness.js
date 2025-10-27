@@ -57,7 +57,9 @@ async function runFixture(fixturePath) {
   try {
     payload = JSON.parse(raw);
   } catch (err) {
-    throw new Error(`Fixture ${label} does not contain valid JSON: ${err.message}`);
+    console.warn(`Skipping fixture ${label}: invalid JSON (${err.message})`);
+    console.warn(err);
+    return { label, success: false, error: err };
   }
 
   const { window, document } = createTestEnvironment();
@@ -135,16 +137,40 @@ async function runFixture(fixturePath) {
   }
 
   console.log(`Rendered dashboard fixture: ${label}`);
+  return { label, success: true };
 }
 
 async function main() {
   const fixturesDir = path.join(__dirname, 'fixtures');
   const entries = fs.readdirSync(fixturesDir).filter(name => name.endsWith('.json')).sort();
   assert(entries.length > 0, 'No dashboard fixtures found');
+  const failures = [];
   for (const name of entries) {
-    await runFixture(path.join(fixturesDir, name));
+    const fixturePath = path.join(fixturesDir, name);
+    try {
+      const result = await runFixture(fixturePath);
+      if (result && result.success === false) {
+        failures.push({ label: result.label, error: result.error, logged: true });
+      }
+    } catch (err) {
+      console.warn(`Fixture ${name} failed with an unexpected error: ${err.message}`);
+      failures.push({ label: name, error: err, logged: false });
+    }
+  }
+  if (failures.length > 0) {
+    console.error('Dashboard fixture harness encountered failures:');
+    for (const failure of failures) {
+      const { label, error, logged } = failure;
+      const message = error && error.message ? error.message : String(error);
+      console.error(` - ${label}: ${message}`);
+      if (!logged && error && error.stack) {
+        console.error(error.stack);
+      }
+    }
+    process.exit(1);
   }
   console.log('Dashboard fixture harness passed');
+  process.exit(0);
 }
 
 main().catch(err => {
