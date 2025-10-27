@@ -1,0 +1,100 @@
+{
+  "outdoor": {
+    "temperature": 18.4,
+    "trendPerHour": -0.3,
+    "dailyHigh": 21.1,
+    "dailyLow": 12.9,
+    "feelsLike": 17.6,
+    "dewPoint": 11.2,
+    "humidity": 68
+  },
+  "wind": {
+    "speedMph": 8.7,
+    "gustMph": 14.2,
+    "directionDegrees": 310,
+    "directionCardinal": "NW",
+    "averageMinutes": 15,
+    "average": {
+      "speedMph": 6.0,
+      "directionDegrees": 295,
+      "directionCardinal": "WNW"
+    }
+  },
+  "rain": {
+    "rateInPerHour": 0.04,
+    "dailyIn": 0.18,
+    "weeklyIn": 0.94
+  },
+  "pressure": {
+    "relativeInHg": 29.52,
+    "trendInHgPerHour": -0.02,
+    "trend": "Falling",
+    "changeInTrendWindow": -0.06
+  },
+  "outdoorAirQuality": {
+    "aqi": 72,
+    "aqi_avg_24h": 69,
+    "aqiColor": "#ffb347",
+    "aqiColor_avg_24h": "#ffa64d",
+    "aqiDanger": "Moderate",
+    "aqiDanger_avg_24h": "Moderate",
+    "pm25": 21.5,
+    "pm25_avg_24h": 19.3,
+    "battery": 75
+  },
+  "indoorAirQuality": {
+    "aqi": 31,
+    "aqi_avg_24h": 29,
+    "aqiColor": "#6dd3ff",
+    "aqiColor_avg_24h": "#6dd3ff",
+    "aqiDanger": "Good",
+    "aqiDanger_avg_24h": "Good",
+    "pm25": 7.8,
+    "pm25_avg_24h": 7.1,
+    "carbonDioxide": 542,
+    "carbonDioxide_avg_24h": 560,
+    "battery": 89
+  },
+  "lightning": {
+    "count": 12,
+    "distanceMi": 1.8,
+    "distance": 1.8,
+    "distanceKm": 2.9,
+    "time": "2024-03-08T03:22:00+01:00"
+  },
+  "ambientSensors": [
+    {
+      "name": "Kitchen",
+      "temperature": 20.1,
+      "humidity": 53,
+      "battery": 90,
+      "ordinal": 1
+    },
+    {
+      "name": "Basement",
+      "temperature": 16.4,
+      "humidity": 62,
+      "battery": 84,
+      "ordinal": 2
+    },
+    {
+      "name": "Attic",
+      "temperature": 12.7,
+      "humidity": 48,
+      "battery": 70,
+      "ordinal": 3
+    }
+  ],
+  "ambientRotationSeconds": 9,
+  "ambientHumidityUnit": "%",
+  "metadata": {
+    "generatedAt": "2024-03-08T02:35:10+01:00",
+    "weatherStationTimezone": "Europe/Prague",
+    "weatherStationTime": "2024-03-08T02:34:40+01:00",
+    "temperatureDisplayUnit": "C",
+    "rainDisplayUnit": "mm",
+    "windDisplayUnit": "kph",
+    "pressureDisplayUnit": "mb",
+    "lightningDisplayUnit": "km"
+  }
+}

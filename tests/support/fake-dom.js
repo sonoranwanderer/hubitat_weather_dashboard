@@ -353,10 +353,15 @@ function matchesSimple(element, token) {
   if (!token) return false;
   let working = token;
 
-  const attrMatch = working.match(/\[([^=]+)=['"]?([^'"\]]+)['"]?\]/);
+  const attrMatch = working.match(/\[([^=^]+)(\^?=)['"]?([^'"\]]+)['"]?\]/);
   if (attrMatch) {
-    const [, attr, value] = attrMatch;
-    if ((element.attributes.get(attr) || element.dataset[attr] || '') !== value) {
+    const [, attr, operator, value] = attrMatch;
+    const actual = element.attributes.get(attr) || element.dataset[attr] || '';
+    if (operator === '^=') {
+      if (!String(actual).startsWith(value)) {
+        return false;
+      }
+    } else if (actual !== value) {
       return false;
     }
     working = working.replace(attrMatch[0], '');

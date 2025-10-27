@@ -1,0 +1,27 @@
+{
+  "outdoor": {
+    "temperature": 34.0,
+    "dailyHigh": 35.6,
+    "dailyLow": 28.2
+  },
+  "wind": {
+    "speedMph": 0.0,
+    "gustMph": 2.3,
+    "directionDegrees": 15,
+    "directionCardinal": "NNE"
+  },
+  "pressure": {
+    "relativeInHg": 30.22
+  },
+  "rain": {
+    "dailyIn": 0.0
+  },
+  "metadata": {
+    "generatedAt": "2024-01-16T05:15:00+00:00",
+    "weatherStationTimezone": "UTC",
+    "temperatureDisplayUnit": "F",
+    "rainDisplayUnit": "in",
+    "windDisplayUnit": "mph",
+    "pressureDisplayUnit": "inhg"
+  }
+}
