@@ -20,7 +20,7 @@ This plan outlines the incremental phases for evolving the Ecowitt Weather Dashb
 
 ## Phase 2 — Isolate presentation logic from Hubitat tile plumbing
 
-This phase introduces a new `src/` directory dedicated to the refactored weather dashboard JavaScript. Treat `src/` as the workspace for the renderer, adapters, and any shared helpers that power the dashboard bundles. Keep all other Hubitat apps, drivers, and miscellaneous tooling in their existing top-level directories until a later phase calls for moving them.
+This phase introduces a new `src/` directory dedicated to the refactored weather dashboard JavaScript. Treat `src/` as the workspace for the renderer, adapters, and any shared helpers that power the dashboard bundles. Keep all other Hubitat apps, drivers, and miscellaneous tooling (for example the Groovy sources in `hubitat/` and the legacy assets in `dashboard/`) in their existing top-level directories until a later phase explicitly calls for moving them.
 
 :::task-stub{title="Refactor weather dashboard into adapter + shared renderer"}
 1. Split `dashboard/weather-dashboard.js` into `src/render/` (layout/formatting) and `src/adapters/hubitat-tiles.js` (tile scraping) modules in the repository root.
@@ -59,3 +59,4 @@ This phase introduces a new `src/` directory dedicated to the refactored weather
 2. Document in `docs/deployment.md` how to upload refreshed assets, configure Maker API access, and roll back to the legacy dashboard if needed.
 3. Run the full test suite against staged hubs (where available) and record results to support release readiness.
 :::
+
