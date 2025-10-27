@@ -1,0 +1,149 @@
+{
+  "outdoor": {
+    "temperature": 82.6,
+    "trendPerHour": 0.8,
+    "dailyHigh": 89.3,
+    "dailyLow": 68.2,
+    "feelsLike": 84.1,
+    "dewPoint": 61.5,
+    "humidity": 52,
+    "battery": 92
+  },
+  "indoor": {
+    "temperature": 74.2,
+    "humidity": 48,
+    "battery": 96
+  },
+  "wind": {
+    "speedMph": 5.6,
+    "gustMph": 12.3,
+    "dailyMaxGustMph": 23.5,
+    "directionDegrees": 202,
+    "directionCardinal": "SSW",
+    "averageMinutes": 10,
+    "average": {
+      "speedMph": 4.2,
+      "directionDegrees": 190,
+      "directionCardinal": "S"
+    },
+    "battery": 78
+  },
+  "pressure": {
+    "relativeInHg": 29.92,
+    "absoluteInHg": 29.65,
+    "trendInHgPerHour": 0.01,
+    "baseline": {
+      "dailyAverageInHg": 29.88,
+      "thirtyDayAverageInHg": 29.77,
+      "tendencyInHg": 0.14,
+      "trend": "Rising Slowly",
+      "iconKey": "pressure-rising",
+      "iconLabel": "Rising",
+      "forecastText": "Fair weather likely"
+    }
+  },
+  "rain": {
+    "rateInPerHour": 0.12,
+    "dailyIn": 0.45,
+    "eventIn": 0.62,
+    "hourlyIn": 0.15,
+    "weeklyIn": 1.72,
+    "monthlyIn": 3.8,
+    "yearlyIn": 12.45
+  },
+  "solar": {
+    "uvIndex": 6.5,
+    "uvColor": "#f7941d",
+    "uvDanger": "Moderate",
+    "solarRadiationWm2": 725.0,
+    "sunrise": "2024-06-10T05:12:00-07:00",
+    "sunset": "2024-06-10T19:43:00-07:00",
+    "moon": {
+      "phase": "Waxing Crescent",
+      "phaseKey": "waxing-crescent",
+      "ageDays": 6.2,
+      "illuminationFraction": 0.46,
+      "illuminationPercent": 46.0,
+      "phaseAngle": 120.5,
+      "waxing": true,
+      "hemisphere": "northern"
+    }
+  },
+  "outdoorAirQuality": {
+    "aqi": 45,
+    "aqi_avg_24h": 39,
+    "aqiColor": "#51a351",
+    "aqiColor_avg_24h": "#51a351",
+    "aqiDanger": "Good",
+    "aqiDanger_avg_24h": "Good",
+    "pm25": 12.6,
+    "pm25_avg_24h": 11.2,
+    "aqiPeak": 58,
+    "pm25Peak": 14.2,
+    "battery": 83
+  },
+  "indoorAirQuality": {
+    "aqi": 23,
+    "aqi_avg_24h": 20,
+    "aqiColor": "#4e9dff",
+    "aqiColor_avg_24h": "#4e9dff",
+    "aqiDanger": "Good",
+    "aqiDanger_avg_24h": "Good",
+    "pm10": 8.0,
+    "pm10_avg_24h": 7.2,
+    "pm25": 6.5,
+    "pm25_avg_24h": 6.1,
+    "carbonDioxide": 610,
+    "carbonDioxide_avg_24h": 625,
+    "aqiPeak": 31,
+    "pm10Peak": 10.5,
+    "pm25Peak": 8.3,
+    "carbonDioxidePeak": 690,
+    "battery": 91
+  },
+  "lightning": {
+    "count": 3,
+    "distanceMi": 4.5,
+    "distance": 4.5,
+    "distanceKm": 7.2,
+    "time": "2024-06-10T18:05:00-07:00",
+    "battery": 72
+  },
+  "ambientSensors": [
+    {
+      "name": "Garage",
+      "temperature": 78.9,
+      "humidity": 55,
+      "battery": 87,
+      "ordinal": 1
+    },
+    {
+      "name": "Nursery",
+      "temperature": 72.3,
+      "humidity": 48,
+      "battery": 92,
+      "ordinal": 2
+    }
+  ],
+  "totalAmbientSensors": 2,
+  "ambientRotationSeconds": 12,
+  "ambientHumidityUnit": "%",
+  "metadata": {
+    "generatedAt": "2024-06-10T19:50:15-07:00",
+    "weatherStationTimezone": "America/Phoenix",
+    "weatherStationTime": "2024-06-10T19:49:47-07:00",
+    "temperatureDisplayUnit": "F",
+    "rainDisplayUnit": "in",
+    "windDisplayUnit": "mph",
+    "pressureDisplayUnit": "inhg",
+    "lightningDisplayUnit": "mi",
+    "layout": {
+      "desktop": {
+        "baseWidth": 1220,
+        "baseHeight": 910,
+        "columns": "repeat(2, minmax(0, 1fr))",
+        "gap": "12px"
+      }
+    }
+  }
+}
