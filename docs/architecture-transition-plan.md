@@ -60,3 +60,13 @@ This phase introduces a new `src/` directory dedicated to the refactored weather
 3. Run the full test suite against staged hubs (where available) and record results to support release readiness.
 :::
 
+## Merge conflict guidance
+
+Because this file was introduced after the `/v2` snapshot was created, mainline development may also contain an independent copy of `docs/architecture-transition-plan.md`. If a future PR runs into an “both added” merge conflict on this file, use the main branch version as the base and reapply only the edits relevant to that PR:
+
+1. Check out the main branch copy: `git checkout origin/main -- docs/architecture-transition-plan.md`.
+2. Stage the file, then reintroduce the desired edits (for example, the Phase 2 clarification) on top of that version.
+3. Run `git status` to ensure only the intended changes remain before completing the merge.
+
+This keeps the plan synchronized with upstream while avoiding duplicate copies of the document.
+
