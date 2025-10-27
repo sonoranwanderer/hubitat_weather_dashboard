@@ -92,52 +92,58 @@ async function runFixture(fixturePath) {
   const hooks = loadWeatherDashboard(window);
   assert(hooks && typeof hooks.safeRenderFromData === 'function', 'Weather dashboard test hooks missing');
 
-  hooks.safeRenderFromData();
-  await new Promise(resolve => setTimeout(resolve, 0));
+  try {
+    hooks.safeRenderFromData();
+    await new Promise(resolve => setTimeout(resolve, 0));
 
-  assert(errors.length === 0, `Console error emitted for ${label}`);
+    assert(errors.length === 0, `Console error emitted for ${label}`);
 
-  assert(grid.dataset.empty === 'false', `Dashboard did not render payload for ${label}`);
-  const markup = grid.innerHTML || '';
-  assert(markup.includes('wdash-card'), `Grid markup missing cards for ${label}`);
+    assert(grid.dataset.empty === 'false', `Dashboard did not render payload for ${label}`);
+    const markup = grid.innerHTML || '';
+    assert(markup.includes('wdash-card'), `Grid markup missing cards for ${label}`);
 
-  if (typeof hooks.getDisplayTemperatureUnit === 'function') {
-    const expectedTemp = normalizeTempUnit(payload?.metadata?.temperatureDisplayUnit);
-    assert(hooks.getDisplayTemperatureUnit() === expectedTemp, `Temperature unit state mismatch for ${label}`);
-  }
-
-  if (typeof hooks.getDisplayRainUnit === 'function') {
-    const expectedRain = normalizeRainUnit(payload?.metadata?.rainDisplayUnit);
-    assert(hooks.getDisplayRainUnit() === expectedRain, `Rain unit state mismatch for ${label}`);
-  }
-
-  if (typeof hooks.getDisplayWindUnit === 'function') {
-    const expectedWind = normalizeWindUnit(payload?.metadata?.windDisplayUnit);
-    assert(hooks.getDisplayWindUnit() === expectedWind, `Wind unit state mismatch for ${label}`);
-  }
-
-  if (typeof hooks.getDisplayLightningUnit === 'function') {
-    const expectedLightning = normalizeLightningUnit(payload?.metadata?.lightningDisplayUnit);
-    assert(hooks.getDisplayLightningUnit() === expectedLightning, `Lightning unit state mismatch for ${label}`);
-  }
-
-  if (hooks.tempWindState && hooks.tempWindState.data) {
-    const rendered = hooks.tempWindState.data;
-    if (payload.metadata && payload.metadata.generatedAt) {
-      assert(rendered.metadata && rendered.metadata.generatedAt === payload.metadata.generatedAt, `Metadata.generatedAt mismatch for ${label}`);
+    if (typeof hooks.getDisplayTemperatureUnit === 'function') {
+      const expectedTemp = normalizeTempUnit(payload?.metadata?.temperatureDisplayUnit);
+      assert(hooks.getDisplayTemperatureUnit() === expectedTemp, `Temperature unit state mismatch for ${label}`);
     }
-    if (payload.ambientSensors && payload.ambientSensors.length) {
-      assert(Array.isArray(rendered.ambientSensors) && rendered.ambientSensors.length === payload.ambientSensors.length, `Ambient sensor count mismatch for ${label}`);
+
+    if (typeof hooks.getDisplayRainUnit === 'function') {
+      const expectedRain = normalizeRainUnit(payload?.metadata?.rainDisplayUnit);
+      assert(hooks.getDisplayRainUnit() === expectedRain, `Rain unit state mismatch for ${label}`);
+    }
+
+    if (typeof hooks.getDisplayWindUnit === 'function') {
+      const expectedWind = normalizeWindUnit(payload?.metadata?.windDisplayUnit);
+      assert(hooks.getDisplayWindUnit() === expectedWind, `Wind unit state mismatch for ${label}`);
+    }
+
+    if (typeof hooks.getDisplayLightningUnit === 'function') {
+      const expectedLightning = normalizeLightningUnit(payload?.metadata?.lightningDisplayUnit);
+      assert(hooks.getDisplayLightningUnit() === expectedLightning, `Lightning unit state mismatch for ${label}`);
+    }
+
+    if (hooks.tempWindState && hooks.tempWindState.data) {
+      const rendered = hooks.tempWindState.data;
+      if (payload.metadata && payload.metadata.generatedAt) {
+        assert(rendered.metadata && rendered.metadata.generatedAt === payload.metadata.generatedAt, `Metadata.generatedAt mismatch for ${label}`);
+      }
+      if (payload.ambientSensors && payload.ambientSensors.length) {
+        assert(Array.isArray(rendered.ambientSensors) && rendered.ambientSensors.length === payload.ambientSensors.length, `Ambient sensor count mismatch for ${label}`);
+      }
+    }
+
+    if (typeof hooks.getAirQualityRotationState === 'function' && (payload.outdoorAirQuality || payload.indoorAirQuality)) {
+      const rotationState = hooks.getAirQualityRotationState();
+      assert(Array.isArray(rotationState.sources) && rotationState.sources.length > 0, `Air quality rotation not initialised for ${label}`);
+    }
+
+    console.log(`Rendered dashboard fixture: ${label}`);
+    return { label, success: true };
+  } finally {
+    if (typeof hooks.stopAirQualityRotationTimer === 'function') {
+      hooks.stopAirQualityRotationTimer();
     }
   }
-
-  if (typeof hooks.getAirQualityRotationState === 'function' && (payload.outdoorAirQuality || payload.indoorAirQuality)) {
-    const rotationState = hooks.getAirQualityRotationState();
-    assert(Array.isArray(rotationState.sources) && rotationState.sources.length > 0, `Air quality rotation not initialised for ${label}`);
-  }
-
-  console.log(`Rendered dashboard fixture: ${label}`);
-  return { label, success: true };
 }
 
 async function main() {
