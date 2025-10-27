@@ -2,13 +2,19 @@
 
 ## Automated checks
 
-Run the lightweight Node harnesses to confirm the archived `/v2` dashboard script can consume each recorded payload and render the core cards without errors:
+Run the lightweight Node harnesses to confirm the legacy `/dashboard/weather-dashboard.js` script can consume each recorded payload and render the core cards without errors:
 
 ```bash
 npm test
 ```
 
-The suite now replays every JSON payload stored in `tests/fixtures/` to confirm rendering stays in sync with Hubitat output.
+The suite replays every JSON payload stored in `tests/fixtures/` to confirm rendering stays in sync with Hubitat output.
+
+To exercise the archived `/v2` snapshot instead, set the `WDASH_VARIANT` environment variable when invoking the harness:
+
+```bash
+WDASH_VARIANT=v2 npm test
+```
 
 ## Manual Hubitat tile comparison
 
