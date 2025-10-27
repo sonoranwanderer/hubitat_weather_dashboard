@@ -645,7 +645,7 @@ private String renderHistoryMetricsHtml() {
 }
 
 private String renderForecastDiagnosticsHtml() {
-    Map diag = (state.forecastDiagnostics ?: [:]) as Map
+    Map diag = state.forecastDiagnostics ?: [:]
     if (!diag) {
         return null
     }
