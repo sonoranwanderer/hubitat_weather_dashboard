@@ -1,13 +1,13 @@
 # Architecture Transition Plan
 
-This plan outlines the incremental phases for evolving the Ecowitt Weather Dashboard from the current Hubitat Dashboard tile implementation to a refactored architecture that supports both the legacy dashboard and a new app-hosted experience. Each phase includes explicit functional or QA validation deliverables to maintain confidence as the system evolves.
+This roadmap guides the evolution from the current Hubitat Dashboard tile delivery to a dual-surface architecture that also supports an app-hosted experience. Each phase concludes with explicit functional or QA validation so progress can be verified before the next stage begins.
 
 ## Phase 0 — Snapshot current implementation into `/v2`
 
 :::task-stub{title="Archive current dashboard implementation into v2 folder"}
 1. Create `/v2/dashboard`, `/v2/assets`, and `/v2/hubitat` directories that mirror the existing project structure.
 2. Copy `dashboard/weather-dashboard.js`, related JavaScript/CSS assets, and the Hubitat app and driver Groovy files into the matching `/v2` locations.
-3. Run a checksum or recursive diff between the live directories and their `/v2` counterparts to confirm the snapshot is exact, recording the verification in project notes or commit message.
+3. Run a checksum or recursive diff between the live directories and their `/v2` counterparts to confirm the snapshot is exact, recording the verification in project notes or the commit message.
 :::
 
 ## Phase 1 — Baseline auditing & testing foundation
@@ -20,9 +20,9 @@ This plan outlines the incremental phases for evolving the Ecowitt Weather Dashb
 
 ## Phase 2 — Isolate presentation logic from Hubitat tile plumbing
 
-This phase introduces a new `src/` directory dedicated to the refactored weather dashboard JavaScript. Treat `src/` as the workspace for the renderer, adapters, and any shared helpers that power the dashboard bundles. Keep all other Hubitat apps, drivers, and miscellaneous tooling (for example the Groovy sources in `hubitat/` and the legacy assets in `dashboard/`) in their existing top-level directories until a later phase explicitly calls for moving them.
+Phase 2 introduces a new `src/` workspace specifically for the refactored weather dashboard JavaScript. Limit that directory to renderer code, adapters, and shared helpers that belong to the dashboard bundle. Continue to keep Groovy apps/drivers in `hubitat/`, legacy deployment assets in `dashboard/`, and any unrelated tooling in their existing top-level directories until a later phase explicitly directs otherwise.
 
-> **Important:** Only copy weather-dashboard JavaScript modules into `src/`. Do **not** migrate Groovy sources, historical assets, or unrelated utilities into the new tree until a future phase expands its scope. Aligning on this boundary prevents churn in the archived `/v2` snapshot and keeps the legacy bundles (`dashboard/`) untouched for current deployments.
+> **Important:** Only move weather-dashboard JavaScript modules into `src/`. Do **not** migrate Groovy sources, historical assets, or other utilities until a subsequent phase widens the scope. Holding this boundary prevents churn in the archived `/v2` snapshot and leaves the legacy bundles untouched for current deployments.
 
 :::task-stub{title="Refactor weather dashboard into adapter + shared renderer"}
 1. Split `dashboard/weather-dashboard.js` into `src/render/` (layout/formatting) and `src/adapters/hubitat-tiles.js` (tile scraping) modules in the repository root.
@@ -61,4 +61,3 @@ This phase introduces a new `src/` directory dedicated to the refactored weather
 2. Document in `docs/deployment.md` how to upload refreshed assets, configure Maker API access, and roll back to the legacy dashboard if needed.
 3. Run the full test suite against staged hubs (where available) and record results to support release readiness.
 :::
-
