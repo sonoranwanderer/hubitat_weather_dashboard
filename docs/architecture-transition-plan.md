@@ -20,7 +20,7 @@ This roadmap guides the evolution from the current Hubitat Dashboard tile delive
 
 ## Phase 2 — Isolate presentation logic from Hubitat tile plumbing
 
-Phase 2 introduces a new `src/` workspace specifically for the refactored weather dashboard JavaScript. Limit that directory to renderer code, adapters, and shared helpers that belong to the dashboard bundle. Continue to keep Groovy apps/drivers in `hubitat/`, legacy deployment assets in `dashboard/`, and any unrelated tooling in their existing top-level directories until a later phase explicitly directs otherwise.
+Phase 2 introduces a new `src/` workspace specifically for the refactored weather dashboard JavaScript. Limit that directory to renderer code, adapters, and shared helpers that belong to the dashboard bundle. Continue to keep Groovy apps/drivers in `hubitat/`, legacy deployment assets in `dashboard/`, and any unrelated tooling in their existing top-level directories until a later phase explicitly directs otherwise. All subsequent phases assume that separation remains in place unless they clearly call for additional moves.
 
 > **Important:** Only move weather-dashboard JavaScript modules into `src/`. Do **not** migrate Groovy sources, historical assets, or other utilities until a subsequent phase widens the scope. Holding this boundary prevents churn in the archived `/v2` snapshot and leaves the legacy bundles untouched for current deployments.
 
