@@ -22,6 +22,8 @@ This plan outlines the incremental phases for evolving the Ecowitt Weather Dashb
 
 This phase introduces a new `src/` directory dedicated to the refactored weather dashboard JavaScript. Treat `src/` as the workspace for the renderer, adapters, and any shared helpers that power the dashboard bundles. Keep all other Hubitat apps, drivers, and miscellaneous tooling (for example the Groovy sources in `hubitat/` and the legacy assets in `dashboard/`) in their existing top-level directories until a later phase explicitly calls for moving them.
 
+> **Important:** Only copy weather-dashboard JavaScript modules into `src/`. Do **not** migrate Groovy sources, historical assets, or unrelated utilities into the new tree until a future phase expands its scope. Aligning on this boundary prevents churn in the archived `/v2` snapshot and keeps the legacy bundles (`dashboard/`) untouched for current deployments.
+
 :::task-stub{title="Refactor weather dashboard into adapter + shared renderer"}
 1. Split `dashboard/weather-dashboard.js` into `src/render/` (layout/formatting) and `src/adapters/hubitat-tiles.js` (tile scraping) modules in the repository root.
 2. Introduce a lightweight bundler (Rollup or esbuild) configured in `package.json` to produce the Hubitat tile bundle alongside future targets from the shared sources.
