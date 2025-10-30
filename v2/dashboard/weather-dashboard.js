@@ -6009,9 +6009,7 @@
           const metricClass = metricClasses.join(' ');
           const attrs = [];
           if (tintColor) {
-            const styleParts = [`background-color: ${tintColor};`];
-            if (useDarkText) styleParts.push('color: #000;');
-            attrs.push(`style="${styleParts.join(' ')}"`);
+            attrs.push(`style="background-color: ${tintColor};"`);
           }
           if (isPlaceholder) attrs.push('aria-hidden="true"');
           const attrString = attrs.length ? ' ' + attrs.join(' ') : '';
@@ -6059,7 +6057,6 @@
       const a = raw.length === 8 ? parseInt(raw.slice(6, 8), 16) : 255;
       return { r, g, b, a };
     }
-    return null;
   }
 
   function compileLayoutTemplates(layoutConfig, options = {}) {
