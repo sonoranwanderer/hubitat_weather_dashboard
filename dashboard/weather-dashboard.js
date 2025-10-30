@@ -6001,10 +6001,18 @@
         ${items.map(item => {
           const isPlaceholder = Boolean(item && item.placeholder);
           const tintColor = !isPlaceholder ? sanitizeHexColor(item?.color) : null;
-          const baseClass = tintColor ? 'wdash-metric wdash-metric--tinted' : 'wdash-metric';
-          const metricClass = isPlaceholder ? `${baseClass} wdash-metric--placeholder` : baseClass;
+          const useDarkText = tintColor ? shouldUseDarkTextForTint(tintColor) : false;
+          const metricClasses = ['wdash-metric'];
+          if (tintColor) metricClasses.push('wdash-metric--tinted');
+          if (useDarkText) metricClasses.push('wdash-metric--tinted-light');
+          if (isPlaceholder) metricClasses.push('wdash-metric--placeholder');
+          const metricClass = metricClasses.join(' ');
           const attrs = [];
-          if (tintColor) attrs.push(`style="background-color: ${tintColor};"`);
+          if (tintColor) {
+            const styleParts = [`background-color: ${tintColor};`];
+            if (useDarkText) styleParts.push('color: #000;');
+            attrs.push(`style="${styleParts.join(' ')}"`);
+          }
           if (isPlaceholder) attrs.push('aria-hidden="true"');
           const attrString = attrs.length ? ' ' + attrs.join(' ') : '';
           const labelText = isPlaceholder ? '' : escapeHtml(item?.label || '');
@@ -6026,6 +6034,32 @@
     const trimmed = value.trim();
     const match = trimmed.match(/^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/);
     return match ? `#${match[1]}` : null;
+  }
+
+  function shouldUseDarkTextForTint(hexColor) {
+    const rgb = parseHexColorToRgb(hexColor);
+    if (!rgb) return false;
+    const { r, g, b } = rgb;
+    return r >= 200 && g >= 200 && b <= 130;
+  }
+
+  function parseHexColorToRgb(hex) {
+    if (typeof hex !== 'string') return null;
+    const normalized = hex.trim().toLowerCase();
+    if (!/^#([0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/.test(normalized)) return null;
+    const raw = normalized.slice(1);
+    if (raw.length === 3 || raw.length === 4) {
+      const [r, g, b, a] = raw.split('').map(char => parseInt(char + char, 16));
+      return { r, g, b, a: a ?? 255 };
+    }
+    if (raw.length === 6 || raw.length === 8) {
+      const r = parseInt(raw.slice(0, 2), 16);
+      const g = parseInt(raw.slice(2, 4), 16);
+      const b = parseInt(raw.slice(4, 6), 16);
+      const a = raw.length === 8 ? parseInt(raw.slice(6, 8), 16) : 255;
+      return { r, g, b, a };
+    }
+    return null;
   }
 
   function compileLayoutTemplates(layoutConfig, options = {}) {
@@ -6571,6 +6605,12 @@
 .wdash-metric-row--compact { display: grid; grid-template-columns: repeat(var(--wdash-columns, 4), minmax(0, 1fr)); gap: 4px 8px; align-content: start; }
 .wdash-metric { flex: 1 1 auto; min-width: 0; background: transparent; border-radius: 12px; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px; text-align: center; box-shadow: none; }
 .wdash-metric--tinted { box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08); }
+.wdash-metric--tinted-light { color: #000; }
+.wdash-metric--tinted-light .wdash-metric-label,
+.wdash-metric--tinted-light .wdash-metric-value,
+.wdash-metric--tinted-light .wdash-metric-sub { color: #000; opacity: 1; }
+.wdash-metric--tinted.wdash-metric--tinted-light .wdash-metric-label { opacity: 1; }
+.wdash-metric--tinted.wdash-metric--tinted-light .wdash-metric-sub { opacity: 0.85; }
 .wdash-metric-row--layout-fill { flex-wrap: nowrap; }
 .wdash-metric-row--layout-fill .wdash-metric { flex-grow: 0; flex-shrink: 1; flex-basis: auto; }
 .wdash-metric-label { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.08em; color: #8ea0c8; }
