@@ -6609,8 +6609,14 @@
 .wdash-metric--tinted-light .wdash-metric-label,
 .wdash-metric--tinted-light .wdash-metric-value,
 .wdash-metric--tinted-light .wdash-metric-sub { color: #000; opacity: 1; }
-.wdash-metric--tinted.wdash-metric--tinted-light .wdash-metric-label { opacity: 1; }
-.wdash-metric--tinted.wdash-metric--tinted-light .wdash-metric-sub { opacity: 0.85; }
+.wdash-metric--tinted.wdash-metric--tinted-light .wdash-metric-label,
+.wdash-metric--tinted.wdash-metric--tinted-light .wdash-metric-value {
+  color: #000;
+}
+.wdash-metric--tinted.wdash-metric--tinted-light .wdash-metric-sub {
+  color: #000;
+  opacity: 0.85;
+}
 .wdash-metric-row--layout-fill { flex-wrap: nowrap; }
 .wdash-metric-row--layout-fill .wdash-metric { flex-grow: 0; flex-shrink: 1; flex-basis: auto; }
 .wdash-metric-label { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.08em; color: #8ea0c8; }
