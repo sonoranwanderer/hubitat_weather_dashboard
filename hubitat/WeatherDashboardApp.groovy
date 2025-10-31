@@ -1922,7 +1922,7 @@ def handleDashboardRequest() {
 
     Map snapshot = currentPayloadSnapshot()
     String json = snapshot.json
-    if (!json) {
+    if (!json || snapshot.withinLimit == false) {
         logWarn "Weather Dashboard App Maker endpoint payload unavailable"
         renderJsonError(503, 'Dashboard payload unavailable.')
         return
