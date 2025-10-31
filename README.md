@@ -47,12 +47,12 @@ The modernized source files under `src/` are designed for iterative development,
 
 ```bash
 npm install             # first-time setup to install esbuild
-npm run build           # outputs dashboard/weather-dashboard.js
+npm run build           # outputs dashboard/weather-dashboard.js and re-verifies the checked-in bundle
 npm run verify:hubitat  # rebuilds to a temp dir and confirms the tracked bundle matches
 npm run clean           # removes node_modules/, caches, and other build artifacts
 ```
 
-During development you can keep the bundle in sync with `npm run build:watch`, and `npm run build:release` generates a minified variant suitable for production uploads. The scripts always write the bundle to `dashboard/weather-dashboard.js`, matching the legacy Hubitat deployments that expect that filename. The repository keeps the generated bundle under version control so Hubitat users that rely on the checked-in asset can continue to download or upload the script without running the Node.js toolchain.
+During development you can keep the bundle in sync with `npm run build:watch`, and `npm run build:release` generates a minified variant suitable for production uploads. The scripts always write the bundle to `dashboard/weather-dashboard.js`, matching the legacy Hubitat deployments that expect that filename. Because `npm run build` automatically re-runs `verify:hubitat`, every build double-checks that the tracked artifact matches what the current sources produce. The repository keeps the generated bundle under version control so Hubitat users that rely on the checked-in asset can continue to download or upload the script without running the Node.js toolchain. Committers should re-run `npm run build` (or its Docker equivalent) whenever they touch files under `src/`, ensuring `dashboard/weather-dashboard.js` stays aligned with the latest source code.
 
 ### Building inside Docker
 
