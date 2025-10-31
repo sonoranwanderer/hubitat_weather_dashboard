@@ -17,6 +17,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = __dirname;
 const entryPoint = path.join(projectRoot, 'src', 'entries', 'hubitat-dashboard.js');
+// The Hubitat deployment instructions and legacy driver expect the compiled bundle
+// to live at dashboard/weather-dashboard.js, and the repository keeps that
+// generated file under version control for users that pull the script directly.
 const outFile = path.join(projectRoot, 'dashboard', 'weather-dashboard.js');
 
 const bannerComment = () => `/*! Hubitat Weather Dashboard bundle - generated ${new Date().toISOString()} */`;
