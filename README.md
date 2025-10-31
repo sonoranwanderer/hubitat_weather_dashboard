@@ -59,8 +59,9 @@ During development you can keep the bundle in sync with `npm run build:watch`, a
 If you prefer to keep Node.js toolchains out of your host environment, the `build/run-docker-build.sh` helper spins up a containerized Node 20 runtime, installs dependencies into a host-persisted cache, and executes the standard build script:
 
 ```bash
-./build/run-docker-build.sh            # installs dependencies and runs npm run build
-./build/run-docker-build.sh npm test   # run any project script within the container
+./build/run-docker-build.sh                    # installs dependencies and runs npm run build
+./build/run-docker-build.sh npm test           # run any project script within the container
+./build/run-docker-build.sh npm run verify:hubitat  # confirm the checked-in bundle matches the sources
 ```
 
 The accompanying `build/docker-compose.yml` mounts the repository into the container and stores `node_modules/` and the npm cache under `.docker/` in the project root so repeated runs reuse previous installs. All generated artifacts continue to appear in `dashboard/` next to the source tree, ready for upload to Hubitat.
