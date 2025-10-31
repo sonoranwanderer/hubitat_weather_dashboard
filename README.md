@@ -51,6 +51,17 @@ npm run build         # outputs dist/weather-dashboard.js
 ```
 
 During development you can keep the bundle in sync with `npm run build:watch`, and `npm run build:release` generates a minified variant suitable for production uploads. The scripts always write the bundle to `dist/weather-dashboard.js`, ensuring the dashboard device points at a consistent filename even as the source modules evolve.
+
+### Building inside Docker
+
+If you prefer to keep Node.js toolchains out of your host environment, the `build/run-docker-build.sh` helper spins up a containerized Node 20 runtime, installs dependencies into a host-persisted cache, and executes the standard build script:
+
+```bash
+./build/run-docker-build.sh            # installs dependencies and runs npm run build
+./build/run-docker-build.sh npm test   # run any project script within the container
+```
+
+The accompanying `build/docker-compose.yml` mounts the repository into the container and stores `node_modules/` and the npm cache under `.docker/` in the project root so repeated runs reuse previous installs. All generated artifacts continue to appear in `dist/` next to the source tree, ready for upload to Hubitat.
 * Derived metrics (wind averages, pressure tendency, outlook) are recalculated every minute or whenever the underlying weather attributes change.
 * Lightweight Node harnesses exercise the Temp & Wind card renderer and layout measurements without Hubitat. Run `tests/run-all.sh` (or invoke `node tests/temp-wind-card-harness.js` and `node tests/layout-base-dimensions-harness.js` individually) to verify the in-place update logic and guard against regressions in the gauge/compass behaviour and base dimension calculations.
 
