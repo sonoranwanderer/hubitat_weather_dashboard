@@ -1,5 +1,4 @@
 # Architecture Transition Plan
-
 This plan outlines the incremental phases for evolving the Ecowitt Weather Dashboard from the current Hubitat Dashboard tile implementation to a refactored architecture that supports both the legacy dashboard and a new app-hosted experience. Each phase includes explicit functional or QA validation deliverables to maintain confidence as the system evolves.
 
 ## Phase 0 — Snapshot current implementation into `/v2`
@@ -57,4 +56,3 @@ This plan outlines the incremental phases for evolving the Ecowitt Weather Dashb
 2. Document in `docs/deployment.md` how to upload refreshed assets, configure Maker API access, and roll back to the legacy dashboard if needed.
 3. Run the full test suite against staged hubs (where available) and record results to support release readiness.
 :::
-
