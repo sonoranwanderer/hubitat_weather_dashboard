@@ -1,6 +1,11 @@
 'use strict';
 
-const { JSDOM } = require('jsdom');
+const fs = require('fs');
+const path = require('path');
+
+const jsdomModulePath = path.resolve(__dirname, '../../node_modules/jsdom');
+const jsdomStubPath = path.resolve(__dirname, '../../vendor/jsdom-stub');
+const { JSDOM } = require(fs.existsSync(jsdomModulePath) ? jsdomModulePath : jsdomStubPath);
 const { createLegacyWeatherDashboardRenderer } = require('../../src/render');
 
 function createDomRect(rect = {}) {
