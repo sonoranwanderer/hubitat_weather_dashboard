@@ -480,8 +480,10 @@ function createTestEnvironment() {
 function loadWeatherDashboard(window, options = {}) {
   const rootDir = path.resolve(__dirname, '..', '..');
   const rendererPath = path.join(rootDir, 'src', 'render', 'index.js');
+  const preferScript = options.forceScript === true || process.env.WDASH_FORCE_SCRIPT === '1';
+  const explicitScriptPath = options.scriptPath || process.env.WDASH_SCRIPT_PATH;
 
-  if (!options.scriptPath && fs.existsSync(rendererPath)) {
+  if (!preferScript && !explicitScriptPath && fs.existsSync(rendererPath)) {
     try {
       const { createLegacyWeatherDashboardRenderer } = require(rendererPath);
       createLegacyWeatherDashboardRenderer({ window, document: window.document, globalThis: window });
@@ -494,9 +496,9 @@ function loadWeatherDashboard(window, options = {}) {
     }
   }
 
-  if (options.scriptPath) {
-    const code = fs.readFileSync(options.scriptPath, 'utf8');
-    vm.runInThisContext(code, { filename: options.scriptPath });
+  if (explicitScriptPath) {
+    const code = fs.readFileSync(explicitScriptPath, 'utf8');
+    vm.runInThisContext(code, { filename: explicitScriptPath });
     return window.__WDASH_TEST_HOOKS__;
   }
 

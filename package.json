@@ -4,11 +4,15 @@
   "private": true,
   "scripts": {
     "test": "./tests/run-all.sh",
-    "build": "node ./build/build-dashboard.js",
-    "build:watch": "node ./build/build-dashboard.js --watch",
-    "build:release": "node ./build/build-dashboard.js --minify"
+    "build": "npm run build:hubitat",
+    "build:hubitat": "node ./esbuild.hubitat.config.mjs",
+    "postbuild:hubitat": "node ./build/verify-hubitat-bundle.mjs",
+    "build:watch": "node ./esbuild.hubitat.config.mjs --watch",
+    "build:release": "node ./esbuild.hubitat.config.mjs --minify",
+    "clean": "bash ./build/clean.sh",
+    "verify:hubitat": "node ./build/verify-hubitat-bundle.mjs"
   },
   "devDependencies": {
-    "esbuild": "^0.20.2"
+    "esbuild": "file:vendor/esbuild-stub"
   }
 }
