@@ -479,6 +479,21 @@ function createTestEnvironment() {
 
 function loadWeatherDashboard(window, options = {}) {
   const rootDir = path.resolve(__dirname, '..', '..');
+  const rendererPath = path.join(rootDir, 'src', 'render', 'index.js');
+
+  if (!options.scriptPath && fs.existsSync(rendererPath)) {
+    try {
+      const { createLegacyWeatherDashboardRenderer } = require(rendererPath);
+      createLegacyWeatherDashboardRenderer({ window, document: window.document, globalThis: window });
+      return window.__WDASH_TEST_HOOKS__;
+    } catch (err) {
+      if (process.env.WDASH_DEBUG_LOAD === '1') {
+        // eslint-disable-next-line no-console
+        console.warn('[WeatherDashboard] Unable to require renderer module, falling back to script', err);
+      }
+    }
+  }
+
   if (options.scriptPath) {
     const code = fs.readFileSync(options.scriptPath, 'utf8');
     vm.runInThisContext(code, { filename: options.scriptPath });

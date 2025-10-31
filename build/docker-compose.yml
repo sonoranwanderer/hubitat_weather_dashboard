@@ -1,0 +1,11 @@
+services:
+  dashboard-build:
+    image: node:20
+    working_dir: /workspace
+    entrypoint: ["/workspace/build/docker-entrypoint.sh"]
+    volumes:
+      - ..:/workspace:delegated
+      - ../.docker/node_modules:/workspace/node_modules
+      - ../.docker/npm-cache:/workspace/.npm-cache
+    environment:
+      npm_config_cache: /workspace/.npm-cache
