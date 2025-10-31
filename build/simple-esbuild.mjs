@@ -6,7 +6,18 @@ function toPosix(filePath) {
 }
 
 function ensureJsExtension(filePath) {
-  if (fs.existsSync(filePath)) return filePath;
+  if (fs.existsSync(filePath)) {
+    const stats = fs.statSync(filePath);
+    if (stats.isFile()) {
+      return filePath;
+    }
+    if (stats.isDirectory()) {
+      const indexJs = path.join(filePath, 'index.js');
+      if (fs.existsSync(indexJs)) {
+        return indexJs;
+      }
+    }
+  }
   const withJs = `${filePath}.js`;
   if (fs.existsSync(withJs)) return withJs;
   return filePath;
