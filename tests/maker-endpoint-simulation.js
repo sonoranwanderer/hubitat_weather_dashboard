@@ -11,7 +11,7 @@ function simulateEndpoint({ configuredToken, requestToken, snapshot }) {
   if (!provided) {
     return { status: 401, message: 'Maker token missing.' };
   }
-  if (stored.length !== provided.length || stored !== provided) {
+  if (stored !== provided) {
     return { status: 401, message: 'Maker token invalid.' };
   }
 
