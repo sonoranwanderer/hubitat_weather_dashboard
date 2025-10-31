@@ -43,7 +43,7 @@ The app publishes a consolidated JSON document to the dashboard device. The driv
 
 ## Building the dashboard bundle
 
-The modernized source files under `src/` are designed for iterative development, but Hubitat still needs a single self-contained JavaScript file. Use the esbuild-powered scripts in `package.json` to keep the bundle up to date:
+The modernized source files under `src/` are designed for iterative development, but Hubitat still needs a single self-contained JavaScript file. Because the Hubitat dashboard executes `weather-dashboard.js` directly without a module loader, the bundle must define `createLegacyWeatherDashboardRenderer` on `window` before the bootstrap runs. Uploading the raw source modules will leave the renderer undefined and the tile will never initialize. Use the esbuild-powered scripts in `package.json` to keep the bundle up to date:
 
 ```bash
 npm install           # first-time setup to install esbuild
