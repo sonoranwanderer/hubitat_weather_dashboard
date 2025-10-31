@@ -59,7 +59,7 @@ function createBundleText(modules, entryPoints, banner) {
     lines.push(`  modules.set(${JSON.stringify(id)}, [`);
     lines.push('    function(module, exports, require) {');
     source.split('\n').forEach(line => {
-      lines.push(`      ${line}`);
+      lines.push('      ' + line);
     });
     lines.push('    },');
     lines.push(`    ${JSON.stringify(dependencyMap)}`);
