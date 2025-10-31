@@ -12,9 +12,10 @@ CLEAN_DIRECTORIES=(
   ".docker"
 )
 
-CLEAN_FILES=(
-  "package-lock.json"
-)
+#CLEAN_FILES=(
+#  "package-lock.json"
+#)
+CLEAN_FILES=
 
 CLEAN_GLOBS=(
   "dashboard/*.map"
