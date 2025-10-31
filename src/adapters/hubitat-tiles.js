@@ -49,8 +49,63 @@ function createHubitatTilesAdapter(options = {}) {
     if (!text || typeof text !== 'string') return null;
     const trimmed = text.trim();
     if (!trimmed) return null;
-    const jsonMatch = trimmed.match(/\{.*\}|\[.*\]/s);
-    return jsonMatch ? jsonMatch[0] : null;
+
+    let startIndex = -1;
+    let endIndex = -1;
+    const stack = [];
+    let inString = false;
+    let stringDelimiter = '';
+    let isEscaped = false;
+
+    for (let i = 0; i < trimmed.length; i += 1) {
+      const char = trimmed[i];
+
+      if (inString) {
+        if (isEscaped) {
+          isEscaped = false;
+          continue;
+        }
+        if (char === '\\') {
+          isEscaped = true;
+          continue;
+        }
+        if (char === stringDelimiter) {
+          inString = false;
+        }
+        continue;
+      }
+
+      if (char === '"' || char === '\'') {
+        inString = true;
+        stringDelimiter = char;
+        continue;
+      }
+
+      if (char === '{' || char === '[') {
+        if (stack.length === 0) {
+          startIndex = i;
+        }
+        stack.push(char === '{' ? '}' : ']');
+        continue;
+      }
+
+      if ((char === '}' || char === ']') && stack.length > 0) {
+        const expected = stack.pop();
+        if (char !== expected) {
+          return null;
+        }
+        if (stack.length === 0) {
+          endIndex = i;
+          break;
+        }
+      }
+    }
+
+    if (startIndex === -1 || endIndex === -1) {
+      return null;
+    }
+
+    return trimmed.slice(startIndex, endIndex + 1);
   }
 
   function noteInvalidJson(tileId, reason) {
