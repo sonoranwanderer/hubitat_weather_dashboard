@@ -46,9 +46,10 @@ The app publishes a consolidated JSON document to the dashboard device. The driv
 The modernized source files under `src/` are designed for iterative development, but Hubitat still needs a single self-contained JavaScript file. Because the Hubitat dashboard executes `weather-dashboard.js` directly without a module loader, the bundle must define `createLegacyWeatherDashboardRenderer` on `window` before the bootstrap runs. Uploading the raw source modules will leave the renderer undefined and the tile will never initialize. Use the esbuild-powered scripts in `package.json` to keep the bundle up to date:
 
 ```bash
-npm install           # first-time setup to install esbuild
-npm run build         # outputs dashboard/weather-dashboard.js
-npm run clean         # removes node_modules/, caches, and other build artifacts
+npm install             # first-time setup to install esbuild
+npm run build           # outputs dashboard/weather-dashboard.js
+npm run verify:hubitat  # rebuilds to a temp dir and confirms the tracked bundle matches
+npm run clean           # removes node_modules/, caches, and other build artifacts
 ```
 
 During development you can keep the bundle in sync with `npm run build:watch`, and `npm run build:release` generates a minified variant suitable for production uploads. The scripts always write the bundle to `dashboard/weather-dashboard.js`, matching the legacy Hubitat deployments that expect that filename. The repository keeps the generated bundle under version control so Hubitat users that rely on the checked-in asset can continue to download or upload the script without running the Node.js toolchain.
@@ -64,7 +65,7 @@ If you prefer to keep Node.js toolchains out of your host environment, the `buil
 
 The accompanying `build/docker-compose.yml` mounts the repository into the container and stores `node_modules/` and the npm cache under `.docker/` in the project root so repeated runs reuse previous installs. All generated artifacts continue to appear in `dashboard/` next to the source tree, ready for upload to Hubitat.
 
-Run `npm run clean` (or `./build/clean.sh`) when you need to remove the cached dependencies or other build outputs such as `.docker/`.
+Run `npm run clean` (or `./build/clean.sh`) when you need to remove the cached dependencies or other build outputs such as `.docker/`. `npm run verify:hubitat` is useful before committing changes: it regenerates the bundle into a temporary directory and exits non-zero if `dashboard/weather-dashboard.js` no longer matches the current source tree. Because the banner comment no longer includes a timestamp, the build is deterministic—running the command twice on the same revision produces identical artifacts.
 * Derived metrics (wind averages, pressure tendency, outlook) are recalculated every minute or whenever the underlying weather attributes change.
 * Lightweight Node harnesses exercise the Temp & Wind card renderer and layout measurements without Hubitat. Run `tests/run-all.sh` (or invoke `node tests/temp-wind-card-harness.js` and `node tests/layout-base-dimensions-harness.js` individually) to verify the in-place update logic and guard against regressions in the gauge/compass behaviour and base dimension calculations.
 

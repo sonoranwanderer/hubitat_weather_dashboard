@@ -8,7 +8,8 @@
     "build:hubitat": "node ./esbuild.hubitat.config.mjs",
     "build:watch": "node ./esbuild.hubitat.config.mjs --watch",
     "build:release": "node ./esbuild.hubitat.config.mjs --minify",
-    "clean": "bash ./build/clean.sh"
+    "clean": "bash ./build/clean.sh",
+    "verify:hubitat": "node ./build/verify-hubitat-bundle.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.21.3"
