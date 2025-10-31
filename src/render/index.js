@@ -7520,6 +7520,7 @@ function createLegacyWeatherDashboardRenderer(options = {}) {
       applyWindUnitsFromMetadata,
       applyPressureUnitsFromMetadata,
       applyLightningUnitsFromMetadata,
+      KNOWN_PAYLOAD_KEYS,
       setTemperatureDisplayUnit,
       setTemperatureInputUnit,
       setRainDisplayUnit,

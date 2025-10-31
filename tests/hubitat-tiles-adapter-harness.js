@@ -69,29 +69,14 @@ window.console.info = (...args) => {
 };
 
 try {
-  const KNOWN_PAYLOAD_KEYS = new Set([
-    'outdoor',
-    'indoor',
-    'wind',
-    'pressure',
-    'rain',
-    'solar',
-    'lightning',
-    'ambientSensors',
-    'totalAmbientSensors',
-    'ambientRotationSeconds',
-    'ambientHumidityUnit',
-    'outdoorAirQuality',
-    'indoorAirQuality',
-    'metadata',
-    'layout',
-    'outlook24h'
-  ]);
+  if (!hooks.KNOWN_PAYLOAD_KEYS) {
+    throw new Error('KNOWN_PAYLOAD_KEYS test hook missing');
+  }
 
   const adapter = createHubitatTilesAdapter({
     window,
     document,
-    knownPayloadKeys: KNOWN_PAYLOAD_KEYS,
+    knownPayloadKeys: hooks.KNOWN_PAYLOAD_KEYS,
     safeRenderFromData: () => {}
   });
 
