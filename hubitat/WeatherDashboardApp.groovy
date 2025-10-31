@@ -472,6 +472,7 @@ private void updatePayloadSnapshot(Map payload, String json, long generatedAt, S
     if (bytes > MAKER_PAYLOAD_MAX_BYTES) {
         snapshot.withinLimit = false
         snapshot.error = "Payload size ${bytes} bytes exceeds limit of ${MAKER_PAYLOAD_MAX_BYTES} bytes."
+        snapshot.remove('json')
         state.payloadSnapshot = snapshot
         logWarn "Weather Dashboard App payload snapshot ${bytes} bytes exceeds Maker endpoint limit ${MAKER_PAYLOAD_MAX_BYTES}. Snapshot withheld."
         return
