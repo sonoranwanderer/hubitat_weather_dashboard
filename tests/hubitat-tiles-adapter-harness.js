@@ -1,49 +1,122 @@
 #!/usr/bin/env node
-const assert = require('assert');
+'use strict';
 
+const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
+
+const {
+  bootstrapRenderer
+} = require('./support/dashboard-test-utils');
 const { createHubitatTilesAdapter } = require('../src/adapters/hubitat-tiles');
 
-function createTile(id, text) {
-  return {
-    id,
-    textContent: text,
-  };
-}
+const fixturePath = path.join(__dirname, 'fixtures/full-capabilities.json');
+const fixture = JSON.parse(fs.readFileSync(fixturePath, 'utf8'));
 
-const consoleMessages = [];
-const fakeConsole = {
-  info: (msg) => consoleMessages.push({ level: 'info', msg }),
-  warn: (msg) => consoleMessages.push({ level: 'warn', msg })
+const segmentOne = {
+  segmentIndex: 0,
+  segmentSize: 2,
+  outdoor: fixture.outdoor,
+  wind: fixture.wind,
+  rain: fixture.rain,
+  lightning: fixture.lightning,
+  metadata: {
+    generatedAt: fixture.metadata.generatedAt,
+    weatherStationTimezone: fixture.metadata.weatherStationTimezone,
+    weatherStationTime: fixture.metadata.weatherStationTime,
+    temperatureDisplayUnit: fixture.metadata.temperatureDisplayUnit,
+    rainDisplayUnit: fixture.metadata.rainDisplayUnit,
+    windDisplayUnit: fixture.metadata.windDisplayUnit,
+    pressureDisplayUnit: fixture.metadata.pressureDisplayUnit,
+    lightningDisplayUnit: fixture.metadata.lightningDisplayUnit
+  }
 };
 
-const tiles = [
-  createTile('tile-0', ''),
-  createTile('tile-1', 'prefix {"foo": 1, "nested": {"bar": 2}} trailing } }'),
-  createTile('tile-2', 'noise before {"foo": "brace } inside string", "list": [1, 2, {"bar": "]"}]} extra ] }'),
-  createTile('tile-3', 'garbage {"segmentIndex": 0, "payload": {"foo": 3}} trailing text'),
-  createTile('tile-4', 'mismatched {"foo": 4'),
-  createTile('tile-5', '{"unknown": true}'),
-  createTile('tile-6', 'no json here')
-];
-
-const document = {
-  querySelectorAll: () => tiles
+const segmentTwo = {
+  segmentIndex: 1,
+  segmentSize: 2,
+  indoor: fixture.indoor,
+  pressure: fixture.pressure,
+  solar: fixture.solar,
+  outdoorAirQuality: fixture.outdoorAirQuality,
+  indoorAirQuality: fixture.indoorAirQuality,
+  ambientSensors: fixture.ambientSensors,
+  totalAmbientSensors: fixture.totalAmbientSensors,
+  ambientRotationSeconds: fixture.ambientRotationSeconds,
+  ambientHumidityUnit: fixture.ambientHumidityUnit,
+  metadata: {
+    layout: fixture.metadata.layout
+  }
 };
 
-const adapter = createHubitatTilesAdapter({
-  document,
-  window: { console: fakeConsole },
-  knownPayloadKeys: new Set(['foo', 'nested', 'payload'])
+const noiseTileText = 'status: ok -- no json payload provided';
+
+const { window, document, hooks, dom } = bootstrapRenderer({
+  dataTiles: [
+    { id: 'tile-1', textContent: `Weather Dashboard ${JSON.stringify(segmentOne)} ` },
+    { id: 'tile-2', textContent: `Segment payload ${JSON.stringify(segmentTwo)}` },
+    { id: 'tile-3', textContent: noiseTileText }
+  ]
 });
 
-const payloads = adapter.readPayloads();
+const infoMessages = [];
+const originalInfo = window.console?.info ? window.console.info.bind(window.console) : null;
+window.console.info = (...args) => {
+  infoMessages.push(args.join(' '));
+  if (originalInfo) {
+    originalInfo(...args);
+  }
+};
 
-assert.strictEqual(payloads.length, 3, 'Expected three valid payloads');
-assert.deepStrictEqual(payloads[0], { foo: 1, nested: { bar: 2 } });
-assert.deepStrictEqual(payloads[1], { foo: 'brace } inside string', list: [1, 2, { bar: ']' }] });
-assert.deepStrictEqual(payloads[2], { segmentIndex: 0, payload: { foo: 3 } });
+try {
+  const KNOWN_PAYLOAD_KEYS = new Set([
+    'outdoor',
+    'indoor',
+    'wind',
+    'pressure',
+    'rain',
+    'solar',
+    'lightning',
+    'ambientSensors',
+    'totalAmbientSensors',
+    'ambientRotationSeconds',
+    'ambientHumidityUnit',
+    'outdoorAirQuality',
+    'indoorAirQuality',
+    'metadata',
+    'layout',
+    'outlook24h'
+  ]);
 
-assert(consoleMessages.some(entry => entry.msg.includes('no JSON object found')), 'Expected a warning for missing JSON');
-assert(consoleMessages.some(entry => entry.msg.includes('unrecognized JSON payload')), 'Expected a warning for unrecognized payload');
+  const adapter = createHubitatTilesAdapter({
+    window,
+    document,
+    knownPayloadKeys: KNOWN_PAYLOAD_KEYS,
+    safeRenderFromData: () => {}
+  });
 
-console.log('hubitat-tiles-adapter-harness.js passed');
+  const payloads = adapter.readPayloads();
+
+  assert.strictEqual(payloads.length, 2, 'Adapter should return two payload segments');
+  assert.deepStrictEqual(payloads[0], segmentOne, 'First payload segment mismatch');
+  assert.deepStrictEqual(payloads[1], segmentTwo, 'Second payload segment mismatch');
+
+  const merged = hooks.mergePayloads(payloads);
+  assert.deepStrictEqual(merged, fixture, 'Merged payload does not match fixture data');
+
+  adapter.toggleSourceTileMask(true);
+  assert(document.getElementById('tile-1').classList.contains('wdash-source-tile'), 'Expected tile-1 to be masked');
+  assert(document.getElementById('tile-2').classList.contains('wdash-source-tile'), 'Expected tile-2 to be masked');
+  assert(!document.getElementById('tile-3').classList.contains('wdash-source-tile'), 'Noise tile should not be masked');
+
+  adapter.toggleSourceTileMask(false);
+  assert(!document.getElementById('tile-1').classList.contains('wdash-source-tile'), 'Tile-1 mask should be cleared');
+  assert(!document.getElementById('tile-2').classList.contains('wdash-source-tile'), 'Tile-2 mask should be cleared');
+
+  assert(infoMessages.some(message => message.includes('Ignoring non-JSON content from tile-3')), 'Expected warning for invalid tile payload');
+
+  console.log('hubitat-tiles-adapter-harness.js passed');
+} finally {
+  window.console.info = originalInfo || (() => {});
+  dom.window.close();
+}

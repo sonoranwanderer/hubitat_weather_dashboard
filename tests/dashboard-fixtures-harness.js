@@ -1,31 +1,18 @@
+#!/usr/bin/env node
 'use strict';
 
+const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 
 const {
-  createTestEnvironment,
-  loadWeatherDashboard,
-  createElement
-} = require('./support/fake-dom');
+  bootstrapRenderer,
+  normalizeMarkup
+} = require('./support/dashboard-test-utils');
 
-function assert(condition, message) {
-  if (!condition) {
-    throw new Error(message);
-  }
-}
-
-function createTile(document, id, textContent = '', size = { width: 1200, height: 900 }) {
-  const tile = createElement(document, 'div');
-  tile.setAttribute('id', id);
-  tile.setBoundingClientRect(size);
-  const primary = createElement(document, 'div', ['tile-primary']);
-  primary.textContent = textContent;
-  primary.setBoundingClientRect(size);
-  tile.appendChild(primary);
-  document.body.appendChild(tile);
-  return tile;
-}
+const FIXTURE_DIR = path.join(__dirname, 'fixtures');
+const EXPECTED_DIR = path.join(FIXTURE_DIR, 'expected-dom');
+const UPDATE_EXPECTED = process.env.WDASH_UPDATE_EXPECTED === '1';
 
 function normalizeTempUnit(unit) {
   const value = typeof unit === 'string' ? unit.trim().toUpperCase() : '';
@@ -50,136 +37,152 @@ function normalizeLightningUnit(unit) {
   return value === 'km' ? 'km' : 'mi';
 }
 
-async function runFixture(fixturePath) {
-  const label = path.basename(fixturePath);
+function getFixtureEntries() {
+  return fs
+    .readdirSync(FIXTURE_DIR)
+    .filter(name => name.endsWith('.json'))
+    .sort();
+}
+
+function loadFixturePayload(fixturePath) {
   const raw = fs.readFileSync(fixturePath, 'utf8');
-  let payload;
   try {
-    payload = JSON.parse(raw);
-  } catch (err) {
-    console.warn(`Skipping fixture ${label}: invalid JSON (${err.message})`);
-    console.warn(err);
-    return { label, success: false, error: err };
+    return { raw, data: JSON.parse(raw) };
+  } catch (error) {
+    throw new Error(`Unable to parse fixture ${path.basename(fixturePath)}: ${error.message}`);
   }
+}
 
-  const { window, document } = createTestEnvironment();
+function ensureExpectedDirectory() {
+  if (!fs.existsSync(EXPECTED_DIR)) {
+    fs.mkdirSync(EXPECTED_DIR, { recursive: true });
+  }
+}
 
-  const displayTile = createTile(document, 'tile-0');
-  const dataTile = createTile(document, 'tile-1', raw, { width: 400, height: 200 });
-  void dataTile;
+function expectedMarkupPath(fixtureName) {
+  return path.join(EXPECTED_DIR, fixtureName.replace(/\.json$/i, '.html'));
+}
 
-  const primary = displayTile.querySelector('.tile-primary');
-  const root = createElement(document, 'div', ['wdash-root']);
-  const frame = createElement(document, 'div', ['wdash-frame']);
-  const wrapper = createElement(document, 'div', ['wdash']);
-  const grid = createElement(document, 'div', ['wdash-grid']);
-  grid.dataset.empty = 'true';
-  wrapper.appendChild(grid);
-  frame.appendChild(wrapper);
-  root.appendChild(frame);
-  primary.appendChild(root);
+async function runFixture(fixturePath) {
+  const fixtureName = path.basename(fixturePath);
+  const { raw, data } = loadFixturePayload(fixturePath);
 
-  const errors = [];
-  const originalConsole = window.console;
-  const originalError = originalConsole.error ? originalConsole.error.bind(originalConsole) : null;
+  const { dom, window, grid, hooks } = bootstrapRenderer({
+    dataTiles: [
+      { id: 'tile-1', textContent: raw }
+    ]
+  });
+
+  const consoleErrors = [];
+  const originalConsoleError = window.console?.error ? window.console.error.bind(window.console) : null;
   window.console.error = (...args) => {
-    errors.push(args);
-    if (originalError) {
-      originalError(...args);
+    consoleErrors.push(args);
+    if (originalConsoleError) {
+      originalConsoleError(...args);
     }
   };
 
-  const hooks = loadWeatherDashboard(window);
-  assert(hooks && typeof hooks.safeRenderFromData === 'function', 'Weather dashboard test hooks missing');
-
   try {
     hooks.safeRenderFromData();
-    await new Promise(resolve => setTimeout(resolve, 0));
+    await new Promise(resolve => window.setTimeout(resolve, 0));
 
-    assert(errors.length === 0, `Console error emitted for ${label}`);
+    assert.strictEqual(consoleErrors.length, 0, `Console error emitted for ${fixtureName}`);
+    assert.strictEqual(grid.dataset.empty, 'false', `Dashboard did not render payload for ${fixtureName}`);
 
-    assert(grid.dataset.empty === 'false', `Dashboard did not render payload for ${label}`);
     const markup = grid.innerHTML || '';
-    assert(markup.includes('wdash-card'), `Grid markup missing cards for ${label}`);
+    assert(markup.includes('wdash-card'), `Rendered markup missing cards for ${fixtureName}`);
+
+    const normalizedActual = normalizeMarkup(markup);
+    const expectedPath = expectedMarkupPath(fixtureName);
+
+    if (UPDATE_EXPECTED) {
+      ensureExpectedDirectory();
+      fs.writeFileSync(expectedPath, `${normalizedActual}\n`, 'utf8');
+      console.log(`Updated expected markup for ${fixtureName}`);
+    } else {
+      assert(fs.existsSync(expectedPath), `Expected markup missing for ${fixtureName}. Re-run with WDASH_UPDATE_EXPECTED=1 to generate fixtures.`);
+      const expectedMarkup = fs.readFileSync(expectedPath, 'utf8');
+      const normalizedExpected = normalizeMarkup(expectedMarkup);
+      assert.strictEqual(normalizedActual, normalizedExpected, `Rendered markup mismatch for ${fixtureName}`);
+    }
 
     if (typeof hooks.getDisplayTemperatureUnit === 'function') {
-      const expectedTemp = normalizeTempUnit(payload?.metadata?.temperatureDisplayUnit);
-      assert(hooks.getDisplayTemperatureUnit() === expectedTemp, `Temperature unit state mismatch for ${label}`);
+      const expectedTemp = normalizeTempUnit(data?.metadata?.temperatureDisplayUnit);
+      assert.strictEqual(hooks.getDisplayTemperatureUnit(), expectedTemp, `Temperature unit state mismatch for ${fixtureName}`);
     }
 
     if (typeof hooks.getDisplayRainUnit === 'function') {
-      const expectedRain = normalizeRainUnit(payload?.metadata?.rainDisplayUnit);
-      assert(hooks.getDisplayRainUnit() === expectedRain, `Rain unit state mismatch for ${label}`);
+      const expectedRain = normalizeRainUnit(data?.metadata?.rainDisplayUnit);
+      assert.strictEqual(hooks.getDisplayRainUnit(), expectedRain, `Rain unit state mismatch for ${fixtureName}`);
     }
 
     if (typeof hooks.getDisplayWindUnit === 'function') {
-      const expectedWind = normalizeWindUnit(payload?.metadata?.windDisplayUnit);
-      assert(hooks.getDisplayWindUnit() === expectedWind, `Wind unit state mismatch for ${label}`);
+      const expectedWind = normalizeWindUnit(data?.metadata?.windDisplayUnit);
+      assert.strictEqual(hooks.getDisplayWindUnit(), expectedWind, `Wind unit state mismatch for ${fixtureName}`);
     }
 
     if (typeof hooks.getDisplayLightningUnit === 'function') {
-      const expectedLightning = normalizeLightningUnit(payload?.metadata?.lightningDisplayUnit);
-      assert(hooks.getDisplayLightningUnit() === expectedLightning, `Lightning unit state mismatch for ${label}`);
+      const expectedLightning = normalizeLightningUnit(data?.metadata?.lightningDisplayUnit);
+      assert.strictEqual(hooks.getDisplayLightningUnit(), expectedLightning, `Lightning unit state mismatch for ${fixtureName}`);
     }
 
     if (hooks.tempWindState && hooks.tempWindState.data) {
       const rendered = hooks.tempWindState.data;
-      if (payload.metadata && payload.metadata.generatedAt) {
-        assert(rendered.metadata && rendered.metadata.generatedAt === payload.metadata.generatedAt, `Metadata.generatedAt mismatch for ${label}`);
+      if (data.metadata && data.metadata.generatedAt) {
+        assert.strictEqual(rendered.metadata?.generatedAt, data.metadata.generatedAt, `Metadata.generatedAt mismatch for ${fixtureName}`);
       }
-      if (payload.ambientSensors && payload.ambientSensors.length) {
-        assert(Array.isArray(rendered.ambientSensors) && rendered.ambientSensors.length === payload.ambientSensors.length, `Ambient sensor count mismatch for ${label}`);
+      if (data.ambientSensors && data.ambientSensors.length) {
+        assert(Array.isArray(rendered.ambientSensors), `Temp/wind ambient sensors missing for ${fixtureName}`);
+        assert.strictEqual(rendered.ambientSensors.length, data.ambientSensors.length, `Ambient sensor count mismatch for ${fixtureName}`);
       }
     }
 
-    if (typeof hooks.getAirQualityRotationState === 'function' && (payload.outdoorAirQuality || payload.indoorAirQuality)) {
+    if (typeof hooks.getAirQualityRotationState === 'function' && (data.outdoorAirQuality || data.indoorAirQuality)) {
       const rotationState = hooks.getAirQualityRotationState();
-      assert(Array.isArray(rotationState.sources) && rotationState.sources.length > 0, `Air quality rotation not initialised for ${label}`);
+      assert(Array.isArray(rotationState?.sources) && rotationState.sources.length > 0, `Air quality rotation not initialised for ${fixtureName}`);
     }
 
-    console.log(`Rendered dashboard fixture: ${label}`);
-    return { label, success: true };
+    console.log(`Rendered dashboard fixture: ${fixtureName}`);
   } finally {
     if (typeof hooks.stopAirQualityRotationTimer === 'function') {
       hooks.stopAirQualityRotationTimer();
     }
+    window.console.error = originalConsoleError || (() => {});
+    dom.window.close();
   }
 }
 
 async function main() {
-  const fixturesDir = path.join(__dirname, 'fixtures');
-  const entries = fs.readdirSync(fixturesDir).filter(name => name.endsWith('.json')).sort();
+  const entries = getFixtureEntries();
   assert(entries.length > 0, 'No dashboard fixtures found');
+
   const failures = [];
-  for (const name of entries) {
-    const fixturePath = path.join(fixturesDir, name);
+  for (const entry of entries) {
+    const fixturePath = path.join(FIXTURE_DIR, entry);
     try {
-      const result = await runFixture(fixturePath);
-      if (result && result.success === false) {
-        failures.push({ label: result.label, error: result.error, logged: true });
-      }
-    } catch (err) {
-      console.warn(`Fixture ${name} failed with an unexpected error: ${err.message}`);
-      failures.push({ label: name, error: err, logged: false });
+      await runFixture(fixturePath);
+    } catch (error) {
+      failures.push({ label: entry, error });
+      console.error(`Fixture ${entry} failed: ${error.message}`);
     }
   }
+
   if (failures.length > 0) {
     console.error('Dashboard fixture harness encountered failures:');
     for (const failure of failures) {
-      const { label, error, logged } = failure;
-      const message = error && error.message ? error.message : String(error);
-      console.error(` - ${label}: ${message}`);
-      if (!logged && error && error.stack) {
-        console.error(error.stack);
-      }
+      console.error(` - ${failure.label}: ${failure.error?.stack || failure.error}`);
     }
     process.exit(1);
   }
-  console.log('Dashboard fixture harness passed');
-  process.exit(0);
+
+  if (UPDATE_EXPECTED) {
+    console.log('Dashboard fixture expectations updated');
+  } else {
+    console.log('Dashboard fixture harness passed');
+  }
 }
 
-main().catch(err => {
-  console.error(err);
+main().catch(error => {
+  console.error(error);
   process.exit(1);
 });

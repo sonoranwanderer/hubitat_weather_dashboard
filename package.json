@@ -13,6 +13,7 @@
     "verify:hubitat": "node ./build/verify-hubitat-bundle.mjs"
   },
   "devDependencies": {
-    "esbuild": "file:vendor/esbuild-stub"
+    "esbuild": "file:vendor/esbuild-stub",
+    "jsdom": "file:vendor/jsdom-stub"
   }
 }
