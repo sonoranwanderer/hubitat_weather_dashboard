@@ -48,6 +48,7 @@ The modernized source files under `src/` are designed for iterative development,
 ```bash
 npm install           # first-time setup to install esbuild
 npm run build         # outputs dashboard/weather-dashboard.js
+npm run clean         # removes node_modules/, caches, and other build artifacts
 ```
 
 During development you can keep the bundle in sync with `npm run build:watch`, and `npm run build:release` generates a minified variant suitable for production uploads. The scripts always write the bundle to `dashboard/weather-dashboard.js`, matching the legacy Hubitat deployments that expect that filename. The repository keeps the generated bundle under version control so Hubitat users that rely on the checked-in asset can continue to download or upload the script without running the Node.js toolchain.
@@ -62,6 +63,8 @@ If you prefer to keep Node.js toolchains out of your host environment, the `buil
 ```
 
 The accompanying `build/docker-compose.yml` mounts the repository into the container and stores `node_modules/` and the npm cache under `.docker/` in the project root so repeated runs reuse previous installs. All generated artifacts continue to appear in `dashboard/` next to the source tree, ready for upload to Hubitat.
+
+Run `npm run clean` (or `./build/clean.sh`) when you need to remove the cached dependencies or other build outputs such as `.docker/`.
 * Derived metrics (wind averages, pressure tendency, outlook) are recalculated every minute or whenever the underlying weather attributes change.
 * Lightweight Node harnesses exercise the Temp & Wind card renderer and layout measurements without Hubitat. Run `tests/run-all.sh` (or invoke `node tests/temp-wind-card-harness.js` and `node tests/layout-base-dimensions-harness.js` individually) to verify the in-place update logic and guard against regressions in the gauge/compass behaviour and base dimension calculations.
 
