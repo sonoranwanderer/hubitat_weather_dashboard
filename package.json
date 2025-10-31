@@ -4,11 +4,12 @@
   "private": true,
   "scripts": {
     "test": "./tests/run-all.sh",
-    "build": "node ./build/build-dashboard.js",
-    "build:watch": "node ./build/build-dashboard.js --watch",
-    "build:release": "node ./build/build-dashboard.js --minify"
+    "build": "npm run build:hubitat",
+    "build:hubitat": "node ./esbuild.hubitat.config.mjs",
+    "build:watch": "node ./esbuild.hubitat.config.mjs --watch",
+    "build:release": "node ./esbuild.hubitat.config.mjs --minify"
   },
   "devDependencies": {
-    "esbuild": "^0.20.2"
+    "esbuild": "^0.21.3"
   }
 }
