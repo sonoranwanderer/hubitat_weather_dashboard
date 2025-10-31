@@ -32,10 +32,19 @@ definition(
     debug: 3,
     trace: 4
 ]
+@Field final int MAKER_PAYLOAD_MAX_BYTES = 100000
 
 preferences {
     page(name: "mainPage", title: "Weather Dashboard", install: true, uninstall: true)
     page(name: "diagnosticsPage")
+}
+
+mappings {
+    path("/dashboard") {
+        action: [
+            GET: "handleDashboardRequest"
+        ]
+    }
 }
 
 def mainPage() {
@@ -208,8 +217,13 @@ def mainPage() {
             input name: "logLevel", type: "enum", title: "Logging level", options: loggingLevelOptions(), defaultValue: "info", required: true, submitOnChange: true, width: 6
         }
 
+        section("Maker API access") {
+            paragraph "Provide the Maker API access token that external clients must include when requesting the consolidated dashboard payload."
+            input name: "makerApiToken", type: "text", title: "Maker API token", required: false, submitOnChange: true
+        }
+
         section("Performance metrics summary") {
-            paragraph "Recent refresh statistics collected during normal operation." 
+            paragraph "Recent refresh statistics collected during normal operation."
             String refreshSummary = renderRefreshMetricsHtml()
             String eventSummary = renderEventMetricsHtml()
             String historySummary = renderHistoryMetricsHtml()
@@ -374,6 +388,98 @@ private void logError(String message, Throwable t = null) {
     } else {
         log.error message
     }
+}
+
+private void renderJsonError(int statusCode, String message) {
+    Map body = [error: message ?: 'Unknown error']
+    render status: statusCode, contentType: 'application/json', data: JsonOutput.toJson(body)
+}
+
+private String makerTokenSetting() {
+    def raw = settings?.makerApiToken
+    if (!(raw instanceof CharSequence)) {
+        return null
+    }
+    String text = raw.toString().trim()
+    return text ? text : null
+}
+
+private String extractMakerToken() {
+    def raw = params?.makerToken ?: params?.access_token ?: params?.accessToken
+    if (!(raw instanceof CharSequence)) {
+        return null
+    }
+    String text = raw.toString().trim()
+    return text ? text : null
+}
+
+private boolean makerTokenMatches(String provided, String expected) {
+    if (!provided || !expected) {
+        return false
+    }
+    byte[] providedBytes = provided.getBytes('UTF-8')
+    byte[] expectedBytes = expected.getBytes('UTF-8')
+    int diff = providedBytes.length ^ expectedBytes.length
+    int length = Math.min(providedBytes.length, expectedBytes.length)
+    for (int i = 0; i < length; i++) {
+        diff |= (providedBytes[i] ^ expectedBytes[i])
+    }
+    for (int i = length; i < providedBytes.length; i++) {
+        diff |= (providedBytes[i] ^ 0)
+    }
+    for (int i = length; i < expectedBytes.length; i++) {
+        diff |= (expectedBytes[i] ^ 0)
+    }
+    return diff == 0
+}
+
+private Map currentPayloadSnapshot() {
+    def snapshot = state.payloadSnapshot
+    if (snapshot instanceof Map) {
+        return new LinkedHashMap(snapshot as Map)
+    }
+    return [:]
+}
+
+private void recordPayloadSnapshotHeartbeat(String source) {
+    Map snapshot = currentPayloadSnapshot()
+    if (!snapshot) {
+        return
+    }
+    snapshot.lastCheckedAt = now()
+    snapshot.lastCheckedSource = source ?: 'unknown'
+    state.payloadSnapshot = snapshot
+}
+
+private void markPayloadSnapshotServed(Map snapshot, String source) {
+    if (!(snapshot instanceof Map)) {
+        return
+    }
+    Map updated = new LinkedHashMap(snapshot)
+    updated.lastServedAt = now()
+    updated.lastServedBy = source ?: 'unknown'
+    state.payloadSnapshot = updated
+}
+
+private void updatePayloadSnapshot(Map payload, String json, long generatedAt, String source) {
+    Map snapshot = currentPayloadSnapshot()
+    snapshot.generatedAt = generatedAt
+    snapshot.refreshedAt = now()
+    snapshot.source = source ?: 'unknown'
+    snapshot.sections = (payload instanceof Map) ? (payload.keySet().collect { it?.toString() }.findAll { it }) : []
+    int bytes = json ? json.getBytes('UTF-8').length : 0
+    snapshot.bytes = bytes
+    if (bytes > MAKER_PAYLOAD_MAX_BYTES) {
+        snapshot.withinLimit = false
+        snapshot.error = "Payload size ${bytes} bytes exceeds limit of ${MAKER_PAYLOAD_MAX_BYTES} bytes."
+        state.payloadSnapshot = snapshot
+        logWarn "Weather Dashboard App payload snapshot ${bytes} bytes exceeds Maker endpoint limit ${MAKER_PAYLOAD_MAX_BYTES}. Snapshot withheld."
+        return
+    }
+    snapshot.withinLimit = true
+    snapshot.remove('error')
+    snapshot.json = json
+    state.payloadSnapshot = snapshot
 }
 
 private Map subscriptionDeviceOptions(Map weatherOptions) {
@@ -1456,6 +1562,7 @@ def refreshWeatherData() {
         if (!devices) {
             logWarn "No weather devices configured"
             suppressed = true
+            recordPayloadSnapshotHeartbeat(source)
             return
         }
 
@@ -1476,6 +1583,7 @@ def refreshWeatherData() {
 
         if (!force && !dayRolled && fingerprint && fingerprint == state.lastSourceFingerprint) {
             suppressed = true
+            recordPayloadSnapshotHeartbeat(source)
             return
         }
         state.lastSourceFingerprint = fingerprint
@@ -1777,6 +1885,7 @@ def refreshWeatherData() {
     state.lastPayloadJson = json
     state.remove('lastPrettyPayload')
     state.lastPayloadDayKey = dayKey
+    updatePayloadSnapshot(payload, json, timestamp, source)
     payloadUpdated = true
 
     def child = getChildDevice(childDeviceDni())
@@ -1786,6 +1895,40 @@ def refreshWeatherData() {
     } finally {
         recordRefreshMetrics(source, startedAt, now(), suppressed, payloadUpdated)
     }
+}
+
+
+def handleDashboardRequest() {
+    String configuredToken = makerTokenSetting()
+    if (!configuredToken) {
+        logWarn "Weather Dashboard App Maker endpoint denied access: Maker API token not configured"
+        renderJsonError(503, 'Maker API token not configured.')
+        return
+    }
+
+    String providedToken = extractMakerToken()
+    if (!providedToken) {
+        logWarn "Weather Dashboard App Maker endpoint denied access: token missing"
+        renderJsonError(401, 'Maker token missing.')
+        return
+    }
+
+    if (!makerTokenMatches(providedToken, configuredToken)) {
+        logWarn "Weather Dashboard App Maker endpoint denied access: invalid token"
+        renderJsonError(401, 'Maker token invalid.')
+        return
+    }
+
+    Map snapshot = currentPayloadSnapshot()
+    String json = snapshot.json
+    if (!json) {
+        logWarn "Weather Dashboard App Maker endpoint payload unavailable"
+        renderJsonError(503, 'Dashboard payload unavailable.')
+        return
+    }
+
+    markPayloadSnapshotServed(snapshot, 'maker-endpoint')
+    render contentType: 'application/json', data: json
 }
 
 
