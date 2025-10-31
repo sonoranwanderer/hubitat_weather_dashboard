@@ -1,0 +1,8 @@
+{
+  "name": "esbuild",
+  "version": "0.25.11",
+  "type": "module",
+  "exports": {
+    ".": "./index.js"
+  }
+}

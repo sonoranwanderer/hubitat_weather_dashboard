@@ -13,6 +13,6 @@
     "verify:hubitat": "node ./build/verify-hubitat-bundle.mjs"
   },
   "devDependencies": {
-    "esbuild": "^0.25.11"
+    "esbuild": "file:vendor/esbuild-stub"
   }
 }

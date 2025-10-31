@@ -46,11 +46,17 @@ The app publishes a consolidated JSON document to the dashboard device. The driv
 The modernized source files under `src/` are designed for iterative development, but Hubitat still needs a single self-contained JavaScript file. Because the Hubitat dashboard executes `weather-dashboard.js` directly without a module loader, the bundle must define `createLegacyWeatherDashboardRenderer` on `window` before the bootstrap runs. Uploading the raw source modules will leave the renderer undefined and the tile will never initialize. Use the esbuild-powered scripts in `package.json` to keep the bundle up to date:
 
 ```bash
-npm install             # first-time setup to install esbuild
+npm install             # first-time setup (installs the vendored esbuild stub)
 npm run build           # outputs dashboard/weather-dashboard.js and re-verifies the checked-in bundle
 npm run verify:hubitat  # rebuilds to a temp dir and confirms the tracked bundle matches
 npm run clean           # removes node_modules/, caches, and other build artifacts
 ```
+
+> The repository vendors a minimal `esbuild` shim under `vendor/esbuild-stub` so
+> `npm install` succeeds without reaching the public npm registry. The build
+> scripts still prefer a real `esbuild` installation when available, but the
+> shim re-exports the local fallback bundler so contributors in offline or
+> access-restricted environments can develop and run the verification helpers.
 
 During development you can keep the bundle in sync with `npm run build:watch`, and `npm run build:release` generates a minified variant suitable for production uploads. The scripts always write the bundle to `dashboard/weather-dashboard.js`, matching the legacy Hubitat deployments that expect that filename. Because `npm run build` automatically re-runs `verify:hubitat`, every build double-checks that the tracked artifact matches what the current sources produce. The repository keeps the generated bundle under version control so Hubitat users that rely on the checked-in asset can continue to download or upload the script without running the Node.js toolchain. Committers should re-run `npm run build` (or its Docker equivalent) whenever they touch files under `src/`, ensuring `dashboard/weather-dashboard.js` stays aligned with the latest source code.
 
