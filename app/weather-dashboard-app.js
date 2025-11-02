@@ -132,41 +132,81 @@
     doc.head.appendChild(style);
   }
 
+  function ensureAndAppend(doc, parent, id, options = {}) {
+    if (!doc || !parent) return null;
+    const {
+      tag = 'div',
+      className,
+      attributes,
+      prepend = false,
+      onCreate,
+      onEnsure
+    } = options;
+
+    let element = id ? doc.getElementById(id) : null;
+    if (!element) {
+      element = doc.createElement(tag);
+      if (id) {
+        element.id = id;
+      }
+      if (className) {
+        element.className = className;
+      }
+      if (attributes) {
+        for (const [key, value] of Object.entries(attributes)) {
+          if (value != null) {
+            element.setAttribute(key, value);
+          }
+        }
+      }
+      if (typeof onCreate === 'function') {
+        onCreate(element);
+      }
+      if (prepend && parent.firstChild) {
+        parent.insertBefore(element, parent.firstChild);
+      } else {
+        parent.appendChild(element);
+      }
+    } else {
+      if (prepend && element !== parent.firstChild) {
+        parent.insertBefore(element, parent.firstChild || null);
+      } else if (element.parentNode !== parent) {
+        parent.appendChild(element);
+      }
+    }
+
+    if (typeof onEnsure === 'function') {
+      onEnsure(element);
+    }
+
+    return element;
+  }
+
   function ensureAppShell() {
     const doc = global.document;
-    if (!doc) return null;
+    if (!doc || !doc.body) return null;
 
     if (!shellElements) {
-      let host = doc.getElementById(HOST_ID);
-      if (!host) {
-        host = doc.createElement('div');
-        host.id = HOST_ID;
-        doc.body.appendChild(host);
-      }
+      const host = ensureAndAppend(doc, doc.body, HOST_ID);
 
-      let status = doc.getElementById(STATUS_ID);
-      if (!status) {
-        status = doc.createElement('div');
-        status.id = STATUS_ID;
-        status.dataset.level = 'info';
-        host.appendChild(status);
-      } else if (!host.contains(status)) {
-        host.insertBefore(status, host.firstChild);
-      }
+      const status = ensureAndAppend(doc, host, STATUS_ID, {
+        prepend: true,
+        onCreate: el => {
+          el.dataset.level = 'info';
+        },
+        onEnsure: el => {
+          if (!el.dataset.level) {
+            el.dataset.level = 'info';
+          }
+        }
+      });
 
-      let displayTile = doc.getElementById(DISPLAY_TILE_ID);
-      if (!displayTile) {
-        displayTile = doc.createElement('div');
-        displayTile.id = DISPLAY_TILE_ID;
-        displayTile.className = 'tile tile--weather-display';
-        host.appendChild(displayTile);
-      } else if (!host.contains(displayTile)) {
-        host.appendChild(displayTile);
-      }
-
-      if (!displayTile.classList.contains('wdash-host-tile')) {
-        displayTile.classList.add('wdash-host-tile');
-      }
+      const displayTile = ensureAndAppend(doc, host, DISPLAY_TILE_ID, {
+        className: 'tile tile--weather-display',
+        onEnsure: el => {
+          el.classList.add('wdash-host-tile');
+        }
+      });
 
       let displayPrimary = displayTile.querySelector('.tile-primary');
       if (!displayPrimary) {
@@ -175,18 +215,15 @@
         displayTile.appendChild(displayPrimary);
       }
 
-      let dataTile = doc.getElementById(DATA_TILE_ID);
-      if (!dataTile) {
-        dataTile = doc.createElement('div');
-        dataTile.id = DATA_TILE_ID;
-        dataTile.className = 'tile wdash-hidden-tile';
-        dataTile.setAttribute('aria-hidden', 'true');
-        host.appendChild(dataTile);
-      } else if (!host.contains(dataTile)) {
-        host.appendChild(dataTile);
-      }
+      const dataTile = ensureAndAppend(doc, host, DATA_TILE_ID, {
+        className: 'tile wdash-hidden-tile',
+        attributes: { 'aria-hidden': 'true' },
+        onEnsure: el => {
+          el.classList.add('wdash-hidden-tile');
+          el.setAttribute('aria-hidden', 'true');
+        }
+      });
 
-      dataTile.classList.add('wdash-hidden-tile');
       let dataPrimary = dataTile.querySelector('.tile-primary');
       if (!dataPrimary) {
         dataPrimary = doc.createElement('div');
