@@ -34,7 +34,9 @@
   let dataTileContent = null;
 
   const publicApi = {
-    state,
+    get state() {
+      return { ...state };
+    },
     refreshNow,
     stop: stopPolling,
     reconfigure: configureAndStart
