@@ -10,3 +10,9 @@ node "$(dirname "$0")/air-quality-rotation-harness.js"
 node "$(dirname "$0")/hubitat-tiles-adapter-harness.js"
 node "$(dirname "$0")/maker-endpoint-simulation.js"
 node "$(dirname "$0")/e2e/playwright-refresh.spec.js"
+
+if command -v groovy >/dev/null 2>&1; then
+  groovy "$(dirname "$0")/hubitat/ui/WeatherDashboardAppLandingSpec.groovy"
+else
+  echo "Skipping Groovy landing page smoke test (groovy command not found)." >&2
+fi

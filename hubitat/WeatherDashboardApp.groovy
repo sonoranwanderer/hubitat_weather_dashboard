@@ -12,6 +12,7 @@ import java.math.RoundingMode
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.TimeZone
+import java.net.URLEncoder
 
 definition(
     name: "Weather Dashboard App",
@@ -35,7 +36,8 @@ definition(
 @Field final int MAKER_PAYLOAD_MAX_BYTES = 100000
 
 preferences {
-    page(name: "mainPage", title: "Weather Dashboard", install: true, uninstall: true)
+    page(name: "landingPage", title: "Weather Dashboard", install: true, uninstall: true)
+    page(name: "configurationPage")
     page(name: "diagnosticsPage")
 }
 
@@ -47,8 +49,27 @@ mappings {
     }
 }
 
-def mainPage() {
-    dynamicPage(name: "mainPage") {
+def landingPage() {
+    dynamicPage(name: "landingPage") {
+        section("Dashboard preview") {
+            String embedUrl = buildDashboardEmbedUrl()
+            if (embedUrl) {
+                String encodedSrc = htmlAttributeEncode(embedUrl)
+                paragraph "<iframe src=\"${encodedSrc}\" style=\"width: 100%; height: 820px; border: 0;\" sandbox=\"allow-same-origin allow-scripts allow-forms allow-popups\"></iframe>"
+            } else {
+                paragraph "Configure the Maker API connection on the setup page to enable the embedded dashboard preview."
+            }
+        }
+
+        section("Quick actions") {
+            href "configurationPage", title: "Configure data sources", description: "Select devices, units, and Maker API access."
+            href "diagnosticsPage", title: "Diagnostics", description: "Inspect the latest payload JSON and refresh metrics."
+        }
+    }
+}
+
+def configurationPage() {
+    dynamicPage(name: "configurationPage") {
         section("Weather data sources") {
             input name: "weatherDevices", type: "capability.sensor", title: "Weather devices", multiple: true, required: true, submitOnChange: true
             if (!settings.weatherDevices) {
@@ -218,8 +239,10 @@ def mainPage() {
         }
 
         section("Maker API access") {
-            paragraph "Provide the Maker API access token that external clients must include when requesting the consolidated dashboard payload."
+            paragraph "Provide the hub connection details used by the embedded dashboard preview and external clients."
+            input name: "makerApiBaseUrl", type: "text", title: "Hubitat hub base URL", required: false, submitOnChange: true, description: "Example: http://192.168.1.10"
             input name: "makerApiToken", type: "text", title: "Maker API token", required: false, submitOnChange: true
+            input name: "makerApiDeviceIds", type: "text", title: "Maker API device IDs", required: false, submitOnChange: true, description: "Comma-separated (optional)"
         }
 
         section("Performance metrics summary") {
@@ -272,6 +295,61 @@ def mainPage() {
             href "diagnosticsPage", title: "View Latest Payload", description: "Show the last generated JSON payload for troubleshooting."
         }
     }
+}
+
+private String buildDashboardEmbedUrl() {
+    String baseUrl = settings?.makerApiBaseUrl?.trim()
+    String token = settings?.makerApiToken?.trim()
+    String appId = app?.id?.toString()
+
+    if (!baseUrl || !token || !appId) {
+        return null
+    }
+
+    Map<String, String> params = [
+        hubBaseUrl : baseUrl,
+        hub        : baseUrl,
+        appId      : appId,
+        makerToken : token,
+        token      : token,
+        access_token: token
+    ]
+
+    List<String> deviceIds = makerApiDeviceIdList()
+    if (deviceIds) {
+        String joined = deviceIds.join(',')
+        params.deviceIds = joined
+        params.devices = joined
+    }
+
+    String query = params.collect { key, value -> "${urlEncode(key)}=${urlEncode(value)}" }.join('&')
+    return "/local/weather-dashboard-app.html?${query}"
+}
+
+private List<String> makerApiDeviceIdList() {
+    String raw = settings?.makerApiDeviceIds
+    if (!raw) {
+        return []
+    }
+
+    raw.split(/[\s,]+/).collect { it?.trim() }.findAll { it }
+}
+
+private String htmlAttributeEncode(String value) {
+    if (value == null) {
+        return ''
+    }
+
+    value
+        .replace('&', '&amp;')
+        .replace('"', '&quot;')
+        .replace("'", '&#39;')
+        .replace('<', '&lt;')
+        .replace('>', '&gt;')
+}
+
+private String urlEncode(String value) {
+    URLEncoder.encode(value ?: '', 'UTF-8')
 }
 
 private void attributeInputs(String label, String attrSetting, String defaultAttr, Map options) {
