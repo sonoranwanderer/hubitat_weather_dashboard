@@ -14,6 +14,39 @@ const FIXTURE_DIR = path.join(__dirname, 'fixtures');
 const EXPECTED_DIR = path.join(FIXTURE_DIR, 'expected-dom');
 const UPDATE_EXPECTED = process.env.WDASH_UPDATE_EXPECTED === '1';
 
+function resolveFixtureNowTimestamp(data) {
+  const candidate = data?.metadata?.generatedAt;
+  if (!candidate) return null;
+  const parsed = Date.parse(candidate);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function stubDateNow(window, timestamp) {
+  if (!Number.isFinite(timestamp)) {
+    return () => {};
+  }
+
+  const fixed = Math.floor(timestamp);
+  const stub = () => fixed;
+
+  const originalNodeDateNow = Date.now;
+  Date.now = stub;
+
+  let restoreWindowDateNow = null;
+  if (window && window.Date && typeof window.Date.now === 'function') {
+    const originalWindowDateNow = window.Date.now;
+    window.Date.now = stub;
+    restoreWindowDateNow = () => {
+      window.Date.now = originalWindowDateNow;
+    };
+  }
+
+  return () => {
+    Date.now = originalNodeDateNow;
+    if (restoreWindowDateNow) restoreWindowDateNow();
+  };
+}
+
 function normalizeTempUnit(unit) {
   const value = typeof unit === 'string' ? unit.trim().toUpperCase() : '';
   return value === 'C' ? 'C' : 'F';
@@ -82,6 +115,8 @@ async function runFixture(fixturePath) {
     }
   };
 
+  const restoreDateNow = stubDateNow(window, resolveFixtureNowTimestamp(data));
+
   try {
     hooks.safeRenderFromData();
     await new Promise(resolve => window.setTimeout(resolve, 0));
@@ -144,6 +179,7 @@ async function runFixture(fixturePath) {
 
     console.log(`Rendered dashboard fixture: ${fixtureName}`);
   } finally {
+    restoreDateNow();
     if (typeof hooks.stopAirQualityRotationTimer === 'function') {
       hooks.stopAirQualityRotationTimer();
     }
