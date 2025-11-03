@@ -14,10 +14,10 @@ The Weather Dashboard App embeds a lightweight web bundle that calls Hubitat's M
 
 1. Open the Maker API app you just installed.
 2. Under **Allow access via**, enable **Local IP Address**. Enable **Cloud** access only if you plan to load the dashboard from outside your LAN.
-3. In **Allow access to these apps**, check **Weather Dashboard App** so Maker API can proxy requests to the app’s `/dashboard` endpoint.
-4. In **Select devices**, include the **Weather Dashboard** virtual device. Add any other devices you plan to surface through Maker API powered dashboards.
-5. Leave the optional POST/DELETE and event streaming features disabled unless you need them for other integrations—the Weather Dashboard bundle only performs read operations.
-6. Click **Done** to save the configuration. Maker API displays the generated URLs, access token, and the app ID on the confirmation screen.
+3. In **Select devices**, include the **Weather Dashboard** virtual device. Add any other devices you plan to surface through Maker API powered dashboards.
+   * Maker API does not require any additional “Allow access to these apps” toggle—selecting the virtual device is sufficient for the Weather Dashboard App to serve data through the Maker API endpoint.
+4. Leave the optional POST/DELETE and event streaming features disabled unless you need them for other integrations—the Weather Dashboard bundle only performs read operations.
+5. Click **Done** to save the configuration. Maker API displays the generated URLs, access token, and the app ID on the confirmation screen.
 
 ## 3. Copy credentials into Weather Dashboard App
 

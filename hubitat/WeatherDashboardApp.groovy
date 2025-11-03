@@ -248,10 +248,10 @@ def configurationPage() {
         section("Maker API access") {
             Map makerStatus = makerApiAppInfo()
             if (!makerStatus?.installed) {
-                paragraph "Maker API app not detected. Install it via Apps → Add Built-In App → Maker API, then enable local access and authorize Weather Dashboard App under “Allow access to these apps.”"
+                paragraph "Maker API app not detected. Install it via Apps → Add Built-In App → Maker API, then enable local access and select the Weather Dashboard virtual device under “Select devices.”"
             } else {
                 String makerLabel = makerStatus?.label ? makerStatus.label.toString() : 'Maker API'
-                paragraph "Maker API app detected (${makerLabel}). Open the Maker API configuration to copy the access token and confirm Weather Dashboard App stays authorized under “Allow access to these apps.”"
+                paragraph "Maker API app detected (${makerLabel}). Open the Maker API configuration to copy the access token and confirm the Weather Dashboard virtual device remains selected under “Select devices.”"
             }
 
             if (!makerApiSettingsConfigured()) {
