@@ -22,13 +22,19 @@ appScript.binding.setVariable('settings', [:])
 appScript.binding.setVariable('app', [id: 101] as Expando)
 appScript.run()
 
+Object invokePrivate(Script script, String methodName, Class<?>[] parameterTypes = [] as Class<?>[], Object... args) {
+    def method = script.class.getDeclaredMethod(methodName, parameterTypes)
+    method.accessible = true
+    return method.invoke(script, args)
+}
+
 // Scenario: fully populated Maker API configuration renders an embeddable URL with encoded parameters.
 appScript.binding.setVariable('settings', [
     makerApiBaseUrl : 'http://192.168.1.50',
     makerApiToken   : 's3cr3tTOKEN',
     makerApiDeviceIds: '10, 11,12\n13'
 ])
-String embedUrl = appScript.invokeMethod('buildDashboardEmbedUrl', null)
+String embedUrl = invokePrivate(appScript, 'buildDashboardEmbedUrl') as String
 assert embedUrl?.startsWith('/local/weather-dashboard-app.html?')
 assert embedUrl.contains('hubBaseUrl=http%3A%2F%2F192.168.1.50')
 assert embedUrl.contains('appId=101')
@@ -37,11 +43,11 @@ assert embedUrl.contains('deviceIds=10%2C11%2C12%2C13')
 assert embedUrl.contains('devices=10%2C11%2C12%2C13')
 
 // Scenario: HTML attribute encoding prevents iframe injection issues.
-String encoded = appScript.invokeMethod('htmlAttributeEncode', ['"foo&bar<baz>'])
+String encoded = invokePrivate(appScript, 'htmlAttributeEncode', [String] as Class<?>[], '"foo&bar<baz>') as String
 assert encoded == '&quot;foo&amp;bar&lt;baz&gt;'
 
 // Scenario: missing configuration disables the preview instead of emitting a malformed URL.
 appScript.binding.setVariable('settings', [makerApiBaseUrl: null, makerApiToken: 'abc'])
-assert appScript.invokeMethod('buildDashboardEmbedUrl', null) == null
+assert invokePrivate(appScript, 'buildDashboardEmbedUrl') == null
 
 println JsonOutput.toJson([status: 'ok', message: 'Weather Dashboard landing helpers verified'])
