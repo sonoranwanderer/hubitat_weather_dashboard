@@ -50,6 +50,7 @@ Following these steps keeps manual dashboard comparisons aligned with the archiv
 2. **Verify the embedded dashboard preview**
    - If the iframe reports missing credentials, open **Configure data sources** and populate the Hub base URL (e.g., `http://192.168.1.50`) and Maker API token.
    - Return to the landing page and confirm the `/local/weather-dashboard-app.html` bundle loads in the preview frame without browser console errors.
+   - If the frame renders Hubitat's shell with a 404 message, upload `app/weather-dashboard-app.html`, `app/weather-dashboard-app.js`, and `dashboard/weather-dashboard.js` to File Manager so they are accessible from `/local/`.
 3. **Exercise navigation controls**
    - Use the **Configure data sources** button to reach the configuration form and ensure existing settings persist.
    - Navigate back to the landing page using the browser back button and confirm the preview reloads.

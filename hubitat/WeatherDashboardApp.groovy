@@ -56,6 +56,7 @@ def landingPage() {
             if (embedUrl) {
                 String encodedSrc = htmlAttributeEncode(embedUrl)
                 paragraph "<iframe src=\"${encodedSrc}\" style=\"width: 100%; height: 820px; border: 0;\" sandbox=\"allow-same-origin allow-scripts allow-forms allow-popups\"></iframe>"
+                paragraph 'Tip: If the preview shows Hubitat\'s 404 page, upload <code>weather-dashboard-app.html</code> and <code>weather-dashboard-app.js</code> to Hubitat\'s File Manager so they are served from <code>/local/</code>.'
             } else {
                 Map makerStatus = makerApiAppInfo()
                 if (!makerStatus?.installed) {

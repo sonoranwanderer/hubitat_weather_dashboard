@@ -2,6 +2,14 @@
 
 The Weather Dashboard App embeds a lightweight web bundle that calls Hubitat's Maker API to fetch the latest JSON payload and device metadata. Follow the steps below to install Maker API, authorize the Weather Dashboard App, and copy the credentials that power the in-app preview and any external dashboards.
 
+## Before you begin
+
+1. Upload the dashboard preview assets to **File Manager** so Hubitat serves them under `/local/`:
+   - `dashboard/weather-dashboard.js`
+   - `app/weather-dashboard-app.js`
+   - `app/weather-dashboard-app.html`
+2. Keep the files in the File Manager root unless you plan to pass custom paths to the preview iframe. The in-app landing page assumes the files are reachable at `/local/<filename>`.
+
 ## 1. Install the built-in Maker API app
 
 1. In Hubitat, open **Apps** and click **Add Built-In App**.
@@ -40,3 +48,8 @@ Leaving the Maker API fields blank keeps the embedded preview disabled so the hu
 4. If the preview still reports missing credentials, revisit the Maker API settings to confirm the Weather Dashboard App remains authorized and the access token matches the value stored in the app preferences.
 
 Once these steps are complete, both the in-app preview and any external dashboards can securely fetch the Weather Dashboard JSON via Maker API.
+
+### Troubleshooting
+
+* **Preview reports 404** – Hubitat returns a 404 when the iframe points at `/local/weather-dashboard-app.html` but the HTML (or its companion JavaScript files) are missing from File Manager. Re-upload `app/weather-dashboard-app.html`, `app/weather-dashboard-app.js`, and `dashboard/weather-dashboard.js` so they appear under `/local/` on the hub.
+* **Custom asset locations** – If you host the preview bundle somewhere other than `/local/`, append query parameters to the iframe URL (or the standalone preview) to override the defaults: `bundleBase`, `rendererScript`, and `appScript`. Apply the overrides when you open the preview in a separate tab or embed it elsewhere.
