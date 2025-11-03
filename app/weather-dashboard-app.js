@@ -539,7 +539,7 @@
     }
 
     const endpoint = buildEndpointUrl(normalized);
-    if (!endpoint && errors.indexOf('Hub address must use http:// or https://.') === -1) {
+    if (!endpoint && !errors.length) {
       errors.push('Unable to construct Maker API endpoint URL from the provided configuration.');
     }
 
