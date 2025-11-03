@@ -50,4 +50,21 @@ assert encoded == '&quot;foo&amp;bar&lt;baz&gt;'
 appScript.binding.setVariable('settings', [makerApiBaseUrl: null, makerApiToken: 'abc'])
 assert invokePrivate(appScript, 'buildDashboardEmbedUrl') == null
 
+// Scenario: Maker API detection tolerates missing location metadata and recognizes standard descriptors.
+appScript.binding.setVariable('location', new Expando())
+Map missingMaker = invokePrivate(appScript, 'makerApiAppInfo') as Map
+assert missingMaker.installed == false
+
+def makerLocation = new Expando()
+makerLocation.metaClass.getAppsByName = { String name ->
+    if (name == 'Maker API') {
+        return [[label: 'Maker API', namespace: 'hubitat']]
+    }
+    return []
+}
+appScript.binding.setVariable('location', makerLocation)
+Map detectedMaker = invokePrivate(appScript, 'makerApiAppInfo') as Map
+assert detectedMaker.installed == true
+assert detectedMaker.label == 'Maker API'
+
 println JsonOutput.toJson([status: 'ok', message: 'Weather Dashboard landing helpers verified'])

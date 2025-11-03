@@ -57,7 +57,14 @@ def landingPage() {
                 String encodedSrc = htmlAttributeEncode(embedUrl)
                 paragraph "<iframe src=\"${encodedSrc}\" style=\"width: 100%; height: 820px; border: 0;\" sandbox=\"allow-same-origin allow-scripts allow-forms allow-popups\"></iframe>"
             } else {
-                paragraph "Configure the Maker API connection on the setup page to enable the embedded dashboard preview."
+                Map makerStatus = makerApiAppInfo()
+                if (!makerStatus?.installed) {
+                    paragraph "Install the built-in Maker API app (Apps → Add Built-In App → Maker API) and authorize Weather Dashboard App to enable the embedded dashboard preview."
+                } else if (!makerApiSettingsConfigured()) {
+                    paragraph "Configure the Maker API connection on the setup page to enable the embedded dashboard preview."
+                } else {
+                    paragraph "The embedded dashboard preview is temporarily unavailable. Confirm the Maker API token and hub address are still valid."
+                }
             }
         }
 
@@ -239,7 +246,21 @@ def configurationPage() {
         }
 
         section("Maker API access") {
-            paragraph "Provide the hub connection details used by the embedded dashboard preview and external clients."
+            Map makerStatus = makerApiAppInfo()
+            if (!makerStatus?.installed) {
+                paragraph "Maker API app not detected. Install it via Apps → Add Built-In App → Maker API, then enable local access and authorize Weather Dashboard App under “Allow access to these apps.”"
+            } else {
+                String makerLabel = makerStatus?.label ? makerStatus.label.toString() : 'Maker API'
+                paragraph "Maker API app detected (${makerLabel}). Open the Maker API configuration to copy the access token and confirm Weather Dashboard App stays authorized under “Allow access to these apps.”"
+            }
+
+            if (!makerApiSettingsConfigured()) {
+                paragraph "Leaving the fields below blank keeps the embedded preview disabled so the hub avoids any Maker API polling overhead until you are ready."
+            } else {
+                paragraph "The embedded dashboard preview and external bundle will use the saved hub address and token. Update them whenever you rotate the Maker API credentials."
+            }
+
+            paragraph "Provide the hub connection details used by the embedded dashboard preview and external clients. See docs/setup-maker-api.md for the full Maker API walkthrough, including which options to enable."
             input name: "makerApiBaseUrl", type: "text", title: "Hubitat hub base URL", required: false, submitOnChange: true, description: "Example: http://192.168.1.10"
             input name: "makerApiToken", type: "text", title: "Maker API token", required: false, submitOnChange: true
             input name: "makerApiDeviceIds", type: "text", title: "Maker API device IDs", required: false, submitOnChange: true, description: "Comma-separated (optional)"
@@ -332,7 +353,122 @@ private List<String> makerApiDeviceIdList() {
         return []
     }
 
-    raw.split(/[\s,]+/).collect { it?.trim() }.findAll { it }
+    return raw
+        .toString()
+        .split(/[\s,]+/)
+        .collect { it?.trim() }
+        .findAll { it }
+}
+
+private boolean makerApiSettingsConfigured() {
+    String baseUrl = settings?.makerApiBaseUrl?.trim()
+    String token = settings?.makerApiToken?.trim()
+    return baseUrl && token
+}
+
+private Map makerApiAppInfo() {
+    def loc = location
+    Map status = [installed: false, locationAvailable: loc != null]
+    if (!loc) {
+        return status
+    }
+
+    List<Object> candidates = []
+    candidates.addAll(makerApiMatchesFromMethod(loc, 'getAppsByName', ['Maker API'] as Object[]))
+    candidates.addAll(makerApiMatchesFromMethod(loc, 'findInstalledAppByName', ['Maker API'] as Object[]))
+    candidates.addAll(makerApiMatchesFromMethod(loc, 'getInstalledAppByName', ['Maker API'] as Object[]))
+
+    if (candidates.isEmpty()) {
+        candidates.addAll(makerApiMatchesFromProperty(loc, 'apps'))
+        candidates.addAll(makerApiMatchesFromProperty(loc, 'installedApps'))
+        candidates.addAll(makerApiMatchesFromProperty(loc, 'appList'))
+        candidates.addAll(makerApiMatchesFromProperty(loc, 'smartApps'))
+        candidates.addAll(makerApiMatchesFromProperty(loc, 'childApps'))
+    }
+
+    Object found = candidates.find { makerApiDescriptorMatches(it) }
+    if (found) {
+        status.installed = true
+        status.label = makerApiDescriptorLabel(found)
+        status.namespace = makerApiDescriptorNamespace(found)
+    }
+
+    return status
+}
+
+private List<Object> makerApiMatchesFromMethod(Object loc, String methodName, Object[] args) {
+    if (!loc) {
+        return []
+    }
+
+    try {
+        def value = loc."${methodName}"(*args)
+        return makerApiNormalizeCollection(value)
+    } catch (MissingMethodException ignored) {
+    } catch (Throwable ignored) {
+    }
+    return []
+}
+
+private List<Object> makerApiMatchesFromProperty(Object loc, String propertyName) {
+    if (!loc) {
+        return []
+    }
+
+    try {
+        def value = loc."${propertyName}"
+        return makerApiNormalizeCollection(value)
+    } catch (MissingPropertyException ignored) {
+    } catch (Throwable ignored) {
+    }
+    return []
+}
+
+private List<Object> makerApiNormalizeCollection(Object value) {
+    if (value == null) {
+        return []
+    }
+    if (value instanceof Collection) {
+        return value.findAll { it != null } as List<Object>
+    }
+    return [value]
+}
+
+private boolean makerApiDescriptorMatches(Object descriptor) {
+    if (descriptor == null) {
+        return false
+    }
+    String name = makerApiDescriptorLabel(descriptor)?.toLowerCase()
+    String typeName = descriptor?.typeName?.toString()?.toLowerCase()
+    String namespace = makerApiDescriptorNamespace(descriptor)?.toLowerCase()
+
+    boolean nameMatch = name?.contains('maker api') || (name?.contains('maker') && name?.contains('api'))
+    boolean typeMatch = typeName?.contains('maker') && typeName?.contains('api')
+    boolean namespaceMatch = namespace?.contains('maker') && (name?.contains('api') || typeName?.contains('api'))
+
+    return nameMatch || typeMatch || namespaceMatch
+}
+
+private String makerApiDescriptorLabel(Object descriptor) {
+    def options = [
+        descriptor?.label,
+        descriptor?.name,
+        descriptor?.appName,
+        descriptor?.displayName,
+        descriptor?.typeName,
+        descriptor?.type?.name
+    ]
+    String label = options.find { it }?.toString()
+    return label ?: 'Maker API'
+}
+
+private String makerApiDescriptorNamespace(Object descriptor) {
+    def options = [
+        descriptor?.namespace,
+        descriptor?.appNamespace,
+        descriptor?.type?.namespace
+    ]
+    return options.find { it }?.toString()
 }
 
 private String htmlAttributeEncode(String value) {

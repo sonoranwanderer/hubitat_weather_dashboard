@@ -30,6 +30,7 @@ v1/
 5. Add the dashboard device to your Hubitat dashboard using the **Attribute** tile template.
    * Assign the device’s `dashboardScript` attribute to `tile-0`. The tile injects a `<script>` tag that loads `dashboard/weather-dashboard.js` from the URL defined in the driver preferences (defaults to `/local/weather-dashboard.js`, but you can point it anywhere the script is hosted).
    * Assign the remaining JSON segment attributes (`segmentCore`, `segmentPrecip`, `segmentAmbient1`, `segmentAmbient2`, `segmentAirQuality`, `segmentMeta`, `segmentLayout`, etc.) to sequential tiles starting with `tile-1`. The JavaScript automatically discovers valid JSON from each tile, so you can add as many segments as your layout requires. The matching `...B64` attributes are optional and intended for external consumers that prefer base64-encoded payloads.
+6. Configure the built-in Maker API app so the Weather Dashboard landing page and external bundle can fetch data. See [docs/setup-maker-api.md](docs/setup-maker-api.md) for a step-by-step guide covering the required options and credential copy steps.
 
 The app publishes a consolidated JSON document to the dashboard device. The driver converts that document into deterministic segments (core conditions, precipitation/solar/lightning, ambient sensors in groups of four, air quality, metadata, and layout) and stores each segment in its own attribute. Keeping each segment under 700 bytes avoids Hubitat’s 1 KB attribute ceiling and eliminates the need for runtime chunk reassembly.
 
