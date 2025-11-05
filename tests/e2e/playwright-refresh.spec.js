@@ -52,7 +52,9 @@ test('renders Maker API payload and schedules refreshes', async ({ page }) => {
   expect(state.failureStreak).toBe(0);
   expect(state.pollIntervalMs).toBe(5000);
   expect(state.nextDelay).toBe(5000);
-  expect(state.endpointUrl).toContain('/apps/api/123/dashboard');
+  expect(state.endpointUrl).toContain('/apps/api/123/devices/all');
+  expect(state.endpointUrl).toContain('access_token=abc123');
+  expect(state.endpointUrl).toContain('deviceIds=45%2C46');
   if (state.payloadText) {
     expect(state.payloadText.startsWith('{')).toBe(true);
     expect(state.payloadText).toContain('"outdoor"');
@@ -118,7 +120,11 @@ test('backs off after Maker API failures and recovers on success', async ({ page
   expect(Number.isFinite(recovered.lastSuccessAt)).toBe(true);
 });
 
-run().catch(error => {
-  console.error(error.stack || error.message || error);
-  process.exit(1);
-});
+run()
+  .then(() => {
+    process.exit(0);
+  })
+  .catch(error => {
+    console.error(error.stack || error.message || error);
+    process.exit(1);
+  });
