@@ -11,6 +11,14 @@ Binding binding = new Binding()
 binding.setVariable('definition', { Map config -> config })
 binding.setVariable('preferences', { Closure<?> handler -> })
 binding.setVariable('mappings', { Closure<?> handler -> })
+binding.setVariable('state', [:])
+binding.setVariable('log', new Expando(
+    info: { Object... args -> },
+    warn: { Object... args -> },
+    error: { Object... args -> },
+    debug: { Object... args -> },
+    trace: { Object... args -> }
+))
 
 def shell = new GroovyShell(binding)
 File appFile = new File('hubitat/WeatherDashboardApp.groovy')
@@ -20,6 +28,8 @@ if (!appFile.exists()) {
 Script appScript = shell.parse(appFile)
 appScript.binding.setVariable('settings', [:])
 appScript.binding.setVariable('app', [id: 101] as Expando)
+appScript.binding.setVariable('state', [:])
+appScript.metaClass.createAccessToken = { -> 'dashboardTokenXYZ' }
 appScript.run()
 
 Object invokePrivate(Script script, String methodName, Class<?>[] parameterTypes = [] as Class<?>[], Object... args) {
@@ -38,7 +48,10 @@ String embedUrl = invokePrivate(appScript, 'buildDashboardEmbedUrl') as String
 assert embedUrl?.startsWith('/local/weather-dashboard-app.html?')
 assert embedUrl.contains('hubBaseUrl=http%3A%2F%2F192.168.1.50')
 assert embedUrl.contains('appId=101')
+assert embedUrl.contains('access_token=dashboardTokenXYZ')
+assert embedUrl.contains('appToken=dashboardTokenXYZ')
 assert embedUrl.contains('makerToken=s3cr3tTOKEN')
+assert embedUrl.contains('makerApiToken=s3cr3tTOKEN')
 assert embedUrl.contains('deviceIds=10%2C11%2C12%2C13')
 assert embedUrl.contains('devices=10%2C11%2C12%2C13')
 

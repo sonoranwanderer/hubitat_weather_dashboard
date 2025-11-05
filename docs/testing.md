@@ -56,7 +56,7 @@ Following these steps keeps manual dashboard comparisons aligned with the archiv
    - Navigate back to the landing page using the browser back button and confirm the preview reloads.
    - Open the **Diagnostics** link to confirm it still displays the latest payload JSON.
 4. **Smoke test Maker API injection**
-   - From the landing page, open the iframe in a new tab (right-click → *Open link in new tab*) and verify the query string includes the Maker API token, hub base URL, and any device IDs saved in preferences.
+   - From the landing page, open the iframe in a new tab (right-click → *Open link in new tab*) and verify the query string includes the Maker API token (`makerToken`), the dashboard access token (`appToken`/`access_token`), the hub base URL, and any device IDs saved in preferences.
 
 These steps confirm the navigation loop and embedded preview stay functional after UI changes.
 

@@ -22,7 +22,8 @@ definition(
     category: "Convenience",
     importUrl: "https://raw.githubusercontent.com/sonoranwanderer/ecowitt_weather_hubitat_dashboard/main/hubitat/WeatherDashboardApp.groovy",
     iconUrl: "https://raw.githubusercontent.com/sonoranwanderer/ecowitt_weather_hubitat_dashboard/main/assets/weather-dashboard-icon.svg",
-    iconX2Url: "https://raw.githubusercontent.com/sonoranwanderer/ecowitt_weather_hubitat_dashboard/main/assets/weather-dashboard-icon.svg"
+    iconX2Url: "https://raw.githubusercontent.com/sonoranwanderer/ecowitt_weather_hubitat_dashboard/main/assets/weather-dashboard-icon.svg",
+    oauth: true
 )
 
 @Field final TimeZone UTC_ZONE = TimeZone.getTimeZone('UTC')
@@ -323,8 +324,9 @@ private String buildDashboardEmbedUrl() {
     String baseUrl = settings?.makerApiBaseUrl?.trim()
     String token = settings?.makerApiToken?.trim()
     String appId = app?.id?.toString()
+    String dashboardToken = ensureDashboardAccessToken()
 
-    if (!baseUrl || !token || !appId) {
+    if (!baseUrl || !token || !appId || !dashboardToken) {
         return null
     }
 
@@ -333,8 +335,11 @@ private String buildDashboardEmbedUrl() {
         hub        : baseUrl,
         appId      : appId,
         makerToken : token,
+        makerApiToken: token,
         token      : token,
-        access_token: token
+        appToken   : dashboardToken,
+        previewToken: dashboardToken,
+        access_token: dashboardToken
     ]
 
     List<String> deviceIds = makerApiDeviceIdList()
@@ -365,6 +370,44 @@ private boolean makerApiSettingsConfigured() {
     String baseUrl = settings?.makerApiBaseUrl?.trim()
     String token = settings?.makerApiToken?.trim()
     return baseUrl && token
+}
+
+private String ensureDashboardAccessToken() {
+    String token = state?.dashboardAccessToken
+    if (token instanceof CharSequence && token.toString()) {
+        return token.toString()
+    }
+
+    try {
+        String generated = createAccessToken()
+        if (generated) {
+            state.dashboardAccessToken = generated
+            logInfo "Generated Weather Dashboard App access token"
+            return generated
+        }
+    } catch (Exception ex) {
+        logError "Unable to create Weather Dashboard App access token: ${ex?.message ?: ex}", ex
+    }
+
+    return null
+}
+
+private String dashboardAccessTokenSetting() {
+    def raw = state?.dashboardAccessToken
+    if (!(raw instanceof CharSequence)) {
+        return null
+    }
+    String text = raw.toString().trim()
+    return text ? text : null
+}
+
+private String extractDashboardAccessToken() {
+    def raw = params?.access_token ?: params?.appToken ?: params?.previewToken ?: params?.dashboardToken
+    if (!(raw instanceof CharSequence)) {
+        return null
+    }
+    String text = raw.toString().trim()
+    return text ? text : null
 }
 
 private Map makerApiAppInfo() {
@@ -620,7 +663,7 @@ private String makerTokenSetting() {
 }
 
 private String extractMakerToken() {
-    def raw = params?.makerToken ?: params?.access_token ?: params?.accessToken
+    def raw = params?.makerToken ?: params?.makerApiToken ?: params?.token ?: params?.accessToken
     if (!(raw instanceof CharSequence)) {
         return null
     }
@@ -628,7 +671,7 @@ private String extractMakerToken() {
     return text ? text : null
 }
 
-private boolean makerTokenMatches(String provided, String expected) {
+private boolean tokensMatch(String provided, String expected) {
     if (!provided || !expected) {
         return false
     }
@@ -1135,6 +1178,7 @@ def appButtonHandler(String buttonName) {
 
 def installed() {
     logInfo "Installing Weather Dashboard App"
+    ensureDashboardAccessToken()
     initialize()
 }
 
@@ -1142,6 +1186,7 @@ def updated() {
     logInfo "Updating Weather Dashboard App"
     unschedule()
     unsubscribe()
+    ensureDashboardAccessToken()
     initialize()
 }
 
@@ -2115,24 +2160,50 @@ def refreshWeatherData() {
 
 
 def handleDashboardRequest() {
-    String configuredToken = makerTokenSetting()
-    if (!configuredToken) {
-        logWarn "Weather Dashboard App Maker endpoint denied access: Maker API token not configured"
+    String dashboardToken = dashboardAccessTokenSetting()
+    if (!dashboardToken) {
+        dashboardToken = ensureDashboardAccessToken()
+    }
+
+    if (!dashboardToken) {
+        logWarn "Weather Dashboard App Maker endpoint denied access: dashboard access token unavailable"
+        renderJsonError(503, 'Dashboard access unavailable.')
+        return
+    }
+
+    String providedDashboardToken = extractDashboardAccessToken()
+    if (!providedDashboardToken) {
+        logWarn "Weather Dashboard App Maker endpoint denied access: dashboard token missing"
+        renderJsonError(401, 'Dashboard token missing.')
+        return
+    }
+
+    if (!tokensMatch(providedDashboardToken, dashboardToken)) {
+        logWarn "Weather Dashboard App Maker endpoint denied access: dashboard token invalid"
+        renderJsonError(401, 'Dashboard token invalid.')
+        return
+    }
+
+    if (!makerApiSettingsConfigured()) {
+        logWarn "Weather Dashboard App Maker endpoint denied access: Maker API not configured"
         renderJsonError(503, 'Maker API token not configured.')
         return
     }
 
-    String providedToken = extractMakerToken()
-    if (!providedToken) {
-        logWarn "Weather Dashboard App Maker endpoint denied access: token missing"
-        renderJsonError(401, 'Maker token missing.')
-        return
-    }
+    String configuredMakerToken = makerTokenSetting()
+    if (configuredMakerToken) {
+        String providedMakerToken = extractMakerToken()
+        if (!providedMakerToken) {
+            logWarn "Weather Dashboard App Maker endpoint denied access: Maker token missing"
+            renderJsonError(401, 'Maker token missing.')
+            return
+        }
 
-    if (!makerTokenMatches(providedToken, configuredToken)) {
-        logWarn "Weather Dashboard App Maker endpoint denied access: invalid token"
-        renderJsonError(401, 'Maker token invalid.')
-        return
+        if (!tokensMatch(providedMakerToken, configuredMakerToken)) {
+            logWarn "Weather Dashboard App Maker endpoint denied access: Maker token invalid"
+            renderJsonError(401, 'Maker token invalid.')
+            return
+        }
     }
 
     Map snapshot = currentPayloadSnapshot()

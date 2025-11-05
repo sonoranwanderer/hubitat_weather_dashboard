@@ -429,10 +429,20 @@
 
     config.hubBaseUrl = normalizeHubBase(pickValue(source, ['hubBaseUrl', 'hubUrl', 'hub', 'hubIp']));
     config.appId = normalizeId(pickValue(source, ['appId', 'applicationId', 'app', 'dashboardAppId']));
-    config.makerToken = normalizeToken(pickValue(source, ['makerToken', 'token', 'access_token', 'accessToken']));
+    config.dashboardToken = normalizeToken(
+      pickValue(source, ['appToken', 'previewToken', 'dashboardToken', 'access_token', 'appAccessToken', 'dashboardAccessToken'])
+    );
+    config.makerToken = normalizeToken(pickValue(source, ['makerToken', 'makerApiToken', 'maker_token', 'token', 'maker']));
     config.deviceIds = normalizeDeviceList(pickValue(source, ['deviceIds', 'devices', 'deviceId', 'device']));
     config.pollIntervalMs = normalizeDuration(pickValue(source, ['pollIntervalMs', 'pollInterval', 'interval', 'refresh', 'refreshInterval']));
     config.maxBackoffMs = normalizeDuration(pickValue(source, ['maxBackoffMs', 'maxBackoff', 'backoff', 'backoffMs']));
+
+    if (!config.dashboardToken && config.makerToken) {
+      config.dashboardToken = config.makerToken;
+    }
+    if (!config.makerToken && config.dashboardToken) {
+      config.makerToken = config.dashboardToken;
+    }
 
     return config;
   }
@@ -478,8 +488,12 @@
       warnings.push('App ID contains non-numeric characters. Confirm the Maker API app identifier is correct.');
     }
 
+    if (!config.dashboardToken) {
+      errors.push('Dashboard access token missing. Supply ?appToken= (alias ?access_token=).');
+    }
+
     if (!config.makerToken) {
-      errors.push('Maker API token missing. Supply ?token=YOUR_TOKEN (alias ?access_token=).');
+      errors.push('Maker API token missing. Supply ?makerToken=YOUR_TOKEN.');
     }
 
     if (!Array.isArray(config.deviceIds) || config.deviceIds.length === 0) {
@@ -504,14 +518,21 @@
   }
 
   function buildEndpointUrl(config) {
-    if (!config || !config.hubBaseUrl || !config.appId || !config.makerToken) {
+    if (!config || !config.hubBaseUrl || !config.appId || !config.dashboardToken) {
       return null;
     }
     try {
       const base = new URL(config.hubBaseUrl);
       const target = new URL(`/apps/api/${encodeURIComponent(config.appId)}/dashboard`, base);
-      target.searchParams.set('access_token', config.makerToken);
-      target.searchParams.set('makerToken', config.makerToken);
+      target.searchParams.set('access_token', config.dashboardToken);
+      if (config.dashboardToken) {
+        target.searchParams.set('appToken', config.dashboardToken);
+        target.searchParams.set('previewToken', config.dashboardToken);
+      }
+      if (config.makerToken) {
+        target.searchParams.set('makerToken', config.makerToken);
+        target.searchParams.set('makerApiToken', config.makerToken);
+      }
       if (Array.isArray(config.deviceIds) && config.deviceIds.length) {
         target.searchParams.set('deviceIds', config.deviceIds.join(','));
       }
