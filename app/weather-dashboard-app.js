@@ -33,6 +33,8 @@
 
   let shellElements = null;
   let dataTileContent = null;
+  let pendingHostResizeSync = false;
+  let lastReportedHostHeight = 0;
 
   const publicApi = {
     get state() {
@@ -64,6 +66,62 @@
     }
   }
 
+  function measureDocumentHeight() {
+    const doc = global.document;
+    if (!doc) return 0;
+    const body = doc.body;
+    const html = doc.documentElement;
+    const values = [
+      body ? body.scrollHeight : 0,
+      body ? body.offsetHeight : 0,
+      body ? body.clientHeight : 0,
+      html ? html.scrollHeight : 0,
+      html ? html.offsetHeight : 0,
+      html ? html.clientHeight : 0
+    ].filter(value => typeof value === 'number' && value > 0);
+    if (!values.length) return 0;
+    return Math.ceil(Math.max(...values));
+  }
+
+  function postPreviewHeight(height) {
+    if (!global || !global.parent || global.parent === global) return;
+    if (!height || !Number.isFinite(height)) return;
+    const size = Math.max(0, Math.ceil(height));
+    try {
+      global.parent.postMessage({ type: 'weather-dashboard-app:resize', height: size }, '*');
+    } catch (err) {
+      /* ignore cross-origin errors */
+    }
+  }
+
+  function flushHostResizeSync() {
+    pendingHostResizeSync = false;
+    const height = measureDocumentHeight();
+    if (!height || height === lastReportedHostHeight) {
+      return;
+    }
+    lastReportedHostHeight = height;
+    postPreviewHeight(height);
+  }
+
+  function scheduleHostResizeSync() {
+    if (!global || !global.parent || global.parent === global) return;
+    if (pendingHostResizeSync) return;
+    pendingHostResizeSync = true;
+    const trigger = () => {
+      if (typeof global.requestAnimationFrame === 'function') {
+        global.requestAnimationFrame(flushHostResizeSync);
+      } else {
+        global.setTimeout(flushHostResizeSync, 32);
+      }
+    };
+    if (typeof global.requestAnimationFrame === 'function') {
+      global.requestAnimationFrame(trigger);
+    } else {
+      global.setTimeout(trigger, 32);
+    }
+  }
+
   function injectStyles() {
     const doc = global.document;
     if (!doc || doc.getElementById(STYLE_ID)) return;
@@ -79,18 +137,19 @@
         display: flex;
         justify-content: center;
         align-items: flex-start;
-        padding: 0;
+        padding: 24px 16px 36px;
         box-sizing: border-box;
+        overflow: hidden;
       }
       #${HOST_ID} {
         --wdash-app-font: 'Segoe UI', Roboto, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
-        width: min(100%, 1000px);
-        max-width: 1000px;
+        width: 100%;
+        max-width: 1240px;
         display: flex;
         flex-direction: column;
-        align-items: center;
-        gap: 16px;
-        padding: 12px 12px 0;
+        align-items: stretch;
+        gap: 20px;
+        padding: 18px 20px 28px;
         margin: 0 auto;
         box-sizing: border-box;
         min-height: 0;
@@ -100,6 +159,8 @@
       #${HOST_ID} .wdash-app-status,
       #${HOST_ID} .wdash-app-display-tile {
         width: 100%;
+        max-width: 1200px;
+        margin: 0 auto;
       }
       #${HOST_ID} .tile {
         position: relative;
@@ -118,20 +179,20 @@
       }
       #${HOST_ID} .wdash-app-display-tile {
         width: 100%;
-        max-width: 960px;
+        max-width: 1200px;
         margin: 0 auto;
       }
       #${HOST_ID} .wdash-app-display {
         position: relative;
         width: 100%;
-        max-width: 960px;
+        max-width: 1200px;
         margin: 0 auto;
         aspect-ratio: 4 / 3;
-        display: flex;
-        align-items: center;
-        justify-content: center;
+        display: block;
       }
       #${HOST_ID} .wdash-app-display > * {
+        position: absolute;
+        inset: 0;
         width: 100%;
         height: 100%;
       }
@@ -297,6 +358,7 @@
       };
     }
 
+    scheduleHostResizeSync();
     return shellElements;
   }
 
@@ -337,6 +399,8 @@
       state.statusMinHeight = nextMin;
       status.style.minHeight = `${nextMin}px`;
     }
+
+    scheduleHostResizeSync();
   }
 
   function readQueryConfig() {
@@ -984,6 +1048,8 @@
     if (api && typeof api.safeRenderFromData === 'function') {
       api.safeRenderFromData();
     }
+
+    scheduleHostResizeSync();
   }
 
   function buildLoadingDetails(config) {
@@ -1121,6 +1187,11 @@
     ensureAppShell();
     bootstrapRenderer();
     configureAndStart();
+  }
+
+  if (typeof global.addEventListener === 'function') {
+    global.addEventListener('resize', scheduleHostResizeSync);
+    global.addEventListener('load', scheduleHostResizeSync);
   }
 
   whenDomReady(initialize);

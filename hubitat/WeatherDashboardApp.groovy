@@ -57,7 +57,61 @@ def landingPage() {
             String embedUrl = buildDashboardEmbedUrl()
             if (embedUrl) {
                 String encodedSrc = htmlAttributeEncode(embedUrl)
-                paragraph "<iframe src=\"${encodedSrc}\" style=\"width: 100%; max-width: 1100px; height: 820px; border: 0; display: block; margin: 0 auto;\" sandbox=\"allow-same-origin allow-scripts allow-forms allow-popups\"></iframe>"
+                String iframeId = 'weather-dashboard-preview-frame'
+                paragraph "<iframe id=\"${iframeId}\" src=\"${encodedSrc}\" style=\"width: 100%; max-width: 1240px; height: 1040px; border: 0; display: block; margin: 0 auto; border-radius: 18px; box-shadow: 0 18px 36px rgba(0,0,0,0.35);\" sandbox=\"allow-same-origin allow-scripts allow-forms allow-popups\"></iframe>"
+                paragraph '''<script type="text/javascript">
+(function () {
+  var FRAME_ID = 'weather-dashboard-preview-frame';
+  var MIN_HEIGHT = 640;
+  var MAX_HEIGHT = 1600;
+  var lastApplied = 0;
+
+  function clampHeight(value) {
+    var size = parseInt(value, 10);
+    if (!isFinite(size) || size <= 0) return null;
+    if (size < MIN_HEIGHT) size = MIN_HEIGHT;
+    if (size > MAX_HEIGHT) size = MAX_HEIGHT;
+    return size;
+  }
+
+  function applyHeight(value) {
+    var frame = document.getElementById(FRAME_ID);
+    if (!frame) return;
+    var clamped = clampHeight(value);
+    if (!clamped) return;
+    if (clamped === lastApplied) return;
+    lastApplied = clamped;
+    frame.style.height = clamped + 'px';
+  }
+
+  function normalizePayload(payload) {
+    if (!payload) return null;
+    if (typeof payload === 'string') {
+      try {
+        return JSON.parse(payload);
+      } catch (err) {
+        return null;
+      }
+    }
+    return payload;
+  }
+
+  function handleMessage(event) {
+    var data = event && event.data ? normalizePayload(event.data) : null;
+    if (!data || data.type !== 'weather-dashboard-app:resize') return;
+    applyHeight(data.height);
+  }
+
+  if (window && window.addEventListener) {
+    window.addEventListener('message', handleMessage, false);
+    window.addEventListener('load', function () {
+      applyHeight(lastApplied || 1040);
+    }, { once: true });
+  }
+
+  applyHeight(1040);
+})();
+</script>'''
                 paragraph 'Tip: If the preview shows Hubitat\'s 404 page, upload <code>weather-dashboard-app.html</code> and <code>weather-dashboard-app.js</code> to Hubitat\'s File Manager so they are served from <code>/local/</code>.'
             } else {
                 Map makerStatus = makerApiAppInfo()

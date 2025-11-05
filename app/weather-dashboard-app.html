@@ -19,21 +19,33 @@
       body {
         margin: 0;
         min-height: 100%;
+        display: flex;
+        justify-content: center;
+        align-items: flex-start;
+        padding: 24px 16px 36px;
+        box-sizing: border-box;
+        overflow: hidden;
       }
       .wdash-app-loader {
         display: flex;
         align-items: center;
         justify-content: center;
-        min-height: 100%;
-        padding: 24px 16px;
+        width: 100%;
+        max-width: 1240px;
+        margin: 0 auto;
+        min-height: 0;
+        padding: 18px 20px 28px;
         box-sizing: border-box;
         text-align: center;
         line-height: 1.6;
         font-size: 1rem;
         color: rgba(231, 239, 255, 0.9);
+        background: radial-gradient(circle at top, rgba(20, 40, 80, 0.55), rgba(4, 10, 22, 0.92));
+        border-radius: 18px;
+        box-shadow: 0 18px 36px rgba(0, 0, 0, 0.45);
       }
       .wdash-app-loader__content {
-        max-width: 540px;
+        max-width: 560px;
       }
       .wdash-app-loader__heading {
         font-size: 1.25rem;
@@ -63,6 +75,62 @@
         var rendererSrc = params.get('rendererScript');
         var appSrc = params.get('appScript');
         var bundleBase = params.get('bundleBase');
+
+        var resizePending = false;
+        var lastHeight = 0;
+
+        function measureHeight() {
+          var doc = document.documentElement;
+          var body = document.body;
+          var values = [
+            body ? body.scrollHeight : 0,
+            body ? body.offsetHeight : 0,
+            body ? body.clientHeight : 0,
+            doc ? doc.scrollHeight : 0,
+            doc ? doc.offsetHeight : 0,
+            doc ? doc.clientHeight : 0
+          ].filter(function (value) {
+            return typeof value === 'number' && value > 0;
+          });
+          if (!values.length) return 0;
+          return Math.ceil(Math.max.apply(Math, values));
+        }
+
+        function postHeight(height) {
+          if (!height) return;
+          if (!window.parent || window.parent === window) return;
+          if (height === lastHeight) return;
+          lastHeight = height;
+          try {
+            window.parent.postMessage({ type: 'weather-dashboard-app:resize', height: height }, '*');
+          } catch (err) {
+            /* ignore */
+          }
+        }
+
+        function flushResize() {
+          resizePending = false;
+          var height = measureHeight();
+          if (height) {
+            postHeight(height);
+          }
+        }
+
+        function scheduleResize() {
+          if (resizePending) return;
+          resizePending = true;
+          if (window.requestAnimationFrame) {
+            window.requestAnimationFrame(function () {
+              if (window.requestAnimationFrame) {
+                window.requestAnimationFrame(flushResize);
+              } else {
+                setTimeout(flushResize, 32);
+              }
+            });
+          } else {
+            setTimeout(flushResize, 32);
+          }
+        }
 
         function normalizePath(path) {
           if (!path) return '';
@@ -103,6 +171,7 @@
             '</div>',
             '</div>'
           ].join('');
+          scheduleResize();
         }
 
         appendScript(rendererSrc, function () {
@@ -111,8 +180,16 @@
             if (loader && loader.parentNode) {
               loader.parentNode.removeChild(loader);
             }
+            scheduleResize();
           });
         });
+
+        if (window.addEventListener) {
+          window.addEventListener('load', scheduleResize, { once: true });
+          window.addEventListener('resize', scheduleResize);
+        }
+
+        scheduleResize();
       })();
     </script>
   </body>
