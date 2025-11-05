@@ -29,7 +29,6 @@ Script appScript = shell.parse(appFile)
 appScript.binding.setVariable('settings', [:])
 appScript.binding.setVariable('app', [id: 101] as Expando)
 appScript.binding.setVariable('state', [:])
-appScript.metaClass.createAccessToken = { -> 'dashboardTokenXYZ' }
 appScript.run()
 
 Object invokePrivate(Script script, String methodName, Class<?>[] parameterTypes = [] as Class<?>[], Object... args) {
@@ -41,15 +40,14 @@ Object invokePrivate(Script script, String methodName, Class<?>[] parameterTypes
 // Scenario: fully populated Maker API configuration renders an embeddable URL with encoded parameters.
 appScript.binding.setVariable('settings', [
     makerApiBaseUrl : 'http://192.168.1.50',
+    makerApiAppId   : '501',
     makerApiToken   : 's3cr3tTOKEN',
     makerApiDeviceIds: '10, 11,12\n13'
 ])
 String embedUrl = invokePrivate(appScript, 'buildDashboardEmbedUrl') as String
 assert embedUrl?.startsWith('/local/weather-dashboard-app.html?')
 assert embedUrl.contains('hubBaseUrl=http%3A%2F%2F192.168.1.50')
-assert embedUrl.contains('appId=101')
-assert embedUrl.contains('access_token=dashboardTokenXYZ')
-assert embedUrl.contains('appToken=dashboardTokenXYZ')
+assert embedUrl.contains('appId=501')
 assert embedUrl.contains('makerToken=s3cr3tTOKEN')
 assert embedUrl.contains('makerApiToken=s3cr3tTOKEN')
 assert embedUrl.contains('deviceIds=10%2C11%2C12%2C13')
@@ -60,22 +58,15 @@ String encoded = invokePrivate(appScript, 'htmlAttributeEncode', [String] as Cla
 assert encoded == '&quot;foo&amp;bar&lt;baz&gt;'
 
 // Scenario: missing configuration disables the preview instead of emitting a malformed URL.
-appScript.binding.setVariable('settings', [makerApiBaseUrl: null, makerApiToken: 'abc'])
+appScript.binding.setVariable('settings', [makerApiBaseUrl: null, makerApiAppId: '502', makerApiToken: 'abc'])
 assert invokePrivate(appScript, 'buildDashboardEmbedUrl') == null
 
-// Scenario: OAuth disabled prevents token generation but still yields a functional embed URL.
-appScript.binding.setVariable('settings', [
-    makerApiBaseUrl : 'http://192.168.1.51',
-    makerApiToken   : 'makerOnly',
-    makerApiDeviceIds: '21'
-])
-appScript.metaClass.createAccessToken = { -> throw new RuntimeException('OAuth disabled') }
-String embedWithoutDashboardToken = invokePrivate(appScript, 'buildDashboardEmbedUrl') as String
-assert embedWithoutDashboardToken?.contains('hubBaseUrl=http%3A%2F%2F192.168.1.51')
-assert embedWithoutDashboardToken?.contains('makerToken=makerOnly')
-assert !embedWithoutDashboardToken?.contains('appToken=')
-
 // Scenario: Maker API detection tolerates missing location metadata and recognizes standard descriptors.
+appScript.binding.setVariable('settings', [
+    makerApiBaseUrl: 'http://192.168.1.60',
+    makerApiAppId  : '777',
+    makerApiToken  : 'configured'
+])
 appScript.binding.setVariable('location', new Expando())
 Map missingMaker = invokePrivate(appScript, 'makerApiAppInfo') as Map
 assert missingMaker.installed == true // configuration fallback marks Maker API as present even without location metadata

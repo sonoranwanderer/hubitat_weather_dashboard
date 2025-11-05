@@ -66,7 +66,7 @@ def landingPage() {
                 } else if (!makerApiSettingsConfigured()) {
                     paragraph "Configure the Maker API connection on the setup page to enable the embedded dashboard preview."
                 } else {
-                    paragraph "The embedded dashboard preview is temporarily unavailable. Confirm the Maker API token and hub address are still valid."
+                    paragraph "The embedded dashboard preview is temporarily unavailable. Confirm the Maker API hub address, application ID, and token are still valid."
                 }
             }
         }
@@ -260,11 +260,12 @@ def configurationPage() {
             if (!makerApiSettingsConfigured()) {
                 paragraph "Leaving the fields below blank keeps the embedded preview disabled so the hub avoids any Maker API polling overhead until you are ready."
             } else {
-                paragraph "The embedded dashboard preview and external bundle will use the saved hub address and token. Update them whenever you rotate the Maker API credentials."
+                paragraph "The embedded dashboard preview and external bundle will use the saved hub address, Maker API application ID, and token. Update them whenever you rotate the Maker API credentials or reinstall Maker API."
             }
 
             paragraph "Provide the hub connection details used by the embedded dashboard preview and external clients. See docs/setup-maker-api.md for the full Maker API walkthrough, including which options to enable."
             input name: "makerApiBaseUrl", type: "text", title: "Hubitat hub base URL", required: false, submitOnChange: true, description: "Example: http://192.168.1.10"
+            input name: "makerApiAppId", type: "text", title: "Maker API application ID", required: false, submitOnChange: true, description: "Numeric ID displayed on the Maker API confirmation screen"
             input name: "makerApiToken", type: "text", title: "Maker API token", required: false, submitOnChange: true
             input name: "makerApiDeviceIds", type: "text", title: "Maker API device IDs", required: false, submitOnChange: true, description: "Comma-separated (optional)"
         }
@@ -324,11 +325,7 @@ def configurationPage() {
 private String buildDashboardEmbedUrl() {
     String baseUrl = settings?.makerApiBaseUrl?.trim()
     String token = settings?.makerApiToken?.trim()
-    String appId = app?.id?.toString()
-    String dashboardToken = dashboardAccessTokenSetting()
-    if (!dashboardToken) {
-        dashboardToken = ensureDashboardAccessToken()
-    }
+    String appId = makerApiAppIdSetting()
 
     if (!baseUrl || !token || !appId) {
         return null
@@ -342,12 +339,6 @@ private String buildDashboardEmbedUrl() {
         makerApiToken: token,
         token      : token
     ]
-
-    if (dashboardToken) {
-        params.appToken = dashboardToken
-        params.previewToken = dashboardToken
-        params.access_token = dashboardToken
-    }
 
     List<String> deviceIds = makerApiDeviceIdList()
     if (deviceIds) {
@@ -373,10 +364,25 @@ private List<String> makerApiDeviceIdList() {
         .findAll { it }
 }
 
+private String makerApiAppIdSetting() {
+    def raw = settings?.makerApiAppId
+    if (!(raw instanceof CharSequence)) {
+        return null
+    }
+
+    String text = raw.toString().trim()
+    if (!text) {
+        return null
+    }
+
+    return text
+}
+
 private boolean makerApiSettingsConfigured() {
     String baseUrl = settings?.makerApiBaseUrl?.trim()
     String token = settings?.makerApiToken?.trim()
-    return baseUrl && token
+    String appId = makerApiAppIdSetting()
+    return baseUrl && token && appId
 }
 
 private String ensureDashboardAccessToken() {

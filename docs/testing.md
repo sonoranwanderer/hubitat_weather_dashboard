@@ -48,15 +48,15 @@ Following these steps keeps manual dashboard comparisons aligned with the archiv
    - Navigate to **Apps → Weather Dashboard App** inside Hubitat.
    - Confirm the landing page renders a full-width preview frame instead of jumping directly into configuration options.
 2. **Verify the embedded dashboard preview**
-   - If the iframe reports missing credentials, open **Configure data sources** and populate the Hub base URL (e.g., `http://192.168.1.50`) and Maker API token.
-   - Return to the landing page and confirm the `/local/weather-dashboard-app.html` bundle loads in the preview frame without browser console errors.
+   - If the iframe reports missing credentials, open **Configure data sources** and populate the Hub base URL (e.g., `http://192.168.1.50`), Maker API application ID, and Maker API token.
+   - Return to the landing page and confirm the `/local/weather-dashboard-app.html` bundle loads in the preview frame without browser console errors. The inline status panel should report the Maker API request targeting `/apps/api/<ApplicationID>/devices/all` with your token.
    - If the frame renders Hubitat's shell with a 404 message, upload `app/weather-dashboard-app.html`, `app/weather-dashboard-app.js`, and `dashboard/weather-dashboard.js` to File Manager so they are accessible from `/local/`.
 3. **Exercise navigation controls**
    - Use the **Configure data sources** button to reach the configuration form and ensure existing settings persist.
    - Navigate back to the landing page using the browser back button and confirm the preview reloads.
    - Open the **Diagnostics** link to confirm it still displays the latest payload JSON.
 4. **Smoke test Maker API injection**
-   - From the landing page, open the iframe in a new tab (right-click → *Open link in new tab*) and verify the query string includes the Maker API token (`makerToken`), the hub base URL, and any device IDs saved in preferences. If OAuth is enabled for the Weather Dashboard App you will also see an `appToken`, but it is optional.
+   - From the landing page, open the iframe in a new tab (right-click → *Open link in new tab*) and verify the query string includes the Maker API token (`makerToken`), the hub base URL, the Maker API application ID (`appId`), and any device IDs saved in preferences.
 
 These steps confirm the navigation loop and embedded preview stay functional after UI changes.
 
