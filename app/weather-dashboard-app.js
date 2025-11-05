@@ -79,18 +79,17 @@
         display: flex;
         justify-content: center;
         align-items: flex-start;
-        padding: 8px 12px 16px;
+        padding: 16px;
         box-sizing: border-box;
       }
       #${HOST_ID} {
         --wdash-app-font: 'Segoe UI', Roboto, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
-        width: 100%;
-        max-width: 1180px;
+        width: min(100%, 1200px);
         display: flex;
         flex-direction: column;
         align-items: center;
         gap: 12px;
-        padding: 8px 12px 16px;
+        padding: 0 8px 16px;
         box-sizing: border-box;
         min-height: 0;
         background: radial-gradient(circle at top, rgba(20,40,80,0.55), rgba(4,10,22,0.92));
@@ -116,20 +115,24 @@
         overflow: visible;
       }
       #${HOST_ID} .wdash-app-display-tile {
-        max-width: 1180px;
+        width: 100%;
+        max-width: 1200px;
         margin: 0 auto;
       }
-      #${HOST_ID} .wdash-app-display-tile::before {
+      #${HOST_ID} .wdash-app-display {
+        position: relative;
+        width: 100%;
+        display: block;
+        overflow: hidden;
+      }
+      #${HOST_ID} .wdash-app-display::before {
         content: '';
         display: block;
         padding-top: 75%;
       }
-      #${HOST_ID} .wdash-app-display {
+      #${HOST_ID} .wdash-app-display > * {
         position: absolute;
         inset: 0;
-        display: flex;
-      }
-      #${HOST_ID} .wdash-app-display > * {
         width: 100%;
         height: 100%;
       }
