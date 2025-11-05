@@ -8,10 +8,12 @@
 import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
 import groovy.transform.Field
+import java.io.StringWriter
 import java.math.RoundingMode
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.TimeZone
+import java.net.URLEncoder
 
 definition(
     name: "Weather Dashboard App",
@@ -21,7 +23,8 @@ definition(
     category: "Convenience",
     importUrl: "https://raw.githubusercontent.com/sonoranwanderer/ecowitt_weather_hubitat_dashboard/main/hubitat/WeatherDashboardApp.groovy",
     iconUrl: "https://raw.githubusercontent.com/sonoranwanderer/ecowitt_weather_hubitat_dashboard/main/assets/weather-dashboard-icon.svg",
-    iconX2Url: "https://raw.githubusercontent.com/sonoranwanderer/ecowitt_weather_hubitat_dashboard/main/assets/weather-dashboard-icon.svg"
+    iconX2Url: "https://raw.githubusercontent.com/sonoranwanderer/ecowitt_weather_hubitat_dashboard/main/assets/weather-dashboard-icon.svg",
+    oauth: true
 )
 
 @Field final TimeZone UTC_ZONE = TimeZone.getTimeZone('UTC')
@@ -35,7 +38,8 @@ definition(
 @Field final int MAKER_PAYLOAD_MAX_BYTES = 100000
 
 preferences {
-    page(name: "mainPage", title: "Weather Dashboard", install: true, uninstall: true)
+    page(name: "landingPage", title: "Weather Dashboard", install: true, uninstall: true)
+    page(name: "configurationPage")
     page(name: "diagnosticsPage")
 }
 
@@ -47,8 +51,113 @@ mappings {
     }
 }
 
-def mainPage() {
-    dynamicPage(name: "mainPage") {
+def landingPage() {
+    dynamicPage(name: "landingPage") {
+        section("Dashboard preview") {
+            String embedUrl = buildDashboardEmbedUrl()
+            if (embedUrl) {
+                String encodedSrc = htmlAttributeEncode(embedUrl)
+                String iframeId = 'weather-dashboard-preview-frame'
+                paragraph "<iframe id=\"${iframeId}\" src=\"${encodedSrc}\" style=\"width: 100%; max-width: 1240px; height: 930px; border: 0; display: block; margin: 0 auto; border-radius: 18px; box-shadow: 0 18px 36px rgba(0,0,0,0.35);\" sandbox=\"allow-same-origin allow-scripts allow-forms allow-popups\"></iframe>"
+                paragraph '''<script type="text/javascript">
+(function () {
+  var FRAME_ID = 'weather-dashboard-preview-frame';
+  var MIN_HEIGHT = 600;
+  var MAX_HEIGHT = 1500;
+  var DEFAULT_HEIGHT = 930;
+  var lastApplied = 0;
+
+  function clampHeight(value) {
+    var size = parseInt(value, 10);
+    if (!isFinite(size) || size <= 0) return null;
+    if (size < MIN_HEIGHT) size = MIN_HEIGHT;
+    if (size > MAX_HEIGHT) size = MAX_HEIGHT;
+    return size;
+  }
+
+  function computeAspectHeight() {
+    var frame = document.getElementById(FRAME_ID);
+    if (!frame) return null;
+    var width = frame.clientWidth || frame.offsetWidth;
+    if (!isFinite(width) || width <= 0) return null;
+    var height = Math.round(width * 3 / 4);
+    if (height < MIN_HEIGHT) height = MIN_HEIGHT;
+    if (height > MAX_HEIGHT) height = MAX_HEIGHT;
+    return height;
+  }
+
+  function applyAspectHeight() {
+    var height = computeAspectHeight();
+    if (!height) return null;
+    applyHeight(height);
+    return height;
+  }
+
+  function applyHeight(value) {
+    var frame = document.getElementById(FRAME_ID);
+    if (!frame) return;
+    var clamped = clampHeight(value);
+    if (!clamped) return;
+    if (clamped === lastApplied) return;
+    lastApplied = clamped;
+    frame.style.height = clamped + 'px';
+  }
+
+  function normalizePayload(payload) {
+    if (!payload) return null;
+    if (typeof payload === 'string') {
+      try {
+        return JSON.parse(payload);
+      } catch (err) {
+        return null;
+      }
+    }
+    return payload;
+  }
+
+  function handleMessage(event) {
+    var data = event && event.data ? normalizePayload(event.data) : null;
+    if (!data || data.type !== 'weather-dashboard-app:resize') return;
+    applyHeight(data.height);
+  }
+
+  if (window && window.addEventListener) {
+    window.addEventListener('message', handleMessage, false);
+    window.addEventListener('resize', applyAspectHeight);
+    window.addEventListener('load', function () {
+      if (!applyAspectHeight()) {
+        applyHeight(lastApplied || DEFAULT_HEIGHT);
+      }
+    }, { once: true });
+  }
+
+  if (!applyAspectHeight()) {
+    applyHeight(DEFAULT_HEIGHT);
+  }
+})();
+</script>'''
+                paragraph 'Tip: If the preview shows Hubitat\'s 404 page, upload <code>weather-dashboard-app.html</code> and <code>weather-dashboard-app.js</code> to Hubitat\'s File Manager so they are served from <code>/local/</code>.'
+            } else {
+                Map makerStatus = makerApiAppInfo()
+                if (!makerStatus?.installed) {
+                    paragraph "Install the built-in Maker API app (Apps → Add Built-In App → Maker API) and authorize Weather Dashboard App to enable the embedded dashboard preview."
+                } else if (!makerApiSettingsConfigured()) {
+                    paragraph "Configure the Maker API connection on the setup page to enable the embedded dashboard preview."
+                } else {
+                    paragraph "The embedded dashboard preview is temporarily unavailable. Confirm the Maker API hub address, application ID, and token are still valid."
+                }
+            }
+        }
+
+        section("Quick actions") {
+            href "configurationPage", title: "Configure data sources", description: "Select devices, units, and Maker API access."
+            href "diagnosticsPage", title: "Diagnostics", description: "Inspect the latest payload JSON and refresh metrics."
+        }
+    }
+}
+
+def configurationPage() {
+    dynamicPage(name: "configurationPage") {
         section("Weather data sources") {
             input name: "weatherDevices", type: "capability.sensor", title: "Weather devices", multiple: true, required: true, submitOnChange: true
             if (!settings.weatherDevices) {
@@ -218,8 +327,25 @@ def mainPage() {
         }
 
         section("Maker API access") {
-            paragraph "Provide the Maker API access token that external clients must include when requesting the consolidated dashboard payload."
+            Map makerStatus = makerApiAppInfo()
+            if (!makerStatus?.installed) {
+                paragraph "Maker API app not detected. Install it via Apps → Add Built-In App → Maker API, then enable local access and select the Weather Dashboard virtual device under “Select devices.”"
+            } else {
+                String makerLabel = makerStatus?.label ? makerStatus.label.toString() : 'Maker API'
+                paragraph "Maker API app detected (${makerLabel}). Open the Maker API configuration to copy the access token and confirm the Weather Dashboard virtual device remains selected under “Select devices.”"
+            }
+
+            if (!makerApiSettingsConfigured()) {
+                paragraph "Leaving the fields below blank keeps the embedded preview disabled so the hub avoids any Maker API polling overhead until you are ready."
+            } else {
+                paragraph "The embedded dashboard preview and external bundle will use the saved hub address, Maker API application ID, and token. Update them whenever you rotate the Maker API credentials or reinstall Maker API."
+            }
+
+            paragraph "Provide the hub connection details used by the embedded dashboard preview and external clients. See docs/setup-maker-api.md for the full Maker API walkthrough, including which options to enable."
+            input name: "makerApiBaseUrl", type: "text", title: "Hubitat hub base URL", required: false, submitOnChange: true, description: "Example: http://192.168.1.10"
+            input name: "makerApiAppId", type: "text", title: "Maker API application ID", required: false, submitOnChange: true, description: "Numeric ID displayed on the Maker API confirmation screen"
             input name: "makerApiToken", type: "text", title: "Maker API token", required: false, submitOnChange: true
+            input name: "makerApiDeviceIds", type: "text", title: "Maker API device IDs", required: false, submitOnChange: true, description: "Comma-separated (optional)"
         }
 
         section("Performance metrics summary") {
@@ -272,6 +398,235 @@ def mainPage() {
             href "diagnosticsPage", title: "View Latest Payload", description: "Show the last generated JSON payload for troubleshooting."
         }
     }
+}
+
+private String buildDashboardEmbedUrl() {
+    String baseUrl = settings?.makerApiBaseUrl?.trim()
+    String token = settings?.makerApiToken?.trim()
+    String appId = makerApiAppIdSetting()
+
+    if (!baseUrl || !token || !appId) {
+        return null
+    }
+
+    Map<String, String> params = [
+        hubBaseUrl : baseUrl,
+        hub        : baseUrl,
+        appId      : appId,
+        makerToken : token,
+        makerApiToken: token,
+        token      : token
+    ]
+
+    List<String> deviceIds = makerApiDeviceIdList()
+    if (deviceIds) {
+        String joined = deviceIds.join(',')
+        params.deviceIds = joined
+        params.devices = joined
+    }
+
+    String query = params.collect { key, value -> "${urlEncode(key)}=${urlEncode(value)}" }.join('&')
+    return "/local/weather-dashboard-app.html?${query}"
+}
+
+private List<String> makerApiDeviceIdList() {
+    String raw = settings?.makerApiDeviceIds
+    if (!raw) {
+        return []
+    }
+
+    return raw
+        .toString()
+        .split(/[\s,]+/)
+        .collect { it?.trim() }
+        .findAll { it }
+}
+
+private String makerApiAppIdSetting() {
+    def raw = settings?.makerApiAppId
+    if (!(raw instanceof CharSequence)) {
+        return null
+    }
+
+    String text = raw.toString().trim()
+    if (!text) {
+        return null
+    }
+
+    return text
+}
+
+private boolean makerApiSettingsConfigured() {
+    String baseUrl = settings?.makerApiBaseUrl?.trim()
+    String token = settings?.makerApiToken?.trim()
+    String appId = makerApiAppIdSetting()
+    return baseUrl && token && appId
+}
+
+private String ensureDashboardAccessToken() {
+    String token = state?.dashboardAccessToken
+    if (token instanceof CharSequence && token.toString()) {
+        return token.toString()
+    }
+
+    try {
+        String generated = createAccessToken()
+        if (generated) {
+            state.dashboardAccessToken = generated
+            logInfo "Generated Weather Dashboard App access token"
+            return generated
+        }
+    } catch (Exception ex) {
+        logError "Unable to create Weather Dashboard App access token: ${ex?.message ?: ex}", ex
+    }
+
+    return null
+}
+
+private String dashboardAccessTokenSetting() {
+    def raw = state?.dashboardAccessToken
+    if (!(raw instanceof CharSequence)) {
+        return null
+    }
+    String text = raw.toString().trim()
+    return text ? text : null
+}
+
+private String extractDashboardAccessToken() {
+    def raw = params?.access_token ?: params?.appToken ?: params?.previewToken ?: params?.dashboardToken
+    if (!(raw instanceof CharSequence)) {
+        return null
+    }
+    String text = raw.toString().trim()
+    return text ? text : null
+}
+
+private Map makerApiAppInfo() {
+    Map status = [installed: false, locationAvailable: location != null]
+
+    if (makerApiSettingsConfigured()) {
+        status.installed = true
+        status.label = 'Maker API'
+    }
+
+    def loc = location
+    if (!loc) {
+        return status
+    }
+
+    List<Object> candidates = []
+    candidates.addAll(makerApiMatchesFromMethod(loc, 'getAppsByName', ['Maker API'] as Object[]))
+    candidates.addAll(makerApiMatchesFromMethod(loc, 'findInstalledAppByName', ['Maker API'] as Object[]))
+    candidates.addAll(makerApiMatchesFromMethod(loc, 'getInstalledAppByName', ['Maker API'] as Object[]))
+
+    if (candidates.isEmpty()) {
+        candidates.addAll(makerApiMatchesFromProperty(loc, 'apps'))
+        candidates.addAll(makerApiMatchesFromProperty(loc, 'installedApps'))
+        candidates.addAll(makerApiMatchesFromProperty(loc, 'appList'))
+        candidates.addAll(makerApiMatchesFromProperty(loc, 'smartApps'))
+        candidates.addAll(makerApiMatchesFromProperty(loc, 'childApps'))
+    }
+
+    Object found = candidates.find { makerApiDescriptorMatches(it) }
+    if (found) {
+        status.installed = true
+        status.label = makerApiDescriptorLabel(found)
+        status.namespace = makerApiDescriptorNamespace(found)
+    }
+
+    return status
+}
+
+private List<Object> makerApiMatchesFromMethod(Object loc, String methodName, Object[] args) {
+    if (!loc) {
+        return []
+    }
+
+    try {
+        def value = loc."${methodName}"(*args)
+        return makerApiNormalizeCollection(value)
+    } catch (MissingMethodException ignored) {
+    } catch (Throwable ignored) {
+    }
+    return []
+}
+
+private List<Object> makerApiMatchesFromProperty(Object loc, String propertyName) {
+    if (!loc) {
+        return []
+    }
+
+    try {
+        def value = loc."${propertyName}"
+        return makerApiNormalizeCollection(value)
+    } catch (MissingPropertyException ignored) {
+    } catch (Throwable ignored) {
+    }
+    return []
+}
+
+private List<Object> makerApiNormalizeCollection(Object value) {
+    if (value == null) {
+        return []
+    }
+    if (value instanceof Collection) {
+        return value.findAll { it != null } as List<Object>
+    }
+    return [value]
+}
+
+private boolean makerApiDescriptorMatches(Object descriptor) {
+    if (descriptor == null) {
+        return false
+    }
+    String name = makerApiDescriptorLabel(descriptor)?.toLowerCase()
+    String typeName = descriptor?.typeName?.toString()?.toLowerCase()
+    String namespace = makerApiDescriptorNamespace(descriptor)?.toLowerCase()
+
+    boolean nameMatch = name?.contains('maker api') || (name?.contains('maker') && name?.contains('api'))
+    boolean typeMatch = typeName?.contains('maker') && typeName?.contains('api')
+    boolean namespaceMatch = namespace?.contains('maker') && (name?.contains('api') || typeName?.contains('api'))
+
+    return nameMatch || typeMatch || namespaceMatch
+}
+
+private String makerApiDescriptorLabel(Object descriptor) {
+    def options = [
+        descriptor?.label,
+        descriptor?.name,
+        descriptor?.appName,
+        descriptor?.displayName,
+        descriptor?.typeName,
+        descriptor?.type?.name
+    ]
+    String label = options.find { it }?.toString()
+    return label ?: 'Maker API'
+}
+
+private String makerApiDescriptorNamespace(Object descriptor) {
+    def options = [
+        descriptor?.namespace,
+        descriptor?.appNamespace,
+        descriptor?.type?.namespace
+    ]
+    return options.find { it }?.toString()
+}
+
+private String htmlAttributeEncode(String value) {
+    if (value == null) {
+        return ''
+    }
+
+    value
+        .replace('&', '&amp;')
+        .replace('"', '&quot;')
+        .replace("'", '&#39;')
+        .replace('<', '&lt;')
+        .replace('>', '&gt;')
+}
+
+private String urlEncode(String value) {
+    URLEncoder.encode(value ?: '', 'UTF-8')
 }
 
 private void attributeInputs(String label, String attrSetting, String defaultAttr, Map options) {
@@ -383,11 +738,48 @@ private void logError(String message, Throwable t = null) {
     if (!shouldLogLevel('error')) {
         return
     }
+
+    String details = message ?: 'Error'
     if (t) {
-        log.error message, t
-    } else {
-        log.error message
+        String throwableSummary = t?.message ?: t?.toString()
+        if (throwableSummary) {
+            details = "${details}: ${throwableSummary}"
+        }
     }
+
+    log.error details
+
+    if (t && shouldLogLevel('debug')) {
+        String stackTrace = formatStackTrace(t)
+        if (stackTrace) {
+            log.debug stackTrace
+        }
+    }
+}
+
+private String formatStackTrace(Throwable t) {
+    if (!t) {
+        return null
+    }
+
+    def elements = t.stackTrace
+    if (!elements) {
+        return t.toString()
+    }
+
+    StringWriter sw = new StringWriter()
+    sw.append(t.toString()).append('\n')
+    elements.each { element ->
+        sw.append('\t').append('at ').append(String.valueOf(element)).append('\n')
+    }
+    Throwable cause = t.cause
+    if (cause && cause != t) {
+        String causeTrace = formatStackTrace(cause)
+        if (causeTrace) {
+            sw.append('Caused by: ').append(causeTrace)
+        }
+    }
+    return sw.toString()
 }
 
 private void renderJsonError(int statusCode, String message) {
@@ -405,7 +797,7 @@ private String makerTokenSetting() {
 }
 
 private String extractMakerToken() {
-    def raw = params?.makerToken ?: params?.access_token ?: params?.accessToken
+    def raw = params?.makerToken ?: params?.makerApiToken ?: params?.token ?: params?.accessToken
     if (!(raw instanceof CharSequence)) {
         return null
     }
@@ -413,7 +805,7 @@ private String extractMakerToken() {
     return text ? text : null
 }
 
-private boolean makerTokenMatches(String provided, String expected) {
+private boolean tokensMatch(String provided, String expected) {
     if (!provided || !expected) {
         return false
     }
@@ -920,6 +1312,7 @@ def appButtonHandler(String buttonName) {
 
 def installed() {
     logInfo "Installing Weather Dashboard App"
+    ensureDashboardAccessToken()
     initialize()
 }
 
@@ -927,6 +1320,7 @@ def updated() {
     logInfo "Updating Weather Dashboard App"
     unschedule()
     unsubscribe()
+    ensureDashboardAccessToken()
     initialize()
 }
 
@@ -1900,24 +2294,48 @@ def refreshWeatherData() {
 
 
 def handleDashboardRequest() {
-    String configuredToken = makerTokenSetting()
-    if (!configuredToken) {
-        logWarn "Weather Dashboard App Maker endpoint denied access: Maker API token not configured"
+    String dashboardToken = dashboardAccessTokenSetting()
+    if (!dashboardToken) {
+        dashboardToken = ensureDashboardAccessToken()
+    }
+
+    boolean requireDashboardToken = dashboardToken instanceof CharSequence && dashboardToken.toString()
+
+    if (requireDashboardToken) {
+        String providedDashboardToken = extractDashboardAccessToken()
+        if (!providedDashboardToken) {
+            logWarn "Weather Dashboard App Maker endpoint denied access: dashboard token missing"
+            renderJsonError(401, 'Dashboard token missing.')
+            return
+        }
+
+        if (!tokensMatch(providedDashboardToken, dashboardToken)) {
+            logWarn "Weather Dashboard App Maker endpoint denied access: dashboard token invalid"
+            renderJsonError(401, 'Dashboard token invalid.')
+            return
+        }
+    }
+
+    if (!makerApiSettingsConfigured()) {
+        logWarn "Weather Dashboard App Maker endpoint denied access: Maker API not configured"
         renderJsonError(503, 'Maker API token not configured.')
         return
     }
 
-    String providedToken = extractMakerToken()
-    if (!providedToken) {
-        logWarn "Weather Dashboard App Maker endpoint denied access: token missing"
-        renderJsonError(401, 'Maker token missing.')
-        return
-    }
+    String configuredMakerToken = makerTokenSetting()
+    if (configuredMakerToken) {
+        String providedMakerToken = extractMakerToken()
+        if (!providedMakerToken) {
+            logWarn "Weather Dashboard App Maker endpoint denied access: Maker token missing"
+            renderJsonError(401, 'Maker token missing.')
+            return
+        }
 
-    if (!makerTokenMatches(providedToken, configuredToken)) {
-        logWarn "Weather Dashboard App Maker endpoint denied access: invalid token"
-        renderJsonError(401, 'Maker token invalid.')
-        return
+        if (!tokensMatch(providedMakerToken, configuredMakerToken)) {
+            logWarn "Weather Dashboard App Maker endpoint denied access: Maker token invalid"
+            renderJsonError(401, 'Maker token invalid.')
+            return
+        }
     }
 
     Map snapshot = currentPayloadSnapshot()

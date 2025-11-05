@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Weather Dashboard App Preview</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: 'Segoe UI', Roboto, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+        background: radial-gradient(circle at top, rgba(20, 40, 80, 0.55), rgba(4, 10, 22, 0.92));
+        color: #e7efff;
+      }
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        margin: 0;
+        min-height: 100%;
+        display: flex;
+        justify-content: center;
+        align-items: flex-start;
+        padding: 24px 16px 36px;
+        box-sizing: border-box;
+        overflow: hidden;
+      }
+      .wdash-app-loader {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        max-width: 1240px;
+        margin: 0 auto;
+        min-height: 0;
+        padding: 18px 20px 28px;
+        box-sizing: border-box;
+        text-align: center;
+        line-height: 1.6;
+        font-size: 1rem;
+        color: rgba(231, 239, 255, 0.9);
+        background: radial-gradient(circle at top, rgba(20, 40, 80, 0.55), rgba(4, 10, 22, 0.92));
+        border-radius: 18px;
+        box-shadow: 0 18px 36px rgba(0, 0, 0, 0.45);
+      }
+      .wdash-app-loader__content {
+        max-width: 560px;
+      }
+      .wdash-app-loader__heading {
+        font-size: 1.25rem;
+        font-weight: 600;
+        margin-bottom: 12px;
+        letter-spacing: 0.015em;
+      }
+      .wdash-app-loader__details {
+        font-size: 0.95rem;
+        opacity: 0.88;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wdash-app-loader" id="wdash-app-loader">
+      <div class="wdash-app-loader__content">
+        <div class="wdash-app-loader__heading">Preparing Weather Dashboard…</div>
+        <div class="wdash-app-loader__details">
+          If this message does not disappear, confirm that <code>weather-dashboard.js</code>
+          and <code>weather-dashboard-app.js</code> are uploaded to Hubitat's File Manager.
+        </div>
+      </div>
+    </div>
+    <script>
+      (function bootstrap() {
+        var params = new URLSearchParams(window.location.search || '');
+        var rendererSrc = params.get('rendererScript');
+        var appSrc = params.get('appScript');
+        var bundleBase = params.get('bundleBase');
+
+        var resizePending = false;
+        var lastHeight = 0;
+
+        function measureHeight() {
+          var doc = document.documentElement;
+          var body = document.body;
+          var values = [
+            body ? body.scrollHeight : 0,
+            body ? body.offsetHeight : 0,
+            body ? body.clientHeight : 0,
+            doc ? doc.scrollHeight : 0,
+            doc ? doc.offsetHeight : 0,
+            doc ? doc.clientHeight : 0
+          ].filter(function (value) {
+            return typeof value === 'number' && value > 0;
+          });
+          if (!values.length) return 0;
+          return Math.ceil(Math.max.apply(Math, values));
+        }
+
+        function postHeight(height) {
+          if (!height) return;
+          if (!window.parent || window.parent === window) return;
+          if (height === lastHeight) return;
+          lastHeight = height;
+          try {
+            window.parent.postMessage({ type: 'weather-dashboard-app:resize', height: height }, '*');
+          } catch (err) {
+            /* ignore */
+          }
+        }
+
+        function flushResize() {
+          resizePending = false;
+          var height = measureHeight();
+          if (height) {
+            postHeight(height);
+          }
+        }
+
+        function scheduleResize() {
+          if (resizePending) return;
+          resizePending = true;
+          if (window.requestAnimationFrame) {
+            window.requestAnimationFrame(function () {
+              if (window.requestAnimationFrame) {
+                window.requestAnimationFrame(flushResize);
+              } else {
+                setTimeout(flushResize, 32);
+              }
+            });
+          } else {
+            setTimeout(flushResize, 32);
+          }
+        }
+
+        function normalizePath(path) {
+          if (!path) return '';
+          return path.endsWith('/') ? path : path + '/';
+        }
+
+        var base = normalizePath(bundleBase || '/local');
+        if (!rendererSrc) {
+          rendererSrc = base + 'weather-dashboard.js';
+        }
+        if (!appSrc) {
+          appSrc = base + 'weather-dashboard-app.js';
+        }
+
+        function appendScript(src, onload) {
+          var script = document.createElement('script');
+          script.async = false;
+          script.src = src;
+          if (onload) {
+            script.addEventListener('load', onload, { once: true });
+          }
+          script.addEventListener('error', function (event) {
+            console.error('Weather Dashboard App: failed to load script', src, event);
+            reportFailure('Unable to load ' + src + '.');
+          });
+          document.body.appendChild(script);
+        }
+
+        function reportFailure(message) {
+          var host = document.getElementById('wdash-app-loader');
+          if (!host) return;
+          host.innerHTML = [
+            '<div class="wdash-app-loader__content">',
+            '<div class="wdash-app-loader__heading">Weather Dashboard preview unavailable</div>',
+            '<div class="wdash-app-loader__details">',
+            message.replace(/</g, '&lt;').replace(/>/g, '&gt;'),
+            ' Verify the files are uploaded to Hubitat&#39;s File Manager and retry.',
+            '</div>',
+            '</div>'
+          ].join('');
+          scheduleResize();
+        }
+
+        appendScript(rendererSrc, function () {
+          appendScript(appSrc, function () {
+            var loader = document.getElementById('wdash-app-loader');
+            if (loader && loader.parentNode) {
+              loader.parentNode.removeChild(loader);
+            }
+            scheduleResize();
+          });
+        });
+
+        if (window.addEventListener) {
+          window.addEventListener('load', scheduleResize, { once: true });
+          window.addEventListener('resize', scheduleResize);
+        }
+
+        scheduleResize();
+      })();
+    </script>
+  </body>
+</html>

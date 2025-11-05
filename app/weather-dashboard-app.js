@@ -27,11 +27,14 @@
     failureStreak: 0,
     lastSuccessAt: null,
     endpointUrl: null,
-    status: { level: 'info', message: 'Initializing…', details: [] }
+    status: { level: 'info', message: 'Initializing…', details: [] },
+    statusMinHeight: 0
   };
 
   let shellElements = null;
   let dataTileContent = null;
+  let pendingHostResizeSync = false;
+  let lastReportedHostHeight = 0;
 
   const publicApi = {
     get state() {
@@ -63,25 +66,135 @@
     }
   }
 
+  function measureDocumentHeight() {
+    const doc = global.document;
+    if (!doc) return 0;
+    const body = doc.body;
+    const html = doc.documentElement;
+    const values = [
+      body ? body.scrollHeight : 0,
+      body ? body.offsetHeight : 0,
+      body ? body.clientHeight : 0,
+      html ? html.scrollHeight : 0,
+      html ? html.offsetHeight : 0,
+      html ? html.clientHeight : 0
+    ].filter(value => typeof value === 'number' && value > 0);
+    if (!values.length) return 0;
+    return Math.ceil(Math.max(...values));
+  }
+
+  function postPreviewHeight(height) {
+    if (!global || !global.parent || global.parent === global) return;
+    if (!height || !Number.isFinite(height)) return;
+    const size = Math.max(0, Math.ceil(height));
+    try {
+      global.parent.postMessage({ type: 'weather-dashboard-app:resize', height: size }, '*');
+    } catch (err) {
+      /* ignore cross-origin errors */
+    }
+  }
+
+  function flushHostResizeSync() {
+    pendingHostResizeSync = false;
+    const height = measureDocumentHeight();
+    if (!height || height === lastReportedHostHeight) {
+      return;
+    }
+    lastReportedHostHeight = height;
+    postPreviewHeight(height);
+  }
+
+  function scheduleHostResizeSync() {
+    if (!global || !global.parent || global.parent === global) return;
+    if (pendingHostResizeSync) return;
+    pendingHostResizeSync = true;
+    const trigger = () => {
+      if (typeof global.requestAnimationFrame === 'function') {
+        global.requestAnimationFrame(flushHostResizeSync);
+      } else {
+        global.setTimeout(flushHostResizeSync, 32);
+      }
+    };
+    if (typeof global.requestAnimationFrame === 'function') {
+      global.requestAnimationFrame(trigger);
+    } else {
+      global.setTimeout(trigger, 32);
+    }
+  }
+
   function injectStyles() {
     const doc = global.document;
     if (!doc || doc.getElementById(STYLE_ID)) return;
     const style = doc.createElement('style');
     style.id = STYLE_ID;
     style.textContent = `
+      html, body {
+        height: 100%;
+      }
+      body {
+        margin: 0;
+        min-height: 100%;
+        display: flex;
+        justify-content: center;
+        align-items: flex-start;
+        padding: 24px 16px 36px;
+        box-sizing: border-box;
+        overflow: hidden;
+      }
       #${HOST_ID} {
         --wdash-app-font: 'Segoe UI', Roboto, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+        width: 100%;
+        max-width: 1240px;
         display: flex;
         flex-direction: column;
-        gap: 18px;
-        padding: 18px;
+        align-items: stretch;
+        gap: 20px;
+        padding: 18px 20px 28px;
+        margin: 0 auto;
         box-sizing: border-box;
-        min-height: 100vh;
+        min-height: 0;
         background: radial-gradient(circle at top, rgba(20,40,80,0.55), rgba(4,10,22,0.92));
         font-family: var(--wdash-app-font);
       }
+      #${HOST_ID} .wdash-app-status,
+      #${HOST_ID} .wdash-app-display-tile {
+        width: 100%;
+        max-width: 1200px;
+        margin: 0 auto;
+      }
       #${HOST_ID} .tile {
         position: relative;
+        width: 100%;
+        margin: 0 auto;
+        background: transparent;
+        box-shadow: none;
+        border: 0;
+        overflow: visible;
+      }
+      #${HOST_ID} .tile-primary {
+        position: relative;
+        padding: 0;
+        background: transparent;
+        overflow: visible;
+      }
+      #${HOST_ID} .wdash-app-display-tile {
+        width: 100%;
+        max-width: 1200px;
+        margin: 0 auto;
+      }
+      #${HOST_ID} .wdash-app-display {
+        position: relative;
+        width: 100%;
+        max-width: 1200px;
+        margin: 0 auto;
+        aspect-ratio: 4 / 3;
+        display: block;
+      }
+      #${HOST_ID} .wdash-app-display > * {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
       }
       #${STATUS_ID} {
         font-family: var(--wdash-app-font);
@@ -93,6 +206,8 @@
         box-shadow: 0 18px 36px rgba(0,0,0,0.45);
         line-height: 1.55;
         font-size: 0.95rem;
+        width: 100%;
+        box-sizing: border-box;
       }
       #${STATUS_ID}[data-level="error"] {
         background: linear-gradient(125deg, rgba(72,14,30,0.92), rgba(36,6,14,0.95));
@@ -193,6 +308,7 @@
         prepend: true,
         onCreate: el => {
           el.dataset.level = 'info';
+          el.classList.add('wdash-app-status');
         },
         onEnsure: el => {
           if (!el.dataset.level) {
@@ -202,7 +318,7 @@
       });
 
       const displayTile = ensureAndAppend(doc, host, DISPLAY_TILE_ID, {
-        className: 'tile tile--weather-display',
+        className: 'tile tile--weather-display wdash-app-display-tile',
         onEnsure: el => {
           el.classList.add('wdash-host-tile');
         }
@@ -211,7 +327,7 @@
       let displayPrimary = displayTile.querySelector('.tile-primary');
       if (!displayPrimary) {
         displayPrimary = doc.createElement('div');
-        displayPrimary.className = 'tile-primary';
+        displayPrimary.className = 'tile-primary wdash-app-display';
         displayTile.appendChild(displayPrimary);
       }
 
@@ -242,6 +358,7 @@
       };
     }
 
+    scheduleHostResizeSync();
     return shellElements;
   }
 
@@ -275,6 +392,15 @@
       markup += `<div class="wdash-app-status__details"><ul>${items}</ul></div>`;
     }
     status.innerHTML = markup;
+
+    const measured = Math.max(status.scrollHeight || 0, status.offsetHeight || 0);
+    if (measured > 0) {
+      const nextMin = Math.max(state.statusMinHeight || 0, measured);
+      state.statusMinHeight = nextMin;
+      status.style.minHeight = `${nextMin}px`;
+    }
+
+    scheduleHostResizeSync();
   }
 
   function readQueryConfig() {
@@ -429,10 +555,20 @@
 
     config.hubBaseUrl = normalizeHubBase(pickValue(source, ['hubBaseUrl', 'hubUrl', 'hub', 'hubIp']));
     config.appId = normalizeId(pickValue(source, ['appId', 'applicationId', 'app', 'dashboardAppId']));
-    config.makerToken = normalizeToken(pickValue(source, ['makerToken', 'token', 'access_token', 'accessToken']));
+    config.dashboardToken = normalizeToken(
+      pickValue(source, ['appToken', 'previewToken', 'dashboardToken', 'access_token', 'appAccessToken', 'dashboardAccessToken'])
+    );
+    config.makerToken = normalizeToken(pickValue(source, ['makerToken', 'makerApiToken', 'maker_token', 'token', 'maker']));
     config.deviceIds = normalizeDeviceList(pickValue(source, ['deviceIds', 'devices', 'deviceId', 'device']));
     config.pollIntervalMs = normalizeDuration(pickValue(source, ['pollIntervalMs', 'pollInterval', 'interval', 'refresh', 'refreshInterval']));
     config.maxBackoffMs = normalizeDuration(pickValue(source, ['maxBackoffMs', 'maxBackoff', 'backoff', 'backoffMs']));
+
+    if (!config.dashboardToken && config.makerToken) {
+      config.dashboardToken = config.makerToken;
+    }
+    if (!config.makerToken && config.dashboardToken) {
+      config.makerToken = config.dashboardToken;
+    }
 
     return config;
   }
@@ -479,7 +615,7 @@
     }
 
     if (!config.makerToken) {
-      errors.push('Maker API token missing. Supply ?token=YOUR_TOKEN (alias ?access_token=).');
+      errors.push('Maker API token missing. Supply ?makerToken=YOUR_TOKEN.');
     }
 
     if (!Array.isArray(config.deviceIds) || config.deviceIds.length === 0) {
@@ -504,14 +640,15 @@
   }
 
   function buildEndpointUrl(config) {
-    if (!config || !config.hubBaseUrl || !config.appId || !config.makerToken) {
+    if (!config || !config.hubBaseUrl || !config.appId) {
       return null;
     }
     try {
       const base = new URL(config.hubBaseUrl);
-      const target = new URL(`/apps/api/${encodeURIComponent(config.appId)}/dashboard`, base);
-      target.searchParams.set('access_token', config.makerToken);
-      target.searchParams.set('makerToken', config.makerToken);
+      const target = new URL(`/apps/api/${encodeURIComponent(config.appId)}/devices/all`, base);
+      if (config.makerToken) {
+        target.searchParams.set('access_token', config.makerToken);
+      }
       if (Array.isArray(config.deviceIds) && config.deviceIds.length) {
         target.searchParams.set('deviceIds', config.deviceIds.join(','));
       }
@@ -519,6 +656,238 @@
     } catch (err) {
       return null;
     }
+  }
+
+  function normalizePayloadResponse(response, originalText) {
+    if (response == null) {
+      return { payload: response, text: originalText };
+    }
+
+    const makerPayload = convertMakerApiResponse(response, state.config);
+    if (makerPayload) {
+      return { payload: makerPayload, text: JSON.stringify(makerPayload) };
+    }
+
+    return { payload: response, text: originalText };
+  }
+
+  function convertMakerApiResponse(response, config) {
+    const devices = normalizeMakerApiDeviceList(response);
+    if (!devices) return null;
+
+    const device = selectDashboardDevice(devices, config);
+    if (!device) {
+      throw new Error('Maker API response did not include the Weather Dashboard Device. Confirm it is authorized in Maker API.');
+    }
+
+    const payload = buildPayloadFromDevice(device);
+    if (!payload) {
+      throw new Error('Weather Dashboard Device attributes were empty. Trigger a refresh in Hubitat and retry.');
+    }
+
+    return payload;
+  }
+
+  function normalizeMakerApiDeviceList(response) {
+    if (!response) return null;
+
+    if (Array.isArray(response)) {
+      return response;
+    }
+
+    if (Array.isArray(response.devices)) {
+      return response.devices;
+    }
+
+    if (response.device && typeof response.device === 'object') {
+      return [response.device];
+    }
+
+    if (response.name && response.attributes) {
+      return [response];
+    }
+
+    return null;
+  }
+
+  function selectDashboardDevice(devices, config) {
+    if (!Array.isArray(devices) || devices.length === 0) {
+      return null;
+    }
+
+    const normalizedIds = new Set(
+      Array.isArray(config?.deviceIds)
+        ? config.deviceIds.map(id => String(id))
+        : []
+    );
+
+    if (normalizedIds.size > 0) {
+      for (const device of devices) {
+        const id = device && device.id != null ? String(device.id) : '';
+        if (normalizedIds.has(id)) {
+          return device;
+        }
+      }
+    }
+
+    const byLabel = devices.find(device => {
+      const name = (device?.name || '').toLowerCase();
+      const label = (device?.label || '').toLowerCase();
+      const type = (device?.type || '').toLowerCase();
+      return [name, label, type].some(text => text.includes('weather dashboard'));
+    });
+    if (byLabel) {
+      return byLabel;
+    }
+
+    return devices.length === 1 ? devices[0] : null;
+  }
+
+  function buildPayloadFromDevice(device) {
+    const attributes = toAttributeMap(device?.attributes);
+    if (!attributes) return null;
+
+    const payload = {};
+
+    const core = parseJsonAttribute(attributes, 'segmentCore');
+    if (core && typeof core === 'object') {
+      Object.assign(payload, core);
+    }
+
+    const precip = parseJsonAttribute(attributes, 'segmentPrecip');
+    if (precip && typeof precip === 'object') {
+      Object.assign(payload, precip);
+    }
+
+    const air = parseJsonAttribute(attributes, 'segmentAirQuality');
+    if (air && typeof air === 'object') {
+      if (air.outdoorAirQuality && typeof air.outdoorAirQuality === 'object') {
+        payload.outdoorAirQuality = air.outdoorAirQuality;
+      }
+      if (air.indoorAirQuality && typeof air.indoorAirQuality === 'object') {
+        payload.indoorAirQuality = air.indoorAirQuality;
+      }
+    }
+
+    const ambient = collectAmbientSegments(attributes);
+    if (ambient) {
+      if (ambient.sensors.length) payload.ambientSensors = ambient.sensors;
+      if (ambient.rotation != null) payload.ambientRotationSeconds = ambient.rotation;
+      if (ambient.humidityUnit != null) payload.ambientHumidityUnit = ambient.humidityUnit;
+      if (ambient.total != null) payload.totalAmbientSensors = ambient.total;
+    }
+
+    const meta = parseJsonAttribute(attributes, 'segmentMeta');
+    if (meta && typeof meta === 'object') {
+      if (meta.outlook24h && typeof meta.outlook24h === 'object') {
+        payload.outlook24h = meta.outlook24h;
+      }
+      if (meta.metadata && typeof meta.metadata === 'object') {
+        payload.metadata = Object.assign({}, payload.metadata || {}, meta.metadata);
+      }
+    }
+
+    const layoutSegment = parseJsonAttribute(attributes, 'segmentLayout');
+    if (layoutSegment && typeof layoutSegment === 'object' && layoutSegment.layout) {
+      payload.metadata = payload.metadata || {};
+      payload.metadata.layout = layoutSegment.layout;
+    }
+
+    const updated = normalizeText(attributes.dashboardUpdated || attributes.lastUpdated);
+    if (updated) {
+      payload.metadata = payload.metadata || {};
+      if (!payload.metadata.generatedAt) {
+        payload.metadata.generatedAt = updated;
+      }
+      payload.metadata.dashboardUpdatedAt = updated;
+    }
+
+    return Object.keys(payload).length ? payload : null;
+  }
+
+  function toAttributeMap(source) {
+    if (!source) return null;
+    if (Array.isArray(source)) {
+      const map = {};
+      source.forEach(entry => {
+        if (!entry || typeof entry !== 'object') return;
+        const key = entry.name || entry.attribute || entry.id;
+        if (!key) return;
+        map[key] = entry.value != null ? entry.value : entry.currentValue;
+      });
+      return map;
+    }
+    if (typeof source === 'object') {
+      return source;
+    }
+    return null;
+  }
+
+  function parseJsonAttribute(attributes, key) {
+    if (!attributes || !key) return null;
+    const raw = attributes[key];
+    if (raw == null) return null;
+    const text = normalizeText(raw);
+    if (!text) return null;
+    try {
+      return JSON.parse(text);
+    } catch (err) {
+      throw new Error(`Maker API attribute ${key} contained invalid JSON (${err.message}).`);
+    }
+  }
+
+  function collectAmbientSegments(attributes) {
+    if (!attributes) return null;
+    const segments = [];
+    for (const key of Object.keys(attributes)) {
+      const match = key.match(/^segmentAmbient(\d+)$/);
+      if (!match) continue;
+      const segment = parseJsonAttribute(attributes, key);
+      if (segment && typeof segment === 'object') {
+        segments.push({ index: Number(match[1]) || segment.segmentIndex || 0, data: segment });
+      }
+    }
+
+    if (!segments.length) return null;
+    segments.sort((a, b) => a.index - b.index);
+
+    const sensors = [];
+    let rotation = null;
+    let humidityUnit = null;
+    let total = null;
+
+    segments.forEach(entry => {
+      const segment = entry.data;
+      if (!segment || typeof segment !== 'object') return;
+      const list = Array.isArray(segment.ambientSensors) ? segment.ambientSensors : [];
+      list.forEach(sensor => {
+        if (sensor && typeof sensor === 'object') {
+          sensors.push(sensor);
+        }
+      });
+      if (rotation == null && segment.ambientRotationSeconds != null) {
+        rotation = segment.ambientRotationSeconds;
+      }
+      if (humidityUnit == null && segment.ambientHumidityUnit != null) {
+        humidityUnit = segment.ambientHumidityUnit;
+      }
+      const candidateTotal = Number(segment.totalAmbientSensors);
+      if (Number.isFinite(candidateTotal)) {
+        total = total == null ? candidateTotal : Math.max(total, candidateTotal);
+      }
+    });
+
+    return {
+      sensors,
+      rotation,
+      humidityUnit,
+      total: total != null ? total : sensors.length
+    };
+  }
+
+  function normalizeText(value) {
+    if (value == null) return '';
+    return String(value).trim();
   }
 
   function evaluateConfiguration() {
@@ -679,6 +1048,8 @@
     if (api && typeof api.safeRenderFromData === 'function') {
       api.safeRenderFromData();
     }
+
+    scheduleHostResizeSync();
   }
 
   function buildLoadingDetails(config) {
@@ -698,7 +1069,8 @@
     state.failureStreak = 0;
     state.lastSuccessAt = Date.now();
     const parsed = parseJson(text);
-    applyPayloadText(text);
+    const normalized = normalizePayloadResponse(parsed, text);
+    applyPayloadText(normalized.text);
 
     const details = [];
     const timestamp = formatTimestamp(state.lastSuccessAt);
@@ -708,8 +1080,8 @@
     const summary = buildConfigSummary(state.config);
     if (summary) details.push(summary);
     details.push(`Next refresh in ${formatDuration(state.pollIntervalMs)}.`);
-    if (parsed && parsed.metadata && parsed.metadata.generatedAt) {
-      details.push(`Payload generated at ${parsed.metadata.generatedAt}.`);
+    if (normalized.payload && normalized.payload.metadata && normalized.payload.metadata.generatedAt) {
+      details.push(`Payload generated at ${normalized.payload.metadata.generatedAt}.`);
     }
     if (state.validationWarnings.length) {
       details.push(...state.validationWarnings.map(item => `⚠ ${item}`));
@@ -815,6 +1187,11 @@
     ensureAppShell();
     bootstrapRenderer();
     configureAndStart();
+  }
+
+  if (typeof global.addEventListener === 'function') {
+    global.addEventListener('resize', scheduleHostResizeSync);
+    global.addEventListener('load', scheduleHostResizeSync);
   }
 
   whenDomReady(initialize);
