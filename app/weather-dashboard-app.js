@@ -27,7 +27,8 @@
     failureStreak: 0,
     lastSuccessAt: null,
     endpointUrl: null,
-    status: { level: 'info', message: 'Initializing…', details: [] }
+    status: { level: 'info', message: 'Initializing…', details: [] },
+    statusMinHeight: 0
   };
 
   let shellElements = null;
@@ -69,19 +70,50 @@
     const style = doc.createElement('style');
     style.id = STYLE_ID;
     style.textContent = `
+      html, body {
+        height: 100%;
+      }
+      body {
+        margin: 0;
+      }
       #${HOST_ID} {
         --wdash-app-font: 'Segoe UI', Roboto, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
         display: flex;
         flex-direction: column;
+        align-items: center;
         gap: 18px;
-        padding: 18px;
+        padding: 28px 24px 48px;
         box-sizing: border-box;
         min-height: 100vh;
         background: radial-gradient(circle at top, rgba(20,40,80,0.55), rgba(4,10,22,0.92));
         font-family: var(--wdash-app-font);
       }
+      #${HOST_ID} .wdash-app-status,
+      #${HOST_ID} .wdash-app-display-tile {
+        width: min(100%, 1220px);
+      }
       #${HOST_ID} .tile {
         position: relative;
+        margin: 0 auto;
+        background: transparent;
+        box-shadow: none;
+        border: 0;
+      }
+      #${HOST_ID} .tile-primary {
+        position: relative;
+        padding: 0;
+        background: transparent;
+        overflow: visible;
+      }
+      #${HOST_ID} .wdash-app-display {
+        width: min(100%, 1220px);
+        margin: 0 auto;
+        aspect-ratio: 4 / 3;
+        display: block;
+      }
+      #${HOST_ID} .wdash-app-display > * {
+        width: 100%;
+        height: 100%;
       }
       #${STATUS_ID} {
         font-family: var(--wdash-app-font);
@@ -93,6 +125,8 @@
         box-shadow: 0 18px 36px rgba(0,0,0,0.45);
         line-height: 1.55;
         font-size: 0.95rem;
+        width: 100%;
+        box-sizing: border-box;
       }
       #${STATUS_ID}[data-level="error"] {
         background: linear-gradient(125deg, rgba(72,14,30,0.92), rgba(36,6,14,0.95));
@@ -193,6 +227,7 @@
         prepend: true,
         onCreate: el => {
           el.dataset.level = 'info';
+          el.classList.add('wdash-app-status');
         },
         onEnsure: el => {
           if (!el.dataset.level) {
@@ -202,7 +237,7 @@
       });
 
       const displayTile = ensureAndAppend(doc, host, DISPLAY_TILE_ID, {
-        className: 'tile tile--weather-display',
+        className: 'tile tile--weather-display wdash-app-display-tile',
         onEnsure: el => {
           el.classList.add('wdash-host-tile');
         }
@@ -211,7 +246,7 @@
       let displayPrimary = displayTile.querySelector('.tile-primary');
       if (!displayPrimary) {
         displayPrimary = doc.createElement('div');
-        displayPrimary.className = 'tile-primary';
+        displayPrimary.className = 'tile-primary wdash-app-display';
         displayTile.appendChild(displayPrimary);
       }
 
@@ -275,6 +310,13 @@
       markup += `<div class="wdash-app-status__details"><ul>${items}</ul></div>`;
     }
     status.innerHTML = markup;
+
+    const measured = Math.max(status.scrollHeight || 0, status.offsetHeight || 0);
+    if (measured > 0) {
+      const nextMin = Math.max(state.statusMinHeight || 0, measured);
+      state.statusMinHeight = nextMin;
+      status.style.minHeight = `${nextMin}px`;
+    }
   }
 
   function readQueryConfig() {
