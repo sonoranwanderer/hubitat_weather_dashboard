@@ -8,6 +8,8 @@
 import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
 import groovy.transform.Field
+import java.io.PrintWriter
+import java.io.StringWriter
 import java.math.RoundingMode
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -641,10 +643,27 @@ private void logError(String message, Throwable t = null) {
     if (!shouldLogLevel('error')) {
         return
     }
+
+    String details = message ?: 'Error'
     if (t) {
-        log.error message, t
-    } else {
-        log.error message
+        String throwableSummary = t?.message ?: t?.toString()
+        if (throwableSummary) {
+            details = "${details}: ${throwableSummary}"
+        }
+    }
+
+    log.error details
+
+    if (t && shouldLogLevel('debug')) {
+        StringWriter sw = new StringWriter()
+        PrintWriter pw = new PrintWriter(sw)
+        try {
+            t.printStackTrace(pw)
+            pw.flush()
+            log.debug sw.toString()
+        } finally {
+            pw.close()
+        }
     }
 }
 
