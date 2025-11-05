@@ -12,6 +12,9 @@
   const DEFAULT_POLL_INTERVAL_MS = 15000;
   const MIN_POLL_INTERVAL_MS = 5000;
   const DEFAULT_MAX_BACKOFF_MS = 60000;
+  const DEFAULT_STAGE_WIDTH = 1200;
+  const DEFAULT_STAGE_HEIGHT = 900;
+  const DEFAULT_STAGE_ASPECT = DEFAULT_STAGE_WIDTH / DEFAULT_STAGE_HEIGHT;
 
   const state = {
     renderer: null,
@@ -69,19 +72,64 @@
     const style = doc.createElement('style');
     style.id = STYLE_ID;
     style.textContent = `
+      html, body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        background: rgba(2,6,16,0.95);
+      }
       #${HOST_ID} {
         --wdash-app-font: 'Segoe UI', Roboto, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+        --wdash-app-stage-width: ${DEFAULT_STAGE_WIDTH}px;
+        --wdash-app-stage-height: ${DEFAULT_STAGE_HEIGHT}px;
+        --wdash-app-stage-aspect: ${DEFAULT_STAGE_ASPECT};
         display: flex;
         flex-direction: column;
         gap: 18px;
         padding: 18px;
         box-sizing: border-box;
-        min-height: 100vh;
+        width: min(100%, var(--wdash-app-stage-width));
+        margin: 0 auto;
+        min-height: calc(var(--wdash-app-stage-height) + 36px);
         background: radial-gradient(circle at top, rgba(20,40,80,0.55), rgba(4,10,22,0.92));
         font-family: var(--wdash-app-font);
       }
+      #${HOST_ID} > * {
+        width: 100%;
+      }
       #${HOST_ID} .tile {
         position: relative;
+        width: 100%;
+      }
+      #${HOST_ID} .tile--weather-display {
+        position: relative;
+        width: 100%;
+        max-width: 100%;
+      }
+      #${HOST_ID} .tile--weather-display::before {
+        content: '';
+        display: block;
+        width: 100%;
+        padding-bottom: calc(100% / var(--wdash-app-stage-aspect));
+      }
+      @supports (aspect-ratio: 1 / 1) {
+        #${HOST_ID} .tile--weather-display {
+          aspect-ratio: var(--wdash-app-stage-aspect);
+        }
+        #${HOST_ID} .tile--weather-display::before {
+          content: none;
+          display: none;
+        }
+      }
+      #${HOST_ID} .tile--weather-display .tile-primary {
+        position: absolute;
+        inset: 0;
+        display: flex;
+      }
+      #${HOST_ID} .tile--weather-display .tile-primary > * {
+        width: 100%;
+        height: 100%;
       }
       #${STATUS_ID} {
         font-family: var(--wdash-app-font);
@@ -243,6 +291,55 @@
     }
 
     return shellElements;
+  }
+
+  function parseStageDimension(value, fallback) {
+    if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+      return value;
+    }
+    if (typeof value === 'string') {
+      const match = value.trim().match(/^(-?\d+(?:\.\d+)?)/);
+      if (match) {
+        const numeric = Number(match[1]);
+        if (Number.isFinite(numeric) && numeric > 0) {
+          return numeric;
+        }
+      }
+    }
+    return fallback;
+  }
+
+  function extractStageDimensions(payload) {
+    const layout = payload && payload.metadata && payload.metadata.layout;
+    const width = parseStageDimension(layout && layout.baseWidth, DEFAULT_STAGE_WIDTH);
+    const height = parseStageDimension(layout && layout.baseHeight, DEFAULT_STAGE_HEIGHT);
+    return { width, height };
+  }
+
+  function formatAspectValue(value) {
+    if (!Number.isFinite(value) || value <= 0) {
+      return DEFAULT_STAGE_ASPECT.toFixed(6);
+    }
+    const fixed = value.toFixed(6);
+    return fixed.replace(/0+$/, '').replace(/\.$/, '') || DEFAULT_STAGE_ASPECT.toFixed(6);
+  }
+
+  function applyStageDimensionsFromPayload(payload) {
+    const shell = ensureAppShell();
+    if (!shell) return;
+    const { host, displayTile } = shell;
+    const { width, height } = extractStageDimensions(payload || {});
+    const aspect = width > 0 && height > 0 ? width / height : DEFAULT_STAGE_ASPECT;
+    const widthPx = `${Math.max(1, Math.round(width))}px`;
+    const heightPx = `${Math.max(1, Math.round(height))}px`;
+    const aspectValue = formatAspectValue(aspect);
+
+    [host, displayTile].forEach(element => {
+      if (!element) return;
+      element.style.setProperty('--wdash-app-stage-width', widthPx);
+      element.style.setProperty('--wdash-app-stage-height', heightPx);
+      element.style.setProperty('--wdash-app-stage-aspect', aspectValue);
+    });
   }
 
   function escapeHtml(value) {
@@ -698,6 +795,7 @@
     state.failureStreak = 0;
     state.lastSuccessAt = Date.now();
     const parsed = parseJson(text);
+    applyStageDimensionsFromPayload(parsed);
     applyPayloadText(text);
 
     const details = [];

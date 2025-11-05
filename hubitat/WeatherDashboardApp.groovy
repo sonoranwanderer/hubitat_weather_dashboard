@@ -9,6 +9,7 @@ import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
 import groovy.transform.Field
 import java.math.RoundingMode
+import java.net.URLEncoder
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.TimeZone
@@ -33,6 +34,8 @@ definition(
     trace: 4
 ]
 @Field final int MAKER_PAYLOAD_MAX_BYTES = 100000
+@Field final Integer DEFAULT_STAGE_WIDTH = 1200
+@Field final Integer DEFAULT_STAGE_HEIGHT = 900
 
 preferences {
     page(name: "mainPage", title: "Weather Dashboard", install: true, uninstall: true)
@@ -220,6 +223,15 @@ def mainPage() {
         section("Maker API access") {
             paragraph "Provide the Maker API access token that external clients must include when requesting the consolidated dashboard payload."
             input name: "makerApiToken", type: "text", title: "Maker API token", required: false, submitOnChange: true
+        }
+
+        section("Dashboard preview") {
+            String previewHtml = dashboardAppPreviewHtml()
+            if (previewHtml) {
+                paragraph previewHtml
+            } else {
+                paragraph "Upload <code>weather-dashboard-app.html</code> to File Manager and provide the Maker API token to enable the live preview."
+            }
         }
 
         section("Performance metrics summary") {
@@ -1978,8 +1990,9 @@ private Map buildMetadata(Date generated, TimeZone tz, String stationUpdatedAt, 
     if (stationUpdatedAt) {
         metadata.weatherStationTime = stationUpdatedAt
     }
-    if (layoutOverride) {
-        metadata.layout = layoutOverride
+    Map layoutMetadata = normalizedLayoutMetadata(layoutOverride)
+    if (layoutMetadata) {
+        metadata.layout = layoutMetadata
     }
     String temperatureDisplay = temperatureDisplayUnitSetting()
     if (temperatureDisplay) {
@@ -2006,6 +2019,189 @@ private Map buildMetadata(Date generated, TimeZone tz, String stationUpdatedAt, 
         metadata.lightningDisplayUnit = lightningDisplay
     }
     metadata
+}
+
+private Map normalizedLayoutMetadata(Map layoutOverride) {
+    Map stage = resolveLayoutStageDimensions(layoutOverride)
+    Map layoutMetadata = [:]
+    if (stage?.baseWidth) {
+        layoutMetadata.baseWidth = stage.baseWidth
+    }
+    if (stage?.baseHeight) {
+        layoutMetadata.baseHeight = stage.baseHeight
+    }
+    if (layoutOverride instanceof Map) {
+        layoutMetadata.putAll(layoutOverride as Map)
+    }
+    layoutMetadata
+}
+
+private Map resolveLayoutStageDimensions(Map layoutOverride) {
+    Integer width = DEFAULT_STAGE_WIDTH
+    Integer height = DEFAULT_STAGE_HEIGHT
+
+    if (layoutOverride instanceof Map) {
+        Integer overrideWidth = normalizedPositiveInt(layoutOverride.baseWidth)
+        Integer overrideHeight = normalizedPositiveInt(layoutOverride.baseHeight)
+        if (overrideWidth != null) {
+            width = overrideWidth
+        }
+        if (overrideHeight != null) {
+            height = overrideHeight
+        }
+
+        Map desktop = (layoutOverride.desktop instanceof Map) ? (layoutOverride.desktop as Map) : null
+        Integer desktopWidth = normalizedPositiveInt(desktop?.width)
+        Integer desktopHeight = normalizedPositiveInt(desktop?.height)
+        if (desktopWidth != null) {
+            width = desktopWidth
+        }
+        if (desktopHeight != null) {
+            height = desktopHeight
+        }
+    }
+
+    [baseWidth: width, baseHeight: height]
+}
+
+private Integer normalizedPositiveInt(Object raw) {
+    Integer value = safeToInt(raw, null)
+    return (value != null && value > 0) ? value : null
+}
+
+private Map currentDashboardStageDimensions() {
+    Map override = parseLayoutOverrideSetting(currentLayoutOverrideText())
+    resolveLayoutStageDimensions(override)
+}
+
+private String dashboardAppPreviewHtml() {
+    Long appId = app?.id
+    String makerToken = makerTokenSetting()
+    String hubBase = localHubBaseUrl()
+
+    if (!appId || !makerToken || !hubBase) {
+        return null
+    }
+
+    Map stage = currentDashboardStageDimensions()
+    Integer width = (stage?.baseWidth ?: DEFAULT_STAGE_WIDTH) as Integer
+    Integer height = (stage?.baseHeight ?: DEFAULT_STAGE_HEIGHT) as Integer
+    if (width <= 0 || height <= 0) {
+        width = DEFAULT_STAGE_WIDTH
+        height = DEFAULT_STAGE_HEIGHT
+    }
+
+    BigDecimal widthDecimal = new BigDecimal(width)
+    BigDecimal heightDecimal = new BigDecimal(height)
+    BigDecimal aspectDecimal
+    try {
+        aspectDecimal = widthDecimal.divide(heightDecimal, 6, RoundingMode.HALF_UP)
+    } catch (ArithmeticException ignored) {
+        aspectDecimal = new BigDecimal(DEFAULT_STAGE_WIDTH).divide(new BigDecimal(DEFAULT_STAGE_HEIGHT), 6, RoundingMode.HALF_UP)
+    }
+
+    String aspectValue = formatAspectDecimal(aspectDecimal)
+    List<String> deviceIds = (getWeatherDevices() ?: []).collect { dev ->
+        dev?.id ? dev.id.toString() : null
+    }.findAll { it }
+
+    String query = buildDashboardAppQueryString(appId, hubBase, makerToken, deviceIds)
+    String previewUrl = '/local/weather-dashboard-app.html'
+    if (query) {
+        previewUrl = "${previewUrl}?${query}"
+    }
+
+    String styleVars = "--wdash-stage-width:${width}px;--wdash-stage-height:${height}px;--wdash-stage-aspect:${aspectValue};"
+    String stageSummary = "Canvas size: ${width} × ${height} pixels (${aspectRatioLabel(width, height)})."
+
+    """
+<div class='wdash-app-preview' style='${htmlEncode(styleVars)}'>
+  <style>
+    .wdash-app-preview { display:flex; flex-direction:column; gap:12px; align-items:center; }
+    .wdash-app-preview__stage { position:relative; width:min(100%, var(--wdash-stage-width)); max-width:100%; background:radial-gradient(circle at top, rgba(20,40,80,0.45), rgba(4,10,22,0.9)); border-radius:16px; overflow:hidden; box-shadow:0 22px 44px rgba(0,0,0,0.5); }
+    .wdash-app-preview__stage::before { content:''; display:block; width:100%; padding-bottom:calc(100% / var(--wdash-stage-aspect)); }
+    @supports (aspect-ratio: 1 / 1) {
+      .wdash-app-preview__stage { aspect-ratio: var(--wdash-stage-aspect); }
+      .wdash-app-preview__stage::before { display:none; }
+    }
+    .wdash-app-preview__frame { position:absolute; inset:0; width:100%; height:100%; border:0; background:transparent; }
+    .wdash-app-preview__note { font-size:0.9rem; color:#c7d5f5; text-align:center; }
+  </style>
+  <div class='wdash-app-preview__stage'>
+    <iframe class='wdash-app-preview__frame' src='${htmlEncode(previewUrl)}' title='Weather dashboard preview' loading='lazy' allowfullscreen></iframe>
+  </div>
+  <div class='wdash-app-preview__note'>${htmlEncode(stageSummary)}</div>
+</div>
+""".trim()
+}
+
+private String buildDashboardAppQueryString(Long appId, String hubBaseUrl, String makerToken, List<String> deviceIds) {
+    if (!appId || !hubBaseUrl || !makerToken) {
+        return null
+    }
+
+    Map<String, String> params = [
+        hubBaseUrl: hubBaseUrl,
+        appId     : appId.toString(),
+        makerToken: makerToken
+    ]
+
+    if (deviceIds) {
+        params.deviceIds = deviceIds.join(',')
+    }
+
+    params.collect { entry ->
+        "${URLEncoder.encode(entry.key, 'UTF-8')}=${URLEncoder.encode(entry.value, 'UTF-8')}"
+    }.join('&')
+}
+
+private String localHubBaseUrl() {
+    try {
+        def primaryHub = location?.hub
+        if (!primaryHub && (location?.hubs instanceof List) && location.hubs) {
+            primaryHub = location.hubs.find { it?.localIP } ?: location.hubs[0]
+        }
+        String ip = primaryHub?.localIP
+        if (!ip) {
+            return null
+        }
+        def portValue = primaryHub?.localSrvPortTCP
+        String portText = portValue ? portValue.toString() : ''
+        boolean secure = portText == '443'
+        String protocol = secure ? 'https' : 'http'
+        boolean defaultPort = (!secure && (portText == null || portText == '' || portText == '80')) || (secure && portText == '443')
+        return defaultPort ? "${protocol}://${ip}" : "${protocol}://${ip}:${portText}"
+    } catch (Exception ignored) {
+        return null
+    }
+}
+
+private String formatAspectDecimal(BigDecimal value) {
+    if (value == null) {
+        return new BigDecimal(DEFAULT_STAGE_WIDTH).divide(new BigDecimal(DEFAULT_STAGE_HEIGHT), 6, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString()
+    }
+    value.stripTrailingZeros().toPlainString()
+}
+
+private String aspectRatioLabel(Integer width, Integer height) {
+    if (width == null || height == null || width <= 0 || height <= 0) {
+        return "${width ?: '?'}:${height ?: '?'}"
+    }
+    int w = Math.max(1, width as int)
+    int h = Math.max(1, height as int)
+    int divisor = greatestCommonDivisor(w, h)
+    "${w / divisor}:${h / divisor}"
+}
+
+private int greatestCommonDivisor(int a, int b) {
+    int x = Math.abs(a)
+    int y = Math.abs(b)
+    while (y != 0) {
+        int temp = x % y
+        x = y
+        y = temp
+    }
+    return x > 0 ? x : 1
 }
 
 private Map buildAmbientSensorsPayload() {
