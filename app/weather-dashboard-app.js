@@ -75,21 +75,23 @@
       }
       body {
         margin: 0;
-        min-height: 100vh;
+        min-height: 100%;
         display: flex;
         justify-content: center;
         align-items: flex-start;
-        padding: 16px;
+        padding: 0;
         box-sizing: border-box;
       }
       #${HOST_ID} {
         --wdash-app-font: 'Segoe UI', Roboto, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
-        width: min(100%, 1120px);
+        width: min(100%, 1000px);
+        max-width: 1000px;
         display: flex;
         flex-direction: column;
         align-items: center;
-        gap: 12px;
-        padding: 0 8px 16px;
+        gap: 16px;
+        padding: 12px 12px 0;
+        margin: 0 auto;
         box-sizing: border-box;
         min-height: 0;
         background: radial-gradient(circle at top, rgba(20,40,80,0.55), rgba(4,10,22,0.92));
@@ -116,19 +118,20 @@
       }
       #${HOST_ID} .wdash-app-display-tile {
         width: 100%;
-        max-width: 1120px;
+        max-width: 960px;
         margin: 0 auto;
       }
       #${HOST_ID} .wdash-app-display {
         position: relative;
         width: 100%;
-        max-width: 1120px;
+        max-width: 960px;
         margin: 0 auto;
         aspect-ratio: 4 / 3;
+        display: flex;
+        align-items: center;
+        justify-content: center;
       }
       #${HOST_ID} .wdash-app-display > * {
-        position: absolute;
-        inset: 0;
         width: 100%;
         height: 100%;
       }

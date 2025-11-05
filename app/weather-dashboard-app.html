@@ -12,16 +12,20 @@
         background: radial-gradient(circle at top, rgba(20, 40, 80, 0.55), rgba(4, 10, 22, 0.92));
         color: #e7efff;
       }
+      html,
+      body {
+        height: 100%;
+      }
       body {
         margin: 0;
-        min-height: 100vh;
+        min-height: 100%;
       }
       .wdash-app-loader {
         display: flex;
         align-items: center;
         justify-content: center;
-        min-height: 100vh;
-        padding: 32px;
+        min-height: 100%;
+        padding: 24px 16px;
         box-sizing: border-box;
         text-align: center;
         line-height: 1.6;
