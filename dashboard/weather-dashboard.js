@@ -652,6 +652,103 @@
           }
         }
       
+        function render(payload, grid) {
+          if (!grid) return;
+      
+          let maskMode = null;
+      
+          try {
+            applyTemperatureUnitsFromMetadata(payload?.metadata);
+            applyRainUnitsFromMetadata(payload?.metadata);
+            applyWindUnitsFromMetadata(payload?.metadata);
+            applyPressureUnitsFromMetadata(payload?.metadata);
+            applyLightningUnitsFromMetadata(payload?.metadata);
+            applyLayoutOverrides(payload?.metadata);
+            applyScale();
+      
+            if (!payload) {
+              maskMode = 'show';
+              resetDashboardToWaiting(grid);
+              stopHubClock();
+              teardownTempWindGaugeSizing();
+              return;
+            }
+      
+            maskMode = 'hide';
+            lastSuccessfulPayload = payload;
+      
+            grid.dataset.empty = 'false';
+            const ambientSeed = resolveAmbientSeedState(payload);
+            if (ambientSeed && Number.isInteger(ambientSeed.index)) {
+              ambientRotation.index = ambientSeed.index;
+            }
+            const cardMarkupList = buildCardMarkupList(payload, { ambientSeed });
+            let cardsChanged = false;
+      
+            if (!renderState.mounted) {
+              grid.innerHTML = cardMarkupList.map(card => card.markup).join('');
+              renderState.mounted = true;
+              renderState.markupByKey.clear();
+              cardMarkupList.forEach(card => {
+                renderState.markupByKey.set(card.key, card.markup);
+              });
+              cardsChanged = true;
+              try {
+                const ambientContainer = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-ambient');
+                if (ambientContainer) initAmbientLastHum(ambientContainer);
+              } catch (e) { /* ignore */ }
+            } else {
+              cardMarkupList.forEach(card => {
+                const previousMarkup = renderState.markupByKey.get(card.key) || null;
+                if (card.key === 'ambient' || card.key === 'tempWind' || card.key === 'solar') {
+                  const ensured = ensureCardPresence(grid, card, cardMarkupList);
+                  if (ensured) {
+                    renderState.markupByKey.set(card.key, card.markup);
+                  }
+                  return;
+                }
+      
+                if (previousMarkup !== card.markup) {
+                  replaceCardMarkup(grid, card, cardMarkupList);
+                  renderState.markupByKey.set(card.key, card.markup);
+                  cardsChanged = true;
+                }
+              });
+            }
+      
+            if (cardsChanged) {
+              layoutState.pendingApply = true;
+              applyLayoutOverrides(payload?.metadata);
+            } else if (layoutState.pendingApply) {
+              layoutState.pendingApply = false;
+            }
+      
+            tempWindState.data = payload;
+            updateTempWindCard();
+            solarState.data = payload;
+            updateSolarSunCard();
+            setupAmbientRotation(payload);
+            setupAirQualityRotation(payload);
+            setupInteractiveComponents(grid);
+            setupHubClock(payload);
+            // observe ambient container for size changes to keep ring geometry synchronized
+            const ambientContainer = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-ambient');
+            if (ambientContainer && typeof ResizeObserver !== 'undefined') {
+              const ro = new ResizeObserver(() => { applyAmbientRingSizing(); applyOutdoorRingSizing(); });
+              ro.observe(ambientContainer);
+            } else {
+              // fallback: window resize
+              window.addEventListener('resize', () => { applyAmbientRingSizing(); applyOutdoorRingSizing(); });
+            }
+          } finally {
+            if (maskMode === 'hide') {
+              toggleSourceTileMask(true);
+            } else if (maskMode === 'show') {
+              toggleSourceTileMask(false);
+            }
+          }
+        }
+      
         function renderFromData() {
           ensureTileAdapter();
           const segments = readPayloads();
@@ -7535,7 +7632,8 @@
           renderFromData,
           renderFallbackState,
           mergePayloads,
-          applyLayoutOverrides,
+          render,
+          applyLayoutOverrides, // Keep for now, will be encapsulated later
           layoutState,
           tempWindState,
           ensureTileAdapter,
@@ -7573,6 +7671,7 @@
             applyWindUnitsFromMetadata,
             applyPressureUnitsFromMetadata,
             applyLightningUnitsFromMetadata,
+            KNOWN_PAYLOAD_KEYS,
             setTemperatureDisplayUnit,
             setTemperatureInputUnit,
             setRainDisplayUnit,

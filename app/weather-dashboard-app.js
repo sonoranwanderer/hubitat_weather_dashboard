@@ -139,7 +139,6 @@
         align-items: flex-start;
         padding: 24px 16px 36px;
         box-sizing: border-box;
-        overflow: hidden;
       }
       #${HOST_ID} {
         --wdash-app-font: 'Segoe UI', Roboto, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
@@ -152,6 +151,14 @@
         padding: 18px 20px 28px;
         margin: 0 auto;
         box-sizing: border-box;
+        --wdash-grid-areas-desktop: 'temp-wind ambient' 'air rain' 'solar rain' 'solar pressure';
+        --wdash-grid-areas-tablet: 'temp-wind ambient' 'air rain' 'solar rain' 'solar pressure';
+        --wdash-grid-areas-mobile: 'temp-wind' 'ambient' 'air' 'rain' 'solar' 'pressure';
+        --wdash-grid-columns-desktop: repeat(2, minmax(0, 1fr));
+        --wdash-grid-columns-tablet: repeat(2, minmax(0, 1fr));
+        --wdash-grid-columns-mobile: minmax(0, 1fr);
+        --wdash-grid-gap-desktop: 14px;
+        --wdash-grid-gap-tablet: 14px;
         min-height: 0;
         background: radial-gradient(circle at top, rgba(20,40,80,0.55), rgba(4,10,22,0.92));
         font-family: var(--wdash-app-font);
@@ -240,6 +247,14 @@
       }
       #${STATUS_ID} .wdash-app-status__details li {
         margin: 2px 0;
+      }
+      @media (max-width: 1100px) {
+        #${HOST_ID} .wdash-grid { grid-template-areas: var(--wdash-grid-areas-tablet); grid-template-columns: var(--wdash-grid-columns-tablet); gap: var(--wdash-grid-gap-tablet); }
+        #${HOST_ID} .wdash { --wdash-frame-gap: var(--wdash-frame-gap-tablet); }
+      }
+      @media (max-width: 720px) {
+        #${HOST_ID} .wdash-grid { grid-template-areas: var(--wdash-grid-areas-mobile); grid-template-columns: var(--wdash-grid-columns-mobile); gap: var(--wdash-grid-gap-mobile); }
+        #${HOST_ID} .wdash { --wdash-frame-gap: var(--wdash-frame-gap-mobile); }
       }
       .wdash-hidden-tile {
         display: none !important;
