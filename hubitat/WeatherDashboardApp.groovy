@@ -8,7 +8,6 @@
 import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
 import groovy.transform.Field
-import java.io.PrintWriter
 import java.io.StringWriter
 import java.math.RoundingMode
 import java.text.SimpleDateFormat
@@ -655,16 +654,36 @@ private void logError(String message, Throwable t = null) {
     log.error details
 
     if (t && shouldLogLevel('debug')) {
-        StringWriter sw = new StringWriter()
-        PrintWriter pw = new PrintWriter(sw)
-        try {
-            t.printStackTrace(pw)
-            pw.flush()
-            log.debug sw.toString()
-        } finally {
-            pw.close()
+        String stackTrace = formatStackTrace(t)
+        if (stackTrace) {
+            log.debug stackTrace
         }
     }
+}
+
+private String formatStackTrace(Throwable t) {
+    if (!t) {
+        return null
+    }
+
+    List<StackTraceElement> elements = t.stackTrace as List<StackTraceElement>
+    if (!elements) {
+        return t.toString()
+    }
+
+    StringWriter sw = new StringWriter()
+    sw.append(t.toString()).append('\n')
+    elements.each { StackTraceElement element ->
+        sw.append('\t').append('at ').append(element.toString()).append('\n')
+    }
+    Throwable cause = t.cause
+    if (cause && cause != t) {
+        String causeTrace = formatStackTrace(cause)
+        if (causeTrace) {
+            sw.append('Caused by: ').append(causeTrace)
+        }
+    }
+    return sw.toString()
 }
 
 private void renderJsonError(int statusCode, String message) {
