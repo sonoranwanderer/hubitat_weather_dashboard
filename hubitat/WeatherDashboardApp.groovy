@@ -666,15 +666,15 @@ private String formatStackTrace(Throwable t) {
         return null
     }
 
-    List<StackTraceElement> elements = t.stackTrace as List<StackTraceElement>
+    def elements = t.stackTrace
     if (!elements) {
         return t.toString()
     }
 
     StringWriter sw = new StringWriter()
     sw.append(t.toString()).append('\n')
-    elements.each { StackTraceElement element ->
-        sw.append('\t').append('at ').append(element.toString()).append('\n')
+    elements.each { element ->
+        sw.append('\t').append('at ').append(String.valueOf(element)).append('\n')
     }
     Throwable cause = t.cause
     if (cause && cause != t) {
