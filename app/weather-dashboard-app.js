@@ -488,10 +488,6 @@
       warnings.push('App ID contains non-numeric characters. Confirm the Maker API app identifier is correct.');
     }
 
-    if (!config.dashboardToken) {
-      errors.push('Dashboard access token missing. Supply ?appToken= (alias ?access_token=).');
-    }
-
     if (!config.makerToken) {
       errors.push('Maker API token missing. Supply ?makerToken=YOUR_TOKEN.');
     }
@@ -518,14 +514,14 @@
   }
 
   function buildEndpointUrl(config) {
-    if (!config || !config.hubBaseUrl || !config.appId || !config.dashboardToken) {
+    if (!config || !config.hubBaseUrl || !config.appId) {
       return null;
     }
     try {
       const base = new URL(config.hubBaseUrl);
       const target = new URL(`/apps/api/${encodeURIComponent(config.appId)}/dashboard`, base);
-      target.searchParams.set('access_token', config.dashboardToken);
       if (config.dashboardToken) {
+        target.searchParams.set('access_token', config.dashboardToken);
         target.searchParams.set('appToken', config.dashboardToken);
         target.searchParams.set('previewToken', config.dashboardToken);
       }

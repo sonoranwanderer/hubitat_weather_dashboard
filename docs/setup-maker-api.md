@@ -36,7 +36,7 @@ The Weather Dashboard App embeds a lightweight web bundle that calls Hubitat's M
    - Optional: the comma-separated list of device IDs you authorized, if you want to pre-populate it for future features
 2. Navigate to **Apps → Weather Dashboard App → Configure data sources → Maker API access**.
 3. Paste the hub base URL (for example `http://192.168.1.10`) and Maker API token into the matching fields. Provide device IDs if you want them surfaced in the embedded bundle’s query string.
-4. Click **Done** to persist the changes. The Weather Dashboard App generates its own dashboard access token automatically, so you do not need to copy an additional credential from Maker API.
+4. Click **Done** to persist the changes.
 
 Leaving the Maker API fields blank keeps the embedded preview disabled so the hub avoids any Maker API polling overhead until you are ready to use it.
 
@@ -44,7 +44,7 @@ Leaving the Maker API fields blank keeps the embedded preview disabled so the hu
 
 1. Return to **Apps → Weather Dashboard App**.
 2. The landing page should now display the embedded `/local/weather-dashboard-app.html` preview without credential warnings.
-3. Use the **Open in new tab** action on the iframe (or copy the link) to verify the URL includes your Maker API token (`makerToken`), the dashboard access token (`appToken`), hub base URL, and optional device IDs.
+3. Use the **Open in new tab** action on the iframe (or copy the link) to verify the URL includes your Maker API token (`makerToken`), hub base URL, and optional device IDs. If OAuth is enabled for the Weather Dashboard App the link will also include an app-specific token, but it is not required for the preview to function.
 4. If the preview still reports missing credentials, revisit the Maker API settings to confirm the Weather Dashboard App remains authorized and the access token matches the value stored in the app preferences. You can tap **Save & Refresh** inside the Weather Dashboard App to regenerate the embed link if you recently rotated the Maker API token.
 
 Once these steps are complete, both the in-app preview and any external dashboards can securely fetch the Weather Dashboard JSON via Maker API.
@@ -53,4 +53,4 @@ Once these steps are complete, both the in-app preview and any external dashboar
 
 * **Preview reports 404** – Hubitat returns a 404 when the iframe points at `/local/weather-dashboard-app.html` but the HTML (or its companion JavaScript files) are missing from File Manager. Re-upload `app/weather-dashboard-app.html`, `app/weather-dashboard-app.js`, and `dashboard/weather-dashboard.js` so they appear under `/local/` on the hub.
 * **Custom asset locations** – If you host the preview bundle somewhere other than `/local/`, append query parameters to the iframe URL (or the standalone preview) to override the defaults: `bundleBase`, `rendererScript`, and `appScript`. Apply the overrides when you open the preview in a separate tab or embed it elsewhere.
-* **Preview shows “401 Unauthorized”** – The embedded preview calls the Weather Dashboard App using the auto-generated dashboard token (`appToken`) and your Maker API token. Reopen **Apps → Weather Dashboard App**, click **Save & Refresh**, and confirm the Maker API token in the configuration matches the one displayed in Maker API. Rotating the Maker API token without updating the app preferences will trigger this error.
+* **Preview shows “401 Unauthorized”** – Reopen **Apps → Weather Dashboard App**, click **Save & Refresh**, and confirm the Maker API token in the configuration matches the one displayed in Maker API. Rotating the Maker API token without updating the app preferences will trigger this error.
