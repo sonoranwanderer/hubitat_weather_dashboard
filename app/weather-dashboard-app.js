@@ -188,11 +188,12 @@
         max-width: 1200px;
         margin: 0 auto;
         aspect-ratio: 4 / 3;
-        display: block;
+        display: flex;
+        align-items: stretch;
+        justify-content: center;
       }
       #${HOST_ID} .wdash-app-display > * {
-        position: absolute;
-        inset: 0;
+        position: relative;
         width: 100%;
         height: 100%;
       }
