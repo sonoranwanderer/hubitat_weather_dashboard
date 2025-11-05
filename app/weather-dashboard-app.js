@@ -84,7 +84,7 @@
       }
       #${HOST_ID} {
         --wdash-app-font: 'Segoe UI', Roboto, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
-        width: min(100%, 1200px);
+        width: min(100%, 1120px);
         display: flex;
         flex-direction: column;
         align-items: center;
@@ -116,19 +116,15 @@
       }
       #${HOST_ID} .wdash-app-display-tile {
         width: 100%;
-        max-width: 1200px;
+        max-width: 1120px;
         margin: 0 auto;
       }
       #${HOST_ID} .wdash-app-display {
         position: relative;
         width: 100%;
-        display: block;
-        overflow: hidden;
-      }
-      #${HOST_ID} .wdash-app-display::before {
-        content: '';
-        display: block;
-        padding-top: 75%;
+        max-width: 1120px;
+        margin: 0 auto;
+        aspect-ratio: 4 / 3;
       }
       #${HOST_ID} .wdash-app-display > * {
         position: absolute;
