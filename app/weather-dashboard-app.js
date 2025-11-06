@@ -1340,15 +1340,18 @@
   }
 
   function resolveRendererFactory() {
-    if (typeof global.createLegacyWeatherDashboardRenderer === 'function') {
-      return global.createLegacyWeatherDashboardRenderer;
-    }
     if (global.weatherDashboard && typeof global.weatherDashboard.__rendererFactory === 'function') {
       return global.weatherDashboard.__rendererFactory;
+    }
+    if (typeof global.createLegacyWeatherDashboardRenderer === 'function') {
+      return global.createLegacyWeatherDashboardRenderer;
     }
     if (typeof require === 'function') {
       try {
         const mod = require('../src/render/index.js');
+        if (mod && typeof mod.createRenderer === 'function') {
+          return mod.createRenderer;
+        }
         if (mod && typeof mod.createLegacyWeatherDashboardRenderer === 'function') {
           return mod.createLegacyWeatherDashboardRenderer;
         }

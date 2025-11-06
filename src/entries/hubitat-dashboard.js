@@ -1,18 +1,25 @@
-const { createLegacyWeatherDashboardRenderer } = require('../render/index.js');
+const { createRenderer, createLegacyWeatherDashboardRenderer } = require('../render/index.js');
 
 (function bootstrapWeatherDashboard(global) {
   if (!global) return null;
 
   const resolveFactoryFromModule = () => {
+    if (typeof createRenderer === 'function') {
+      return createRenderer;
+    }
     if (typeof createLegacyWeatherDashboardRenderer === 'function') {
       return createLegacyWeatherDashboardRenderer;
     }
     if (typeof require !== 'function') return null;
     try {
       const mod = require('../render/index.js');
-      return mod && typeof mod.createLegacyWeatherDashboardRenderer === 'function'
-        ? mod.createLegacyWeatherDashboardRenderer
-        : null;
+      if (mod && typeof mod.createRenderer === 'function') {
+        return mod.createRenderer;
+      }
+      if (mod && typeof mod.createLegacyWeatherDashboardRenderer === 'function') {
+        return mod.createLegacyWeatherDashboardRenderer;
+      }
+      return null;
     } catch (err) {
       return null;
     }
