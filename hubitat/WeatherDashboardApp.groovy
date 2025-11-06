@@ -409,7 +409,7 @@ private String buildDashboardEmbedUrl() {
         return null
     }
 
-    Map<String, String> params = [
+    Map<String, String> queryParams = [
         hubBaseUrl : baseUrl,
         hub        : baseUrl,
         appId      : appId,
@@ -421,11 +421,19 @@ private String buildDashboardEmbedUrl() {
     List<String> deviceIds = makerApiDeviceIdList()
     if (deviceIds) {
         String joined = deviceIds.join(',')
-        params.deviceIds = joined
-        params.devices = joined
+        queryParams.deviceIds = joined
+        queryParams.devices = joined
     }
 
-    String query = params.collect { key, value -> "${urlEncode(key)}=${urlEncode(value)}" }.join('&')
+    String diagnosticsToken = params?.diagnostics ?: params?.debug
+    if (diagnosticsToken) {
+        diagnosticsToken = diagnosticsToken.toString().trim()
+        if (diagnosticsToken) {
+            queryParams.diagnostics = diagnosticsToken
+        }
+    }
+
+    String query = queryParams.collect { key, value -> "${urlEncode(key)}=${urlEncode(value)}" }.join('&')
     return "/local/weather-dashboard-app.html?${query}"
 }
 
