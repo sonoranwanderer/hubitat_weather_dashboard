@@ -1316,8 +1316,15 @@
             mobile: mobileGap
           };
       
-          const fallbackWidth = sanitizeDimension(overrideLayout?.baseWidth, measuredWidth);
-          const fallbackHeight = sanitizeDimension(overrideLayout?.baseHeight, measuredHeight);
+          const useMeasuredBase = trackUnit === 'percent';
+          const fallbackWidth = sanitizeDimension(
+            overrideLayout?.baseWidth,
+            useMeasuredBase ? measuredWidth : DEFAULT_BASE_WIDTH
+          );
+          const fallbackHeight = sanitizeDimension(
+            overrideLayout?.baseHeight,
+            useMeasuredBase ? measuredHeight : DEFAULT_BASE_HEIGHT
+          );
           const desktopWidth = sanitizeDimension(desktopSection?.baseWidth, fallbackWidth);
           const desktopHeight = sanitizeDimension(desktopSection?.baseHeight, fallbackHeight);
           const tabletWidth = sanitizeDimension(tabletSection?.baseWidth, desktopWidth);
@@ -1335,12 +1342,12 @@
             width: determineDimensionSource({
               sectionValue: desktopSection?.baseWidth,
               fallbackValue: overrideLayout?.baseWidth,
-              measurementValue: measurement.width
+              measurementValue: useMeasuredBase ? measurement.width : null
             }),
             height: determineDimensionSource({
               sectionValue: desktopSection?.baseHeight,
               fallbackValue: overrideLayout?.baseHeight,
-              measurementValue: measurement.height
+              measurementValue: useMeasuredBase ? measurement.height : null
             })
           };
       
@@ -7536,7 +7543,6 @@
           safeRenderFromData,
           renderFromData,
           renderFallbackState,
-          render,
           mergePayloads,
           render,
           applyLayoutOverrides, // Keep for now, will be encapsulated later
@@ -7609,6 +7615,7 @@
             formatLightningDistance,
             setupAirQualityRotation,
             scheduleAirQualityRotation,
+            stopAmbientRotationTimer,
             stopAirQualityRotationTimer,
             clearAirQualityRotation,
             updateAirQualityCard,
