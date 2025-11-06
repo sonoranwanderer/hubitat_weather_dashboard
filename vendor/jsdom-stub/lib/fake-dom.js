@@ -91,10 +91,40 @@ class FakeClassList {
   }
 }
 
+class FakeTextNode {
+  constructor(text = '', ownerDocument = null) {
+    this.nodeType = 3;
+    this.parentElement = null;
+    this._ownerDocument = ownerDocument;
+    this._text = text == null ? '' : String(text);
+  }
+
+  get textContent() {
+    return this._text;
+  }
+
+  set textContent(value) {
+    this._text = value == null ? '' : String(value);
+  }
+
+  get ownerDocument() {
+    return this._ownerDocument;
+  }
+
+  set ownerDocument(doc) {
+    this._ownerDocument = doc;
+  }
+
+  cloneNode() {
+    return new FakeTextNode(this._text, this._ownerDocument);
+  }
+}
+
 class FakeElement {
   constructor(tagName, ownerDocument) {
     this.tagName = String(tagName || 'div').toUpperCase();
     this.ownerDocument = ownerDocument || null;
+    this.childNodes = [];
     this.children = [];
     this.parentElement = null;
     this.classList = new FakeClassList(this);
@@ -114,77 +144,132 @@ class FakeElement {
       child.parentElement.removeChild(child);
     }
     child.parentElement = this;
-    child.ownerDocument = this.ownerDocument;
-    if (this.tagName === 'SVG') {
+    if ('ownerDocument' in child) {
+      child.ownerDocument = this.ownerDocument;
+    }
+    if (child instanceof FakeElement && this.tagName === 'SVG') {
       child.ownerSVGElement = this;
     }
-    this.children.push(child);
+    this.childNodes.push(child);
+    if (child instanceof FakeElement) {
+      this.children.push(child);
+    }
+    this._innerHTML = null;
+    if (!(child instanceof FakeElement)) {
+      this._textContent = '';
+    }
     return child;
   }
 
   insertBefore(child, before) {
     if (!child) return child;
     if (!before) return this.appendChild(child);
-    const index = this.children.indexOf(before);
-    if (index === -1) return this.appendChild(child);
+    const nodeIndex = this.childNodes.indexOf(before);
+    if (nodeIndex === -1) return this.appendChild(child);
     if (child.parentElement) {
       child.parentElement.removeChild(child);
     }
     child.parentElement = this;
-    child.ownerDocument = this.ownerDocument;
-    if (this.tagName === 'SVG') {
+    if ('ownerDocument' in child) {
+      child.ownerDocument = this.ownerDocument;
+    }
+    if (child instanceof FakeElement && this.tagName === 'SVG') {
       child.ownerSVGElement = this;
     }
-    this.children.splice(index, 0, child);
+    this.childNodes.splice(nodeIndex, 0, child);
+    if (child instanceof FakeElement) {
+      const beforeIndex = this.children.indexOf(before);
+      if (beforeIndex === -1) {
+        this.children.push(child);
+      } else {
+        this.children.splice(beforeIndex, 0, child);
+      }
+    }
+    this._innerHTML = null;
+    if (!(child instanceof FakeElement)) {
+      this._textContent = '';
+    }
     return child;
   }
 
   removeChild(child) {
-    const index = this.children.indexOf(child);
-    if (index !== -1) {
-      this.children.splice(index, 1);
-      child.parentElement = null;
+    const nodeIndex = this.childNodes.indexOf(child);
+    if (nodeIndex !== -1) {
+      this.childNodes.splice(nodeIndex, 1);
     }
+    const elementIndex = this.children.indexOf(child);
+    if (elementIndex !== -1) {
+      this.children.splice(elementIndex, 1);
+    }
+    child.parentElement = null;
+    this._innerHTML = null;
     return child;
   }
 
   replaceWith(replacement) {
     if (!this.parentElement) return;
     const parent = this.parentElement;
-    const index = parent.children.indexOf(this);
-    if (index === -1) return;
-    parent.children.splice(index, 1, replacement);
+    const nodeIndex = parent.childNodes.indexOf(this);
+    if (nodeIndex === -1) return;
+    if (replacement.parentElement) {
+      replacement.parentElement.removeChild(replacement);
+    }
+    parent.childNodes.splice(nodeIndex, 1, replacement);
+    const elementIndex = parent.children.indexOf(this);
+    if (elementIndex !== -1) {
+      if (replacement instanceof FakeElement) {
+        parent.children.splice(elementIndex, 1, replacement);
+      } else {
+        parent.children.splice(elementIndex, 1);
+      }
+    } else if (replacement instanceof FakeElement) {
+      parent.children.push(replacement);
+    }
     replacement.parentElement = parent;
-    replacement.ownerDocument = parent.ownerDocument;
+    if ('ownerDocument' in replacement) {
+      replacement.ownerDocument = parent.ownerDocument;
+    }
+    if (replacement instanceof FakeElement && parent.tagName === 'SVG') {
+      replacement.ownerSVGElement = parent;
+    }
+    parent._innerHTML = null;
   }
 
   get textContent() {
-    const childText = this.children.length ? this.children.map(child => child.textContent).join('') : '';
-    if (this._textContent && childText) {
-      return this._textContent + childText;
-    }
-    if (childText) {
-      return childText;
+    if (this.childNodes.length) {
+      return this.childNodes.map(child => child.textContent).join('');
     }
     return this._textContent;
   }
 
   set textContent(value) {
-    this._textContent = value == null ? '' : String(value);
-    if (this.children.length) {
-      this.children = [];
+    const normalized = value == null ? '' : String(value);
+    this._textContent = '';
+    this.childNodes = [];
+    this.children = [];
+    this._innerHTML = null;
+    if (normalized) {
+      this.appendChild(new FakeTextNode(normalized, this.ownerDocument));
     }
   }
 
   get innerHTML() {
-    return this._innerHTML;
+    if (this._innerHTML != null) {
+      return this._innerHTML;
+    }
+    if (!this.childNodes.length) {
+      return '';
+    }
+    return this.childNodes.map(node => serializeNode(node)).join('');
   }
 
   set innerHTML(value) {
-    this._innerHTML = value == null ? '' : String(value);
+    const markup = value == null ? '' : String(value);
+    this._innerHTML = markup;
+    this.childNodes = [];
     this.children = [];
     this._textContent = '';
-    if (!this._innerHTML) {
+    if (!markup) {
       return;
     }
 
@@ -192,7 +277,7 @@ class FakeElement {
     const tokenPattern = /<!--[^]*?-->|<[^>]+>|[^<]+/g;
     const stack = [this];
     let match;
-    while ((match = tokenPattern.exec(this._innerHTML))) {
+    while ((match = tokenPattern.exec(markup))) {
       const token = match[0];
       const current = stack[stack.length - 1];
       if (!current) {
@@ -262,12 +347,10 @@ class FakeElement {
 
       const text = token;
       if (!text) continue;
-      if (!current._textContent) {
-        current._textContent = text;
-      } else {
-        current._textContent += text;
-      }
+      const textNode = new FakeTextNode(text, this.ownerDocument);
+      current.appendChild(textNode);
     }
+    this._innerHTML = markup;
   }
 
   setAttribute(name, value) {
@@ -324,7 +407,7 @@ class FakeElement {
       }
     }
     if (deep) {
-      this.children.forEach(child => clone.appendChild(child.cloneNode(true)));
+      this.childNodes.forEach(child => clone.appendChild(child.cloneNode(true)));
     }
     return clone;
   }
@@ -335,9 +418,11 @@ class FakeElement {
 
   set ownerDocument(doc) {
     this._ownerDocument = doc;
-    if (Array.isArray(this.children)) {
-      this.children.forEach(child => {
-        child.ownerDocument = doc;
+    if (Array.isArray(this.childNodes)) {
+      this.childNodes.forEach(child => {
+        if ('ownerDocument' in child) {
+          child.ownerDocument = doc;
+        }
       });
     }
   }
@@ -681,56 +766,66 @@ function initializeDocumentFromHtml(document, html) {
   document.body.innerHTML = bodyContent;
 }
 
+function serializeNode(node) {
+  if (!node) {
+    return '';
+  }
+  if (node instanceof FakeTextNode || node.nodeType === 3) {
+    return escapeHtml(node.textContent);
+  }
+  return serializeElement(node);
+}
+
+function serializeElement(element) {
+  if (!element) return '';
+  const tag = element.tagName ? element.tagName.toLowerCase() : 'div';
+
+  const attrs = [];
+  if (element.attributes && element.attributes.size) {
+    for (const [name, value] of element.attributes.entries()) {
+      if (name === 'class' && element.className) continue;
+      attrs.push(`${name}="${escapeHtml(String(value))}"`);
+    }
+  }
+
+  if (element.className) {
+    attrs.push(`class="${escapeHtml(element.className)}"`);
+  }
+
+  if (element.dataset) {
+    for (const key of Object.keys(element.dataset)) {
+      const attrName = `data-${key.replace(/[A-Z]/g, char => `-${char.toLowerCase()}`)}`;
+      if (!attrs.some(entry => entry.startsWith(`${attrName}=`))) {
+        attrs.push(`${attrName}="${escapeHtml(String(element.dataset[key]))}"`);
+      }
+    }
+  }
+
+  if (element.style && element.style.store) {
+    const styleEntries = Object.keys(element.style.store).map(name => `${name}: ${element.style.store[name]}`);
+    if (styleEntries.length) {
+      attrs.push(`style="${escapeHtml(styleEntries.join('; '))}"`);
+    }
+  }
+
+  const attrText = attrs.length ? ` ${attrs.join(' ')}` : '';
+
+  let content = '';
+  if (element._innerHTML != null) {
+    content = element._innerHTML;
+  } else if (element.childNodes && element.childNodes.length) {
+    content = element.childNodes.map(child => serializeNode(child)).join('');
+  } else if (element._textContent) {
+    content = escapeHtml(element._textContent);
+  }
+
+  return `<${tag}${attrText}>${content}</${tag}>`;
+}
+
 function serializeDocument(document) {
   if (!document) {
     return '';
   }
-
-  const serializeElement = element => {
-    if (!element) return '';
-    const tag = element.tagName ? element.tagName.toLowerCase() : 'div';
-
-    const attrs = [];
-    if (element.attributes && element.attributes.size) {
-      for (const [name, value] of element.attributes.entries()) {
-        if (name === 'class' && element.className) continue;
-        attrs.push(`${name}="${escapeHtml(String(value))}"`);
-      }
-    }
-
-    if (element.className) {
-      attrs.push(`class="${escapeHtml(element.className)}"`);
-    }
-
-    if (element.dataset) {
-      for (const key of Object.keys(element.dataset)) {
-        const attrName = `data-${key.replace(/[A-Z]/g, char => `-${char.toLowerCase()}`)}`;
-        if (!attrs.some(entry => entry.startsWith(`${attrName}=`))) {
-          attrs.push(`${attrName}="${escapeHtml(String(element.dataset[key]))}"`);
-        }
-      }
-    }
-
-    if (element.style && element.style.store) {
-      const styleEntries = Object.keys(element.style.store).map(name => `${name}: ${element.style.store[name]}`);
-      if (styleEntries.length) {
-        attrs.push(`style="${escapeHtml(styleEntries.join('; '))}"`);
-      }
-    }
-
-    const attrText = attrs.length ? ` ${attrs.join(' ')}` : '';
-
-    let content = '';
-    if (element._innerHTML) {
-      content = element._innerHTML;
-    } else if (element.children && element.children.length) {
-      content = element.children.map(serializeElement).join('');
-    } else if (element._textContent) {
-      content = escapeHtml(element._textContent);
-    }
-
-    return `<${tag}${attrText}>${content}</${tag}>`;
-  };
 
   const headHtml = serializeElement(document.head);
   const bodyHtml = serializeElement(document.body);
@@ -784,6 +879,7 @@ function escapeHtml(value) {
 module.exports = {
   FakeStyle,
   FakeClassList,
+  FakeTextNode,
   FakeElement,
   FakeDocument,
   createElement,
