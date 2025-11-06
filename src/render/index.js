@@ -824,12 +824,8 @@ function createRenderer(options = {}) {
       }
     }
 
-    if (!measurement) {
-      measurement = measurementInput.defaultMeasure();
-    }
-
     if (!measurement || typeof measurement !== 'object') {
-      return measurementInput.defaultMeasure();
+      measurement = measurementInput.defaultMeasure();
     }
 
     return measurement;
