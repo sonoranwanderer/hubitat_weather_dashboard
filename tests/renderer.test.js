@@ -4,7 +4,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { createLegacyWeatherDashboardRenderer } = require('../src/render');
+const { createRenderer } = require('../src/render');
 
 
 describe('Weather Dashboard Renderer', () => {
@@ -21,7 +21,7 @@ describe('Weather Dashboard Renderer', () => {
     global.window.__WDASH_TEST_MODE__ = true; // Indicate test environment
 
     // The factory attaches test hooks to the window object
-    createLegacyWeatherDashboardRenderer({ window, document, globalThis: window });
+    createRenderer({ window, document, globalThis: window });
     testHooks = window.__WDASH_TEST_HOOKS__;
     renderer = testHooks.render;
   });
@@ -45,5 +45,67 @@ describe('Weather Dashboard Renderer', () => {
     expect(grid.querySelector('.wdash-card--temp-wind')).not.toBeNull();
     expect(grid.querySelector('.wdash-card--ambient')).not.toBeNull();
     expect(grid.dataset.empty).toBe('false');
+  });
+});
+
+describe('Renderer measurement hooks', () => {
+  beforeEach(() => {
+    document.body.innerHTML = `
+      <div id="tile-0" class="tile">
+        <div class="tile-primary">
+          <div class="wdash-root">
+            <div class="wdash"></div>
+          </div>
+        </div>
+      </div>
+    `;
+    window.__WDASH_TEST_MODE__ = true;
+    const root = document.querySelector('.wdash-root');
+    if (root) {
+      root.getBoundingClientRect = () => ({ width: 500, height: 400, top: 0, left: 0, right: 500, bottom: 400 });
+    }
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('delegates measurement and observation to injected hooks', () => {
+    const measureCalls = [];
+    const measureMock = input => {
+      measureCalls.push(input);
+      return { width: 640, height: 480 };
+    };
+    const disconnectMock = () => {};
+    const observeCalls = [];
+    const observeMock = input => {
+      observeCalls.push(input);
+      return { disconnect: disconnectMock };
+    };
+
+    createRenderer({
+      window,
+      document,
+      globalThis: window,
+      container: document.getElementById('tile-0'),
+      measure: measureMock,
+      observe: observeMock
+    });
+
+    const hooks = window.__WDASH_TEST_HOOKS__;
+    const measurement = hooks.resolveMeasuredBaseDimensions({ commit: false });
+
+    expect(measureCalls.length).toBe(1);
+    expect(measureCalls[0].type).toBe('base-dimensions');
+    expect(measurement.width).toBe(640);
+    expect(measurement.height).toBe(480);
+
+    const displayTile = document.getElementById('tile-0');
+    const content = displayTile.querySelector('.tile-primary');
+    hooks.setupScaling(displayTile, content);
+
+    expect(observeCalls.length).toBe(1);
+    expect(observeCalls[0].type).toBe('base-dimensions');
+    expect(typeof observeCalls[0].onMeasure).toBe('function');
   });
 });

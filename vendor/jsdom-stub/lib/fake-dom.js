@@ -718,9 +718,17 @@ function loadWeatherDashboard(window, options = {}) {
 
   if (!preferScript && !explicitScriptPath && fs.existsSync(rendererPath)) {
     try {
-      const { createLegacyWeatherDashboardRenderer } = require(rendererPath);
-      createLegacyWeatherDashboardRenderer({ window, document: window.document, globalThis: window });
-      return window.__WDASH_TEST_HOOKS__;
+      const {
+        createRenderer,
+        createLegacyWeatherDashboardRenderer
+      } = require(rendererPath);
+      const factory = typeof createRenderer === 'function'
+        ? createRenderer
+        : (typeof createLegacyWeatherDashboardRenderer === 'function' ? createLegacyWeatherDashboardRenderer : null);
+      if (factory) {
+        factory({ window, document: window.document, globalThis: window });
+        return window.__WDASH_TEST_HOOKS__;
+      }
     } catch (err) {
       if (process.env.WDASH_DEBUG_LOAD === '1') {
         // eslint-disable-next-line no-console

@@ -235,8 +235,15 @@ function createRunner() {
         script.textContent = JSON.stringify(options.inlineConfig);
         doc.head.appendChild(script);
       }
-      const { createLegacyWeatherDashboardRenderer } = require(path.resolve(__dirname, '../../../src/render'));
-      this.window.createLegacyWeatherDashboardRenderer = createLegacyWeatherDashboardRenderer;
+      const { createRenderer, createLegacyWeatherDashboardRenderer } = require(path.resolve(__dirname, '../../../src/render'));
+      if (typeof createRenderer === 'function') {
+        this.window.createRenderer = createRenderer;
+      }
+      if (typeof createLegacyWeatherDashboardRenderer === 'function') {
+        this.window.createLegacyWeatherDashboardRenderer = createLegacyWeatherDashboardRenderer;
+      } else if (typeof createRenderer === 'function') {
+        this.window.createLegacyWeatherDashboardRenderer = createRenderer;
+      }
       const scriptPath = path.resolve(__dirname, '../../../app/weather-dashboard-app.js');
       const source = fs.readFileSync(scriptPath, 'utf8');
       try {

@@ -3,21 +3,28 @@
   const modules = new Map();
   modules.set("src/entries/hubitat-dashboard.js", [
     function(module, exports, require) {
-      const { createLegacyWeatherDashboardRenderer } = require('../render/index.js');
+      const { createRenderer, createLegacyWeatherDashboardRenderer } = require('../render/index.js');
       
       (function bootstrapWeatherDashboard(global) {
         if (!global) return null;
       
         const resolveFactoryFromModule = () => {
+          if (typeof createRenderer === 'function') {
+            return createRenderer;
+          }
           if (typeof createLegacyWeatherDashboardRenderer === 'function') {
             return createLegacyWeatherDashboardRenderer;
           }
           if (typeof require !== 'function') return null;
           try {
             const mod = require('../render/index.js');
-            return mod && typeof mod.createLegacyWeatherDashboardRenderer === 'function'
-              ? mod.createLegacyWeatherDashboardRenderer
-              : null;
+            if (mod && typeof mod.createRenderer === 'function') {
+              return mod.createRenderer;
+            }
+            if (mod && typeof mod.createLegacyWeatherDashboardRenderer === 'function') {
+              return mod.createLegacyWeatherDashboardRenderer;
+            }
+            return null;
           } catch (err) {
             return null;
           }
@@ -62,15 +69,30 @@
       
       const { createHubitatTilesAdapter } = require('../adapters/hubitat-tiles.js');
       
-      function createLegacyWeatherDashboardRenderer(options = {}) {
-        const envWindow = options.window ?? (typeof window !== 'undefined' ? window : undefined);
-        const envDocument = options.document ?? (typeof document !== 'undefined' ? document : envWindow?.document ?? undefined);
-        const envGlobal = options.globalThis ?? (typeof globalThis !== 'undefined' ? globalThis : envWindow ?? {});
+      function createRenderer(options = {}) {
+        const envWindow = options.window
+          ?? options.environment?.window
+          ?? (typeof window !== 'undefined' ? window : undefined);
+        const envDocument = options.document
+          ?? options.environment?.document
+          ?? (typeof document !== 'undefined' ? document : envWindow?.document ?? undefined);
+        const envGlobal = options.globalThis
+          ?? options.environment?.globalThis
+          ?? (typeof globalThis !== 'undefined' ? globalThis : envWindow ?? {});
+        const injectedContainer = options.container ?? null;
+        const injectedMeasure = typeof options.measure === 'function' ? options.measure : null;
+        const injectedObserve = typeof options.observe === 'function' ? options.observe : null;
+        const injectedDataSource = options.dataSource ?? null;
+        const injectedLayoutOverride = options.layoutOverride ?? null;
       
         const moduleApi = (() => {
           const window = envWindow;
           const document = envDocument;
           const globalThis = envGlobal;
+          const measurementHooks = {
+            measure: injectedMeasure,
+            observe: injectedObserve
+          };
           const IS_TEST_ENV = typeof window !== 'undefined' && window?.__WDASH_TEST_MODE__ === true;
           if (typeof window !== 'undefined' && !IS_TEST_ENV) {
             if (window.__WEATHER_DASHBOARD_SCRIPT_LOADED__ === true) {
@@ -228,23 +250,54 @@
       
         function ensureTileAdapter() {
           if (tileAdapter) return tileAdapter;
-          tileAdapter = createHubitatTilesAdapter({
-            displayTileId: DISPLAY_TILE_ID,
-            knownPayloadKeys: KNOWN_PAYLOAD_KEYS,
-            safeRenderFromData,
-            window,
-            document,
-            globalThis
-          });
-          ({
-            readPayloads,
-            toggleSourceTileMask,
-            ensureDataTileObservers,
-            watchForTileInsertions,
-            getDisplayTileHostElement,
-            findContentElement,
-            byId
-          } = tileAdapter);
+      
+          const adapter = injectedDataSource
+            ? (typeof injectedDataSource === 'function'
+              ? injectedDataSource({
+                  displayTileId: DISPLAY_TILE_ID,
+                  knownPayloadKeys: KNOWN_PAYLOAD_KEYS,
+                  safeRenderFromData,
+                  window,
+                  document,
+                  globalThis
+                })
+              : injectedDataSource)
+            : createHubitatTilesAdapter({
+                displayTileId: DISPLAY_TILE_ID,
+                knownPayloadKeys: KNOWN_PAYLOAD_KEYS,
+                safeRenderFromData,
+                window,
+                document,
+                globalThis
+              });
+      
+          tileAdapter = adapter || {};
+      
+          readPayloads = typeof tileAdapter.readPayloads === 'function' ? tileAdapter.readPayloads : () => [];
+          toggleSourceTileMask = typeof tileAdapter.toggleSourceTileMask === 'function' ? tileAdapter.toggleSourceTileMask : () => {};
+          ensureDataTileObservers = typeof tileAdapter.ensureDataTileObservers === 'function'
+            ? tileAdapter.ensureDataTileObservers
+            : () => {};
+          watchForTileInsertions = typeof tileAdapter.watchForTileInsertions === 'function'
+            ? tileAdapter.watchForTileInsertions
+            : () => {};
+          getDisplayTileHostElement = typeof tileAdapter.getDisplayTileHostElement === 'function'
+            ? tileAdapter.getDisplayTileHostElement
+            : () => injectedContainer ?? null;
+          findContentElement = typeof tileAdapter.findContentElement === 'function'
+            ? tileAdapter.findContentElement
+            : element => element;
+          byId = typeof tileAdapter.byId === 'function'
+            ? tileAdapter.byId
+            : id => {
+                if (!document || typeof document.getElementById !== 'function') return null;
+                try {
+                  return document.getElementById(id);
+                } catch (err) {
+                  return null;
+                }
+              };
+      
           return tileAdapter;
         }
       
@@ -801,9 +854,55 @@
         }
       
         function measureDisplayTileBaseDimensions() {
-          const displayTile = byId(DISPLAY_TILE_ID);
-          const content = displayTile ? findContentElement(displayTile) : null;
-          const root = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-root');
+          const hostElement = getDisplayTileHostElement();
+          const fallbackContext = {
+            hostElement,
+            displayTile: injectedContainer || byId(DISPLAY_TILE_ID),
+            container: injectedContainer,
+            describeElementForDiagnostics
+          };
+      
+          const measurementInput = {
+            type: 'base-dimensions',
+            container: injectedContainer || hostElement || null,
+            host: hostElement || null,
+            root: hostElement && typeof hostElement.querySelector === 'function'
+              ? hostElement.querySelector('.wdash-root')
+              : null,
+            defaultMeasure: () => defaultMeasureDisplayTileBaseDimensions(fallbackContext)
+          };
+      
+          let measurement = null;
+      
+          if (typeof measurementHooks.measure === 'function') {
+            try {
+              measurement = measurementHooks.measure(measurementInput);
+            } catch (err) {
+              if (window?.console?.warn) {
+                window.console.warn('[WeatherDashboard] Measurement hook failed; falling back to DOM measurement.', err);
+              }
+            }
+          }
+      
+          if (!measurement || typeof measurement !== 'object') {
+            measurement = measurementInput.defaultMeasure();
+          }
+      
+          return measurement;
+        }
+      
+        function defaultMeasureDisplayTileBaseDimensions(context = {}) {
+          const displayTile = context.displayTile || injectedContainer || byId(DISPLAY_TILE_ID);
+          const content = context.contentElement
+            || (displayTile ? findContentElement(displayTile) : null);
+          const rootFromContext = context.rootElement
+            || (typeof context.hostElement?.querySelector === 'function'
+              ? context.hostElement.querySelector('.wdash-root')
+              : null);
+          const root = rootFromContext
+            || (content && typeof content.querySelector === 'function'
+              ? content.querySelector('.wdash-root')
+              : (document ? document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-root') : null));
           const parentHost = root?.parentElement || null;
       
           const seen = new Set();
@@ -855,6 +954,26 @@
               ? { role: heightSource.role, description: heightSource.description, height: heightSource.height }
               : null
           };
+        }
+      
+        function normalizeObserverHandle(handle) {
+          if (!handle) return null;
+          if (typeof handle.disconnect === 'function') return handle;
+          if (typeof handle === 'function') {
+            return { disconnect: handle };
+          }
+          if (typeof handle === 'object') {
+            if (typeof handle.unsubscribe === 'function') {
+              return { disconnect: () => handle.unsubscribe() };
+            }
+            if (typeof handle.dispose === 'function') {
+              return { disconnect: () => handle.dispose() };
+            }
+            if (typeof handle.stop === 'function') {
+              return { disconnect: () => handle.stop() };
+            }
+          }
+          return null;
         }
       
         function resolveMeasuredBaseDimensions(options = {}) {
@@ -1208,7 +1327,17 @@
           }
       
           const hostElement = getDisplayTileHostElement();
-          const rawLayout = metadata ? (metadata.layout != null ? metadata.layout : metadata.layoutOverride) : null;
+          let rawLayout = null;
+          if (metadata) {
+            if (metadata.layout != null) {
+              rawLayout = metadata.layout;
+            } else if (metadata.layoutOverride != null) {
+              rawLayout = metadata.layoutOverride;
+            }
+          }
+          if (rawLayout == null && injectedLayoutOverride != null) {
+            rawLayout = injectedLayoutOverride;
+          }
           const override = rawLayout ? extractLayoutOverride(rawLayout) : null;
           const overrideLayout = isPlainObject(override) ? override : null;
           const hasOwn = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
@@ -1587,19 +1716,50 @@
             window.addEventListener('resize', scaleResizeHandler);
           }
           setupBreakpointListeners();
-          if (typeof ResizeObserver !== 'function') return;
-          if (scaleObserver) {
+          if (scaleObserver && typeof scaleObserver.disconnect === 'function') {
             scaleObserver.disconnect();
           }
-          scaleObserver = new ResizeObserver(() => {
+          scaleObserver = null;
+      
+          const handleMeasurement = () => {
             const measurement = resolveMeasuredBaseDimensions();
             if (measurement.changed) {
               layoutState.pendingApply = true;
               applyLayoutOverrides(lastSuccessfulPayload?.metadata);
             }
             applyScale(root);
+          };
+      
+          if (typeof measurementHooks.observe === 'function') {
+            const observerHandle = measurementHooks.observe({
+              type: 'base-dimensions',
+              container: injectedContainer || displayTile || null,
+              host: displayTile || null,
+              root,
+              onMeasure: handleMeasurement
+            });
+            const normalizedHandle = normalizeObserverHandle(observerHandle);
+            if (normalizedHandle) {
+              scaleObserver = normalizedHandle;
+              return;
+            }
+          }
+      
+          if (typeof ResizeObserver !== 'function') return;
+      
+          const resizeObserver = new ResizeObserver(() => {
+            handleMeasurement();
           });
-          scaleObserver.observe(displayTile);
+          if (displayTile && typeof resizeObserver.observe === 'function') {
+            resizeObserver.observe(displayTile);
+          }
+          scaleObserver = {
+            disconnect() {
+              if (typeof resizeObserver.disconnect === 'function') {
+                resizeObserver.disconnect();
+              }
+            }
+          };
         }
       
         function setupBreakpointListeners() {
@@ -7569,6 +7729,7 @@
             render,
             readPayloads,
             mergePayloads,
+            setupScaling,
             buildCardMarkupList,
             updateTempWindCard,
             tempWindState,
@@ -7637,11 +7798,16 @@
         return moduleApi;
       }
       
+      function createLegacyWeatherDashboardRenderer(options = {}) {
+        return createRenderer(options);
+      }
+      
       if (typeof globalThis !== 'undefined' && typeof globalThis.createLegacyWeatherDashboardRenderer !== 'function') {
         globalThis.createLegacyWeatherDashboardRenderer = createLegacyWeatherDashboardRenderer;
       }
       
       module.exports = {
+        createRenderer,
         createLegacyWeatherDashboardRenderer
       };
       
