@@ -291,12 +291,17 @@ function setupDomEnvironment() {
     }
     const ms = clampDelay(delay);
     const handle = originalSetTimeout(() => {
+      let thrownError = null;
       try {
         fn();
       } catch (err) {
-        // ignore timer exceptions in the stub environment
+        thrownError = err;
+      } finally {
+        activeTimeouts.delete(handle);
       }
-      activeTimeouts.delete(handle);
+      if (thrownError) {
+        throw thrownError;
+      }
     }, ms);
     activeTimeouts.add(handle);
     return handle;

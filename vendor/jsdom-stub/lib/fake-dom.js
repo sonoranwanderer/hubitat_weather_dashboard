@@ -631,10 +631,14 @@ function createTestEnvironment() {
     }
     const ms = clampDelay(delay);
     return nativeSetTimeout(() => {
+      let thrownError = null;
       try {
         fn();
       } catch (err) {
-        // ignore timer exceptions in stubbed environment
+        thrownError = err;
+      }
+      if (thrownError) {
+        throw thrownError;
       }
     }, ms);
   };
