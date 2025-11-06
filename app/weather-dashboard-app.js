@@ -1475,38 +1475,31 @@
       ? `Payload generated at ${normalized.payload.metadata.generatedAt}.`
       : null;
 
+    const details = [];
+    const timestampDetail = timestamp
+      ? (renderResult.rendered ? `Updated ${timestamp}` : `Fetched ${timestamp}.`)
+      : null;
+
+    if (!renderResult.rendered && Array.isArray(renderResult.details)) {
+      details.push(...renderResult.details);
+    }
+    if (timestampDetail) {
+      details.push(timestampDetail);
+    }
+    if (summary) {
+      details.push(summary);
+    }
+    if (payloadGenerated) {
+      details.push(payloadGenerated);
+    }
+    details.push(refreshDetail);
+    if (state.validationWarnings.length) {
+      details.push(...state.validationWarnings.map(item => `⚠ ${item}`));
+    }
+
     if (renderResult.rendered) {
-      const details = [];
-      if (timestamp) {
-        details.push(`Updated ${timestamp}`);
-      }
-      if (summary) {
-        details.push(summary);
-      }
-      details.push(refreshDetail);
-      if (payloadGenerated) {
-        details.push(payloadGenerated);
-      }
-      if (state.validationWarnings.length) {
-        details.push(...state.validationWarnings.map(item => `⚠ ${item}`));
-      }
       updateStatus('success', 'Weather data updated', details);
     } else {
-      const details = Array.isArray(renderResult.details) ? renderResult.details.slice() : [];
-      if (timestamp) {
-        details.push(`Fetched ${timestamp}.`);
-      }
-      if (summary) {
-        details.push(summary);
-      }
-      if (payloadGenerated) {
-        details.push(payloadGenerated);
-      }
-      details.push(refreshDetail);
-      if (state.validationWarnings.length) {
-        details.push(...state.validationWarnings.map(item => `⚠ ${item}`));
-      }
-
       const reason = renderResult.reason;
       if (reason === 'no-renderer' || reason === 'missing-method') {
         updateStatus('error', 'Renderer unavailable', details);
