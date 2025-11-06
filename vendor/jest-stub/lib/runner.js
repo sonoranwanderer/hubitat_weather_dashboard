@@ -79,7 +79,7 @@ async function runCLI(options = {}) {
   };
 
   for (const file of testFiles) {
-    const summary = runTestFile(file, { modulePaths });
+    const summary = await runTestFile(file, { modulePaths });
     aggregated.files.push(summary);
     aggregated.total += summary.total;
     aggregated.failed += summary.failed;

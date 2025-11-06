@@ -378,11 +378,26 @@ function setupDomEnvironment() {
   };
 }
 
-function runTestFile(filePath, options = {}) {
+async function runTestFile(filePath, options = {}) {
   const runtime = createRuntime();
   const restoreModulePaths = installModulePaths(options.modulePaths || []);
   const restoreDom = setupDomEnvironment();
   installGlobals(runtime);
+  const uncaughtErrors = [];
+  let removeUncaughtHandler = () => {};
+  if (typeof process !== 'undefined' && process && typeof process.on === 'function') {
+    const handler = err => {
+      uncaughtErrors.push(err);
+    };
+    process.on('uncaughtException', handler);
+    removeUncaughtHandler = () => {
+      if (typeof process.off === 'function') {
+        process.off('uncaughtException', handler);
+      } else if (typeof process.removeListener === 'function') {
+        process.removeListener('uncaughtException', handler);
+      }
+    };
+  }
   let loadError = null;
   try {
     delete require.cache[require.resolve(filePath)];
@@ -392,26 +407,44 @@ function runTestFile(filePath, options = {}) {
   }
 
   let summary;
-  if (loadError) {
-    summary = {
-      tests: [
-        {
-          status: 'failed',
-          name: 'Test suite failed to load',
-          error: loadError
-        }
-      ],
-      total: 1,
-      failed: 1,
-      passed: 0
-    };
-  } else {
-    summary = runtime.run();
-  }
+  try {
+    if (loadError) {
+      summary = {
+        tests: [
+          {
+            status: 'failed',
+            name: 'Test suite failed to load',
+            error: loadError
+          }
+        ],
+        total: 1,
+        failed: 1,
+        passed: 0
+      };
+    } else {
+      summary = runtime.run();
+    }
 
-  uninstallGlobals();
-  restoreDom();
-  restoreModulePaths();
+    await new Promise(resolve => setTimeout(resolve, 75));
+
+    if (uncaughtErrors.length) {
+      let index = 1;
+      for (const err of uncaughtErrors) {
+        const name = uncaughtErrors.length > 1
+          ? `Unhandled asynchronous exception #${index}`
+          : 'Unhandled asynchronous exception';
+        summary.tests.push({ status: 'failed', name, error: err });
+        summary.total += 1;
+        summary.failed += 1;
+        index += 1;
+      }
+    }
+  } finally {
+    uninstallGlobals();
+    restoreDom();
+    restoreModulePaths();
+    removeUncaughtHandler();
+  }
 
   summary.filePath = filePath;
   if (typeof summary.passed !== 'number') {
