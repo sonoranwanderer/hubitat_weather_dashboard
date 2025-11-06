@@ -47,6 +47,204 @@
     lastHeight: null
   };
 
+  function isElement(value) {
+    return value && typeof value === 'object' && value.nodeType === 1;
+  }
+
+  function describeElement(element) {
+    if (!element) return '(unknown)';
+    const tag = element.tagName ? element.tagName.toLowerCase() : 'node';
+    const id = element.id ? `#${element.id}` : '';
+    let className = '';
+    if (element.classList && element.classList.length) {
+      className = '.' + Array.from(element.classList).join('.');
+    } else if (typeof element.className === 'string' && element.className.trim()) {
+      className = '.' + element.className.trim().split(/\s+/).join('.');
+    }
+    return `${tag}${id}${className}`;
+  }
+
+  function selectRendererContainer(preferred) {
+    if (preferred && isElement(preferred)) {
+      return preferred;
+    }
+    const shell = shellElements || ensureAppShell();
+    if (shell && isElement(shell.displayPrimary)) {
+      return shell.displayPrimary;
+    }
+    if (shell && isElement(shell.displayTile)) {
+      return shell.displayTile;
+    }
+    return null;
+  }
+
+  function measureRendererContainer(options = {}) {
+    const target = selectRendererContainer(options.container);
+    const fallback = typeof options.defaultMeasure === 'function'
+      ? () => {
+          try {
+            return options.defaultMeasure();
+          } catch (err) {
+            return null;
+          }
+        }
+      : () => null;
+
+    if (!target) {
+      return fallback();
+    }
+
+    let width = null;
+    let height = null;
+
+    const rect = typeof target.getBoundingClientRect === 'function'
+      ? target.getBoundingClientRect()
+      : null;
+    if (rect) {
+      const rectWidth = Number(rect.width);
+      const rectHeight = Number(rect.height);
+      if (Number.isFinite(rectWidth) && rectWidth > 0) {
+        width = rectWidth;
+      }
+      if (Number.isFinite(rectHeight) && rectHeight > 0) {
+        height = rectHeight;
+      }
+    }
+
+    if ((!Number.isFinite(width) || width <= 0) && typeof global.getComputedStyle === 'function') {
+      try {
+        const computed = global.getComputedStyle(target);
+        const styleWidth = parseCssPixels(computed.width);
+        if (Number.isFinite(styleWidth) && styleWidth > 0) {
+          width = styleWidth;
+        }
+      } catch (err) {
+        /* ignore */
+      }
+    }
+    if ((!Number.isFinite(height) || height <= 0) && typeof global.getComputedStyle === 'function') {
+      try {
+        const computed = global.getComputedStyle(target);
+        const styleHeight = parseCssPixels(computed.height);
+        if (Number.isFinite(styleHeight) && styleHeight > 0) {
+          height = styleHeight;
+        }
+      } catch (err) {
+        /* ignore */
+      }
+    }
+
+    if ((!Number.isFinite(width) || width <= 0) && typeof target.clientWidth === 'number') {
+      const clientWidth = Number(target.clientWidth);
+      if (Number.isFinite(clientWidth) && clientWidth > 0) {
+        width = clientWidth;
+      }
+    }
+    if ((!Number.isFinite(height) || height <= 0) && typeof target.clientHeight === 'number') {
+      const clientHeight = Number(target.clientHeight);
+      if (Number.isFinite(clientHeight) && clientHeight > 0) {
+        height = clientHeight;
+      }
+    }
+
+    if (!Number.isFinite(width) || width <= 0 || !Number.isFinite(height) || height <= 0) {
+      return fallback();
+    }
+
+    const normalizedWidth = Math.max(1, Math.round(width));
+    const normalizedHeight = Math.max(1, Math.round(height));
+    const candidate = {
+      role: 'preview-container',
+      description: describeElement(target),
+      width: normalizedWidth,
+      height: normalizedHeight
+    };
+
+    return {
+      width: normalizedWidth,
+      height: normalizedHeight,
+      strategy: 'preview-app',
+      candidates: [candidate],
+      widthSource: { role: candidate.role, description: candidate.description, width: candidate.width },
+      heightSource: { role: candidate.role, description: candidate.description, height: candidate.height }
+    };
+  }
+
+  function observeRendererContainer(options = {}) {
+    const onMeasure = typeof options.onMeasure === 'function' ? options.onMeasure : null;
+    if (!onMeasure) return null;
+
+    const target = selectRendererContainer(options.container);
+    if (!target) {
+      return null;
+    }
+
+    let stopped = false;
+    let lastWidth = null;
+    let lastHeight = null;
+
+    const emitMeasurement = () => {
+      if (stopped) return;
+      const measurement = measureRendererContainer({
+        container: target,
+        defaultMeasure: options.defaultMeasure
+      });
+      const width = Number(measurement?.width);
+      const height = Number(measurement?.height);
+      if (!Number.isFinite(width) || !Number.isFinite(height)) {
+        return;
+      }
+      if (width === lastWidth && height === lastHeight) {
+        return;
+      }
+      lastWidth = width;
+      lastHeight = height;
+      onMeasure({ width, height, strategy: measurement.strategy, widthSource: measurement.widthSource, heightSource: measurement.heightSource });
+    };
+
+    emitMeasurement();
+
+    if (typeof global.ResizeObserver === 'function') {
+      const resizeObserver = new global.ResizeObserver(() => {
+        emitMeasurement();
+      });
+      try {
+        resizeObserver.observe(target);
+      } catch (err) {
+        /* ignore */
+      }
+      return {
+        disconnect() {
+          stopped = true;
+          try {
+            resizeObserver.disconnect();
+          } catch (err) {
+            /* ignore */
+          }
+        }
+      };
+    }
+
+    if (typeof global.addEventListener === 'function' && typeof global.removeEventListener === 'function') {
+      const handler = () => {
+        emitMeasurement();
+      };
+      global.addEventListener('resize', handler);
+      return {
+        disconnect() {
+          stopped = true;
+          global.removeEventListener('resize', handler);
+        }
+      };
+    }
+
+    return {
+      disconnect() {
+        stopped = true;
+      }
+    };
+  }
+
   const publicApi = {
     get state() {
       return { ...state };
@@ -1372,7 +1570,16 @@
       return null;
     }
     try {
-      const renderer = factory({ window: global, document: global.document, globalThis: global });
+      const shell = ensureAppShell();
+      const container = shell ? shell.displayPrimary || shell.displayTile : null;
+      const renderer = factory({
+        window: global,
+        document: global.document,
+        globalThis: global,
+        container,
+        measure: measureRendererContainer,
+        observe: observeRendererContainer
+      });
       state.renderer = renderer || (global.weatherDashboard && global.weatherDashboard.__renderer__) || null;
       return state.renderer;
     } catch (err) {
