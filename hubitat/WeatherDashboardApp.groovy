@@ -86,6 +86,47 @@ def landingPage() {
     return height;
   }
 
+  function readDiagnosticsToken() {
+    if (!window || !window.location || !window.location.search) return null;
+    var search = window.location.search.replace(/^\?/, '');
+    if (!search) return null;
+    var entries = search.split('&');
+    for (var index = 0; index < entries.length; index++) {
+      var entry = entries[index];
+      if (!entry) continue;
+      var parts = entry.split('=');
+      var rawKey = parts.length > 0 ? parts[0] : '';
+      if (!rawKey) continue;
+      var key;
+      try {
+        key = decodeURIComponent(rawKey).toLowerCase();
+      } catch (err) {
+        key = rawKey.toLowerCase();
+      }
+      if (key !== 'diagnostics' && key !== 'debug') continue;
+      var rawValue = parts.length > 1 ? parts.slice(1).join('=') : '';
+      if (!rawValue) return '';
+      try {
+        return decodeURIComponent(rawValue);
+      } catch (err) {
+        return rawValue;
+      }
+    }
+    return null;
+  }
+
+  function forwardDiagnosticsToFrame() {
+    var token = readDiagnosticsToken();
+    if (token == null) return;
+    var frame = document.getElementById(FRAME_ID);
+    if (!frame) return;
+    var src = frame.getAttribute('src');
+    if (!src) return;
+    if (src.indexOf('diagnostics=') !== -1 || src.indexOf('debug=') !== -1) return;
+    var separator = src.indexOf('?') === -1 ? '?' : '&';
+    frame.setAttribute('src', src + separator + 'diagnostics=' + encodeURIComponent(token));
+  }
+
   function applyAspectHeight() {
     var height = computeAspectHeight();
     if (!height) return null;
@@ -125,12 +166,14 @@ def landingPage() {
     window.addEventListener('message', handleMessage, false);
     window.addEventListener('resize', applyAspectHeight);
     window.addEventListener('load', function () {
+      forwardDiagnosticsToFrame();
       if (!applyAspectHeight()) {
         applyHeight(lastApplied || DEFAULT_HEIGHT);
       }
     }, { once: true });
   }
 
+  forwardDiagnosticsToFrame();
   if (!applyAspectHeight()) {
     applyHeight(DEFAULT_HEIGHT);
   }
