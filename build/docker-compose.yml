@@ -1,6 +1,8 @@
 services:
   dashboard-build:
-    image: node:20
+    build:
+      context: .
+      dockerfile: Dockerfile
     working_dir: /workspace
     entrypoint: ["/workspace/build/docker-entrypoint.sh"]
     volumes:

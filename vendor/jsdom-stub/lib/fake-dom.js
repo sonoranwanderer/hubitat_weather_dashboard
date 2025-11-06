@@ -91,10 +91,40 @@ class FakeClassList {
   }
 }
 
+class FakeTextNode {
+  constructor(text = '', ownerDocument = null) {
+    this.nodeType = 3;
+    this.parentElement = null;
+    this._ownerDocument = ownerDocument;
+    this._text = text == null ? '' : String(text);
+  }
+
+  get textContent() {
+    return this._text;
+  }
+
+  set textContent(value) {
+    this._text = value == null ? '' : String(value);
+  }
+
+  get ownerDocument() {
+    return this._ownerDocument;
+  }
+
+  set ownerDocument(doc) {
+    this._ownerDocument = doc;
+  }
+
+  cloneNode() {
+    return new FakeTextNode(this._text, this._ownerDocument);
+  }
+}
+
 class FakeElement {
   constructor(tagName, ownerDocument) {
     this.tagName = String(tagName || 'div').toUpperCase();
     this.ownerDocument = ownerDocument || null;
+    this.childNodes = [];
     this.children = [];
     this.parentElement = null;
     this.classList = new FakeClassList(this);
@@ -114,71 +144,213 @@ class FakeElement {
       child.parentElement.removeChild(child);
     }
     child.parentElement = this;
-    child.ownerDocument = this.ownerDocument;
-    if (this.tagName === 'SVG') {
+    if ('ownerDocument' in child) {
+      child.ownerDocument = this.ownerDocument;
+    }
+    if (child instanceof FakeElement && this.tagName === 'SVG') {
       child.ownerSVGElement = this;
     }
-    this.children.push(child);
+    this.childNodes.push(child);
+    if (child instanceof FakeElement) {
+      this.children.push(child);
+    }
+    this._innerHTML = null;
+    if (!(child instanceof FakeElement)) {
+      this._textContent = '';
+    }
     return child;
   }
 
   insertBefore(child, before) {
     if (!child) return child;
     if (!before) return this.appendChild(child);
-    const index = this.children.indexOf(before);
-    if (index === -1) return this.appendChild(child);
+    const nodeIndex = this.childNodes.indexOf(before);
+    if (nodeIndex === -1) return this.appendChild(child);
     if (child.parentElement) {
       child.parentElement.removeChild(child);
     }
     child.parentElement = this;
-    child.ownerDocument = this.ownerDocument;
-    if (this.tagName === 'SVG') {
+    if ('ownerDocument' in child) {
+      child.ownerDocument = this.ownerDocument;
+    }
+    if (child instanceof FakeElement && this.tagName === 'SVG') {
       child.ownerSVGElement = this;
     }
-    this.children.splice(index, 0, child);
+    this.childNodes.splice(nodeIndex, 0, child);
+    if (child instanceof FakeElement) {
+      const beforeIndex = this.children.indexOf(before);
+      if (beforeIndex === -1) {
+        this.children.push(child);
+      } else {
+        this.children.splice(beforeIndex, 0, child);
+      }
+    }
+    this._innerHTML = null;
+    if (!(child instanceof FakeElement)) {
+      this._textContent = '';
+    }
     return child;
   }
 
   removeChild(child) {
-    const index = this.children.indexOf(child);
-    if (index !== -1) {
-      this.children.splice(index, 1);
-      child.parentElement = null;
+    const nodeIndex = this.childNodes.indexOf(child);
+    if (nodeIndex !== -1) {
+      this.childNodes.splice(nodeIndex, 1);
     }
+    const elementIndex = this.children.indexOf(child);
+    if (elementIndex !== -1) {
+      this.children.splice(elementIndex, 1);
+    }
+    child.parentElement = null;
+    this._innerHTML = null;
     return child;
   }
 
   replaceWith(replacement) {
     if (!this.parentElement) return;
     const parent = this.parentElement;
-    const index = parent.children.indexOf(this);
-    if (index === -1) return;
-    parent.children.splice(index, 1, replacement);
+    const nodeIndex = parent.childNodes.indexOf(this);
+    if (nodeIndex === -1) return;
+    if (replacement.parentElement) {
+      replacement.parentElement.removeChild(replacement);
+    }
+    parent.childNodes.splice(nodeIndex, 1, replacement);
+    const elementIndex = parent.children.indexOf(this);
+    if (elementIndex !== -1) {
+      if (replacement instanceof FakeElement) {
+        parent.children.splice(elementIndex, 1, replacement);
+      } else {
+        parent.children.splice(elementIndex, 1);
+      }
+    } else if (replacement instanceof FakeElement) {
+      parent.children.push(replacement);
+    }
     replacement.parentElement = parent;
-    replacement.ownerDocument = parent.ownerDocument;
+    if ('ownerDocument' in replacement) {
+      replacement.ownerDocument = parent.ownerDocument;
+    }
+    if (replacement instanceof FakeElement && parent.tagName === 'SVG') {
+      replacement.ownerSVGElement = parent;
+    }
+    parent._innerHTML = null;
   }
 
   get textContent() {
-    if (this.children.length) {
-      return this.children.map(child => child.textContent).join('');
+    if (this.childNodes.length) {
+      return this.childNodes.map(child => child.textContent).join('');
     }
     return this._textContent;
   }
 
   set textContent(value) {
-    this._textContent = value == null ? '' : String(value);
-    if (this.children.length) {
-      this.children = [];
+    const normalized = value == null ? '' : String(value);
+    this._textContent = '';
+    this.childNodes = [];
+    this.children = [];
+    this._innerHTML = null;
+    if (normalized) {
+      this.appendChild(new FakeTextNode(normalized, this.ownerDocument));
     }
   }
 
   get innerHTML() {
-    return this._innerHTML;
+    if (this._innerHTML != null) {
+      return this._innerHTML;
+    }
+    if (!this.childNodes.length) {
+      return '';
+    }
+    return this.childNodes.map(node => serializeNode(node)).join('');
   }
 
   set innerHTML(value) {
-    this._innerHTML = value == null ? '' : String(value);
+    const markup = value == null ? '' : String(value);
+    this._innerHTML = markup;
+    this.childNodes = [];
     this.children = [];
+    this._textContent = '';
+    if (!markup) {
+      return;
+    }
+
+    const voidTags = new Set(['br', 'hr', 'img', 'input', 'meta', 'link', 'source', 'track', 'area', 'base', 'col', 'embed', 'param', 'wbr']);
+    const tokenPattern = /<!--[^]*?-->|<[^>]+>|[^<]+/g;
+    const stack = [this];
+    let match;
+    while ((match = tokenPattern.exec(markup))) {
+      const token = match[0];
+      const current = stack[stack.length - 1];
+      if (!current) {
+        continue;
+      }
+      if (token.startsWith('<!--')) {
+        continue;
+      }
+      if (token.startsWith('</')) {
+        if (stack.length > 1) {
+          stack.pop();
+        }
+        continue;
+      }
+      if (token.startsWith('<')) {
+        const openMatch = token.match(/^<\s*([^\s\/>]+)([\s\S]*)>$/);
+        if (!openMatch) {
+          continue;
+        }
+        const tagName = openMatch[1].toLowerCase();
+        const attrText = openMatch[2] || '';
+        const element = new FakeElement(tagName, this.ownerDocument);
+
+        const attrRegex = /([^\s=\/>]+)(?:\s*=\s*("[^"]*"|'[^']*'|[^\s"'>]+))?/g;
+        let attrMatch;
+        while ((attrMatch = attrRegex.exec(attrText))) {
+          let name = attrMatch[1];
+          if (!name || name === '/') continue;
+          let rawValue = attrMatch[2];
+          if (rawValue == null) {
+            rawValue = '';
+          } else {
+            rawValue = rawValue.trim();
+            if ((rawValue.startsWith('"') && rawValue.endsWith('"')) || (rawValue.startsWith("'") && rawValue.endsWith("'"))) {
+              rawValue = rawValue.slice(1, -1);
+            }
+          }
+          const value = rawValue;
+          if (name === 'class') {
+            element.className = value;
+            value.split(/\s+/).filter(Boolean).forEach(cls => element.classList.add(cls));
+            element.attributes.set('class', value);
+            continue;
+          }
+          if (name === 'id') {
+            element.setAttribute(name, value);
+            continue;
+          }
+          if (name.startsWith('data-')) {
+            const dataKey = name
+              .slice(5)
+              .replace(/-([a-z])/g, (_, char) => char.toUpperCase());
+            element.dataset[dataKey] = value;
+            element.attributes.set(name, value);
+            continue;
+          }
+          element.setAttribute(name, value);
+        }
+
+        current.appendChild(element);
+        const selfClosing = /\/>\s*$/.test(attrText) || voidTags.has(tagName);
+        if (!selfClosing) {
+          stack.push(element);
+        }
+        continue;
+      }
+
+      const text = token;
+      if (!text) continue;
+      const textNode = new FakeTextNode(text, this.ownerDocument);
+      current.appendChild(textNode);
+    }
+    this._innerHTML = markup;
   }
 
   setAttribute(name, value) {
@@ -235,7 +407,7 @@ class FakeElement {
       }
     }
     if (deep) {
-      this.children.forEach(child => clone.appendChild(child.cloneNode(true)));
+      this.childNodes.forEach(child => clone.appendChild(child.cloneNode(true)));
     }
     return clone;
   }
@@ -246,9 +418,11 @@ class FakeElement {
 
   set ownerDocument(doc) {
     this._ownerDocument = doc;
-    if (Array.isArray(this.children)) {
-      this.children.forEach(child => {
-        child.ownerDocument = doc;
+    if (Array.isArray(this.childNodes)) {
+      this.childNodes.forEach(child => {
+        if ('ownerDocument' in child) {
+          child.ownerDocument = doc;
+        }
       });
     }
   }
@@ -257,6 +431,21 @@ class FakeElement {
     if (this.parentElement) {
       this.parentElement.removeChild(this);
     }
+  }
+
+  addEventListener() {}
+
+  removeEventListener() {}
+
+  closest(selector) {
+    let current = this;
+    while (current) {
+      if (matchesSimple(current, selector)) {
+        return current;
+      }
+      current = current.parentElement;
+    }
+    return null;
   }
 
   setBoundingClientRect(rect) {
@@ -430,10 +619,36 @@ function createTestEnvironment() {
   window.document = document;
   window.window = window;
   window.console = console;
-  window.setTimeout = setTimeout;
-  window.clearTimeout = clearTimeout;
-  window.setInterval = () => 0;
-  window.clearInterval = () => {};
+  const nativeSetTimeout = setTimeout;
+  const nativeClearTimeout = clearTimeout;
+  const clampDelay = value => {
+    if (!Number.isFinite(value) || value < 0) return 0;
+    return Math.min(value, 50);
+  };
+  window.setTimeout = function setTimeoutStub(fn, delay) {
+    if (typeof fn !== 'function') {
+      return 0;
+    }
+    const ms = clampDelay(delay);
+    return nativeSetTimeout(() => {
+      let thrownError = null;
+      try {
+        fn();
+      } catch (err) {
+        thrownError = err;
+      }
+      if (thrownError) {
+        throw thrownError;
+      }
+    }, ms);
+  };
+  window.clearTimeout = function clearTimeoutStub(handle) {
+    if (handle != null) {
+      nativeClearTimeout(handle);
+    }
+  };
+  window.setInterval = (fn, delay) => window.setTimeout(fn, delay);
+  window.clearInterval = handle => window.clearTimeout(handle);
   window.requestAnimationFrame = fn => setTimeout(fn, 16);
   window.cancelAnimationFrame = id => clearTimeout(id);
   window.Intl = Intl;
@@ -466,6 +681,14 @@ function createTestEnvironment() {
       return false;
     }
   });
+  window.getComputedStyle = element => {
+    const target = element && element.style && element.style.store ? element.style.store : {};
+    return {
+      getPropertyValue(name) {
+        return Object.prototype.hasOwnProperty.call(target, name) ? target[name] : '';
+      }
+    };
+  };
 
   global.__WDASH_TEST_MODE__ = true;
   global.__WDASH_TEST_HOOKS__ = {};
@@ -476,6 +699,7 @@ function createTestEnvironment() {
   global.MutationObserver = window.MutationObserver;
   global.ResizeObserver = window.ResizeObserver;
   global.matchMedia = window.matchMedia;
+  global.getComputedStyle = window.getComputedStyle;
 
   if (!document.documentElement) {
     document.documentElement = new FakeElement('html', document);
@@ -546,56 +770,66 @@ function initializeDocumentFromHtml(document, html) {
   document.body.innerHTML = bodyContent;
 }
 
+function serializeNode(node) {
+  if (!node) {
+    return '';
+  }
+  if (node instanceof FakeTextNode || node.nodeType === 3) {
+    return escapeHtml(node.textContent);
+  }
+  return serializeElement(node);
+}
+
+function serializeElement(element) {
+  if (!element) return '';
+  const tag = element.tagName ? element.tagName.toLowerCase() : 'div';
+
+  const attrs = [];
+  if (element.attributes && element.attributes.size) {
+    for (const [name, value] of element.attributes.entries()) {
+      if (name === 'class' && element.className) continue;
+      attrs.push(`${name}="${escapeHtml(String(value))}"`);
+    }
+  }
+
+  if (element.className) {
+    attrs.push(`class="${escapeHtml(element.className)}"`);
+  }
+
+  if (element.dataset) {
+    for (const key of Object.keys(element.dataset)) {
+      const attrName = `data-${key.replace(/[A-Z]/g, char => `-${char.toLowerCase()}`)}`;
+      if (!attrs.some(entry => entry.startsWith(`${attrName}=`))) {
+        attrs.push(`${attrName}="${escapeHtml(String(element.dataset[key]))}"`);
+      }
+    }
+  }
+
+  if (element.style && element.style.store) {
+    const styleEntries = Object.keys(element.style.store).map(name => `${name}: ${element.style.store[name]}`);
+    if (styleEntries.length) {
+      attrs.push(`style="${escapeHtml(styleEntries.join('; '))}"`);
+    }
+  }
+
+  const attrText = attrs.length ? ` ${attrs.join(' ')}` : '';
+
+  let content = '';
+  if (element._innerHTML != null) {
+    content = element._innerHTML;
+  } else if (element.childNodes && element.childNodes.length) {
+    content = element.childNodes.map(child => serializeNode(child)).join('');
+  } else if (element._textContent) {
+    content = escapeHtml(element._textContent);
+  }
+
+  return `<${tag}${attrText}>${content}</${tag}>`;
+}
+
 function serializeDocument(document) {
   if (!document) {
     return '';
   }
-
-  const serializeElement = element => {
-    if (!element) return '';
-    const tag = element.tagName ? element.tagName.toLowerCase() : 'div';
-
-    const attrs = [];
-    if (element.attributes && element.attributes.size) {
-      for (const [name, value] of element.attributes.entries()) {
-        if (name === 'class' && element.className) continue;
-        attrs.push(`${name}="${escapeHtml(String(value))}"`);
-      }
-    }
-
-    if (element.className) {
-      attrs.push(`class="${escapeHtml(element.className)}"`);
-    }
-
-    if (element.dataset) {
-      for (const key of Object.keys(element.dataset)) {
-        const attrName = `data-${key.replace(/[A-Z]/g, char => `-${char.toLowerCase()}`)}`;
-        if (!attrs.some(entry => entry.startsWith(`${attrName}=`))) {
-          attrs.push(`${attrName}="${escapeHtml(String(element.dataset[key]))}"`);
-        }
-      }
-    }
-
-    if (element.style && element.style.store) {
-      const styleEntries = Object.keys(element.style.store).map(name => `${name}: ${element.style.store[name]}`);
-      if (styleEntries.length) {
-        attrs.push(`style="${escapeHtml(styleEntries.join('; '))}"`);
-      }
-    }
-
-    const attrText = attrs.length ? ` ${attrs.join(' ')}` : '';
-
-    let content = '';
-    if (element._innerHTML) {
-      content = element._innerHTML;
-    } else if (element.children && element.children.length) {
-      content = element.children.map(serializeElement).join('');
-    } else if (element._textContent) {
-      content = escapeHtml(element._textContent);
-    }
-
-    return `<${tag}${attrText}>${content}</${tag}>`;
-  };
 
   const headHtml = serializeElement(document.head);
   const bodyHtml = serializeElement(document.body);
@@ -649,6 +883,7 @@ function escapeHtml(value) {
 module.exports = {
   FakeStyle,
   FakeClassList,
+  FakeTextNode,
   FakeElement,
   FakeDocument,
   createElement,

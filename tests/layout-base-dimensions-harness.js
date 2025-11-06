@@ -55,6 +55,12 @@ function parseFrameGapHorizontal(value) {
   return right + left;
 }
 
+function parsePxValue(value) {
+  if (typeof value !== 'string') return NaN;
+  const match = value.trim().match(/^(-?\d+(?:\.\d+)?)px$/);
+  return match ? Number(match[1]) : NaN;
+}
+
 function buildDashboardSkeleton(document) {
   const tile = createElement(document, 'div');
   tile.setAttribute('id', 'tile-0');
@@ -107,60 +113,113 @@ function setTileSize(skeleton, width, height) {
   setHostSize(skeleton, 960, 720);
   applyLayoutOverrides();
 
-  assert.strictEqual(rootStyle.getPropertyValue('--wdash-base-width'), '960px', 'base width should derive from measured tile');
-  assert.strictEqual(rootStyle.getPropertyValue('--wdash-base-height'), '720px', 'base height should derive from measured tile');
-  assert.strictEqual(layoutState.baseDimensions.desktop.width, 960, 'desktop base width should match measurement');
-  assert.strictEqual(layoutState.baseDimensions.desktop.height, 720, 'desktop base height should match measurement');
+  assert.strictEqual(
+    rootStyle.getPropertyValue('--wdash-base-width'),
+    '1200px',
+    'base width should default to the design width'
+  );
+  assert.strictEqual(
+    rootStyle.getPropertyValue('--wdash-base-height'),
+    '900px',
+    'base height should default to the design height'
+  );
+  assert.strictEqual(layoutState.baseDimensions.desktop.width, 1200, 'layout state should track design base width');
+  assert.strictEqual(layoutState.baseDimensions.desktop.height, 900, 'layout state should track design base height');
+
+  const initialScale = parseFloat(rootStyle.getPropertyValue('--wdash-scale'));
+  assert(Math.abs(initialScale - 0.8) < 0.0001, 'scale should shrink the design to the measured tile');
+  assert(Math.abs(parsePxValue(rootStyle.getPropertyValue('--wdash-render-width')) - 960) < 0.01, 'render width should follow tile width');
+  assert(Math.abs(parsePxValue(rootStyle.getPropertyValue('--wdash-render-height')) - 720) < 0.01, 'render height should follow tile height');
+
+  const initialDiagnostics = layoutState.lastDiagnostics;
+  assert(initialDiagnostics, 'initial diagnostics should exist');
+  assert.strictEqual(initialDiagnostics.base.sources.desktop.width, 'default', 'base width source should remain default');
+  assert.strictEqual(initialDiagnostics.base.sources.desktop.height, 'default', 'base height source should remain default');
+  assert.strictEqual(initialDiagnostics.measurement.sanitized.width, 960, 'diagnostics should report measured width');
+  assert.strictEqual(initialDiagnostics.measurement.sanitized.height, 720, 'diagnostics should report measured height');
 
   applyLayoutOverrides({ layout: { baseWidth: 1100 } });
   assert.strictEqual(rootStyle.getPropertyValue('--wdash-base-width'), '1100px', 'override should replace base width');
-  assert.strictEqual(rootStyle.getPropertyValue('--wdash-base-height'), '720px', 'override should not affect unspecified base height');
+  assert.strictEqual(
+    rootStyle.getPropertyValue('--wdash-base-height'),
+    '900px',
+    'override should leave unspecified base height at the design value'
+  );
+  const widthOverrideDiagnostics = layoutState.lastDiagnostics;
+  assert(widthOverrideDiagnostics, 'override diagnostics should exist');
+  assert.strictEqual(widthOverrideDiagnostics.base.sources.desktop.width, 'layout-override', 'base width source should reflect override');
+  assert.strictEqual(widthOverrideDiagnostics.base.sources.desktop.height, 'default', 'base height source should remain default');
 
   applyLayoutOverrides();
-  assert.strictEqual(rootStyle.getPropertyValue('--wdash-base-width'), '960px', 'clearing overrides should restore measured width');
-  assert.strictEqual(rootStyle.getPropertyValue('--wdash-base-height'), '720px', 'clearing overrides should restore measured height');
+  assert.strictEqual(rootStyle.getPropertyValue('--wdash-base-width'), '1200px', 'clearing overrides should restore design width');
+  assert.strictEqual(rootStyle.getPropertyValue('--wdash-base-height'), '900px', 'clearing overrides should restore design height');
 
   setHostSize(skeleton, 1024, 768);
   applyLayoutOverrides();
-  assert.strictEqual(rootStyle.getPropertyValue('--wdash-base-width'), '1024px', 'measurement change should update base width');
-  assert.strictEqual(rootStyle.getPropertyValue('--wdash-base-height'), '768px', 'measurement change should update base height');
+  assert.strictEqual(
+    rootStyle.getPropertyValue('--wdash-render-width'),
+    '960px',
+    'render width should remain clamped to the limiting measurement when the host grows'
+  );
+  assert.strictEqual(
+    rootStyle.getPropertyValue('--wdash-render-height'),
+    '720px',
+    'render height should remain clamped to the limiting measurement when the host grows'
+  );
+  const expandedDiagnostics = layoutState.lastDiagnostics;
+  assert(expandedDiagnostics, 'expanded diagnostics should exist');
+  assert.strictEqual(
+    expandedDiagnostics.measurement.sanitized.width,
+    960,
+    'measurement should continue reporting the limiting width'
+  );
+  assert.strictEqual(
+    expandedDiagnostics.measurement.sanitized.height,
+    720,
+    'measurement should continue reporting the limiting height'
+  );
 
   setHostSize(skeleton, 1140.75, 855.44);
   applyLayoutOverrides();
   assert.strictEqual(
     rootStyle.getPropertyValue('--wdash-base-width'),
-    '1140px',
-    'fractional measurement should floor the base width'
+    '1200px',
+    'fractional measurement should keep the design width'
   );
   assert.strictEqual(
     rootStyle.getPropertyValue('--wdash-base-height'),
-    '855px',
-    'fractional measurement should floor the base height'
+    '900px',
+    'fractional measurement should keep the design height'
   );
-  assert.strictEqual(layoutState.baseDimensions.desktop.width, 1140, 'layout state width should reflect floored measurement');
-  assert.strictEqual(layoutState.baseDimensions.desktop.height, 855, 'layout state height should reflect floored measurement');
+  assert.strictEqual(layoutState.baseDimensions.desktop.width, 1200, 'layout state width should remain at the design width');
+  assert.strictEqual(layoutState.baseDimensions.desktop.height, 900, 'layout state height should remain at the design height');
   const fractionalDiagnostics = layoutState.lastDiagnostics;
   assert(fractionalDiagnostics, 'fractional measurement should populate diagnostics');
   assert.strictEqual(
     fractionalDiagnostics.measurement.sanitized.width,
-    1140,
-    'diagnostics should report floored measurement width'
+    960,
+    'diagnostics should continue reporting the limiting width'
   );
   assert.strictEqual(
     fractionalDiagnostics.measurement.sanitized.height,
-    855,
-    'diagnostics should report floored measurement height'
+    720,
+    'diagnostics should continue reporting the limiting height'
   );
 
   setHostSize(skeleton, 0, 0);
   applyLayoutOverrides();
-  assert.strictEqual(rootStyle.getPropertyValue('--wdash-base-width'), '1140px', 'missing measurement should retain last width');
-  assert.strictEqual(rootStyle.getPropertyValue('--wdash-base-height'), '855px', 'missing measurement should retain last height');
+  assert.strictEqual(rootStyle.getPropertyValue('--wdash-base-width'), '1200px', 'missing measurement should retain design width');
+  assert.strictEqual(rootStyle.getPropertyValue('--wdash-base-height'), '900px', 'missing measurement should retain design height');
 
   setHostSize(skeleton, 1280, 720);
   applyLayoutOverrides({ layout: { baseHeight: 650 } });
-  assert.strictEqual(rootStyle.getPropertyValue('--wdash-base-width'), '1280px', 'measured width should persist when only height overrides');
+  assert.strictEqual(rootStyle.getPropertyValue('--wdash-base-width'), '1200px', 'design width should persist when only height overrides');
   assert.strictEqual(rootStyle.getPropertyValue('--wdash-base-height'), '650px', 'override should replace base height');
+  assert.strictEqual(layoutState.baseDimensions.desktop.width, 1200, 'layout state width should remain at design width');
+  assert.strictEqual(layoutState.baseDimensions.desktop.height, 650, 'layout state height should follow override');
+  const heightOverrideDiagnostics = layoutState.lastDiagnostics;
+  assert(heightOverrideDiagnostics, 'height override diagnostics should exist');
+  assert.strictEqual(heightOverrideDiagnostics.base.sources.desktop.height, 'layout-override', 'base height source should reflect override');
 
   applyLayoutOverrides({
     layout: {

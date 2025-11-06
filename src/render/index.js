@@ -599,12 +599,7 @@ function createLegacyWeatherDashboardRenderer(options = {}) {
     }
   }
 
-  function renderFromData() {
-    ensureTileAdapter();
-    const segments = readPayloads();
-    const merged = mergePayloads(segments);
-    const payload = merged || lastSuccessfulPayload;
-    const grid = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-grid');
+  function render(payload, grid) {
     if (!grid) return;
 
     let maskMode = null;
@@ -699,6 +694,13 @@ function createLegacyWeatherDashboardRenderer(options = {}) {
         toggleSourceTileMask(false);
       }
     }
+  }
+
+  function renderFromData() {
+    ensureTileAdapter();
+    const payload = mergePayloads(readPayloads()) || lastSuccessfulPayload;
+    const grid = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-grid');
+    render(payload, grid);
   }
 
   function renderFallbackState() {
@@ -1261,8 +1263,15 @@ function createLegacyWeatherDashboardRenderer(options = {}) {
       mobile: mobileGap
     };
 
-    const fallbackWidth = sanitizeDimension(overrideLayout?.baseWidth, measuredWidth);
-    const fallbackHeight = sanitizeDimension(overrideLayout?.baseHeight, measuredHeight);
+    const useMeasuredBase = trackUnit === 'percent';
+    const fallbackWidth = sanitizeDimension(
+      overrideLayout?.baseWidth,
+      useMeasuredBase ? measuredWidth : DEFAULT_BASE_WIDTH
+    );
+    const fallbackHeight = sanitizeDimension(
+      overrideLayout?.baseHeight,
+      useMeasuredBase ? measuredHeight : DEFAULT_BASE_HEIGHT
+    );
     const desktopWidth = sanitizeDimension(desktopSection?.baseWidth, fallbackWidth);
     const desktopHeight = sanitizeDimension(desktopSection?.baseHeight, fallbackHeight);
     const tabletWidth = sanitizeDimension(tabletSection?.baseWidth, desktopWidth);
@@ -1280,12 +1289,12 @@ function createLegacyWeatherDashboardRenderer(options = {}) {
       width: determineDimensionSource({
         sectionValue: desktopSection?.baseWidth,
         fallbackValue: overrideLayout?.baseWidth,
-        measurementValue: measurement.width
+        measurementValue: useMeasuredBase ? measurement.width : null
       }),
       height: determineDimensionSource({
         sectionValue: desktopSection?.baseHeight,
         fallbackValue: overrideLayout?.baseHeight,
-        measurementValue: measurement.height
+        measurementValue: useMeasuredBase ? measurement.height : null
       })
     };
 
@@ -7482,7 +7491,8 @@ function createLegacyWeatherDashboardRenderer(options = {}) {
     renderFromData,
     renderFallbackState,
     mergePayloads,
-    applyLayoutOverrides,
+    render,
+    applyLayoutOverrides, // Keep for now, will be encapsulated later
     layoutState,
     tempWindState,
     ensureTileAdapter,
@@ -7503,6 +7513,7 @@ function createLegacyWeatherDashboardRenderer(options = {}) {
       init,
       safeRenderFromData,
       renderFromData,
+      render,
       readPayloads,
       mergePayloads,
       buildCardMarkupList,
@@ -7551,6 +7562,7 @@ function createLegacyWeatherDashboardRenderer(options = {}) {
       formatLightningDistance,
       setupAirQualityRotation,
       scheduleAirQualityRotation,
+      stopAmbientRotationTimer,
       stopAirQualityRotationTimer,
       clearAirQualityRotation,
       updateAirQualityCard,
