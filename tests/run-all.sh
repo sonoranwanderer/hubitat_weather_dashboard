@@ -16,3 +16,6 @@ if command -v groovy >/dev/null 2>&1; then
 else
   echo "Skipping Groovy landing page smoke test (groovy command not found)." >&2
 fi
+
+echo "Running Jest unit tests..."
+npm run test:unit

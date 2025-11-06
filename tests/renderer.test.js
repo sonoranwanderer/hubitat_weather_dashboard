@@ -1,26 +1,24 @@
-const { JSDOM } = require('jsdom');
+/**
+ * @jest-environment jsdom
+ */
+
+const fs = require('fs');
+const path = require('path');
 const { createLegacyWeatherDashboardRenderer } = require('../src/render');
 
+
 describe('Weather Dashboard Renderer', () => {
-  let dom;
-  let window;
-  let document;
   let renderer;
   let testHooks;
 
   beforeEach(() => {
-    dom = new JSDOM('<!DOCTYPE html><html><body><div id="tile-0"><div class="tile-primary"></div></div></body></html>', {
-      url: 'http://localhost'
-    });
-    window = dom.window;
-    document = window.document;
-    global.window = window;
-    global.document = document;
+    document.body.innerHTML = '<div id="tile-0"><div class="tile-primary"></div></div>';
     global.ResizeObserver = class ResizeObserver {
       observe() {}
       unobserve() {}
       disconnect() {}
     };
+    global.window.__WDASH_TEST_MODE__ = true; // Indicate test environment
 
     // The factory attaches test hooks to the window object
     createLegacyWeatherDashboardRenderer({ window, document, globalThis: window });
@@ -29,7 +27,7 @@ describe('Weather Dashboard Renderer', () => {
   });
 
   afterEach(() => {
-    // Clean up JSDOM
+    document.body.innerHTML = '';
   });
 
   it('should render waiting message when payload is null', () => {
@@ -41,7 +39,8 @@ describe('Weather Dashboard Renderer', () => {
 
   it('should render cards when a valid payload is provided', () => {
     const grid = document.createElement('div');
-    const mockPayload = require('./fixtures/payload-01.json');
+    const fixturePath = path.resolve(__dirname, 'fixtures/full-capabilities.json');
+    const mockPayload = JSON.parse(fs.readFileSync(fixturePath, 'utf8'));
     renderer(mockPayload, grid);
     expect(grid.querySelector('.wdash-card--temp-wind')).not.toBeNull();
     expect(grid.querySelector('.wdash-card--ambient')).not.toBeNull();

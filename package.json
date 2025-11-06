@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "test": "./tests/run-all.sh",
+    "test:unit": "node ./node_modules/jest/bin/jest.js --config jest.config.js",
     "build": "npm run build:hubitat",
     "build:hubitat": "node ./esbuild.hubitat.config.mjs",
     "postbuild:hubitat": "node ./build/verify-hubitat-bundle.mjs",
@@ -14,6 +15,13 @@
   },
   "devDependencies": {
     "esbuild": "file:vendor/esbuild-stub",
-    "jsdom": "file:vendor/jsdom-stub"
+    "jsdom": "file:vendor/jsdom-stub",
+    "jest": "^30.2.0",
+    "jest-environment-jsdom": "^30.2.0"
+  },
+  "overrides": {
+    "glob": "^10.4.2",
+    "inflight": "npm:semver@^7.5.4",
+    "rimraf": "^6.10.0"
   }
 }
