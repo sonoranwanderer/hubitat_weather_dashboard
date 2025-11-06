@@ -88,7 +88,10 @@ def landingPage() {
 
   function readDiagnosticsToken() {
     if (!window || !window.location || !window.location.search) return null;
-    var search = window.location.search.replace(/^\?/, '');
+    var search = window.location.search || '';
+    if (search.charAt(0) === '?') {
+      search = search.slice(1);
+    }
     if (!search) return null;
     var entries = search.split('&');
     for (var index = 0; index < entries.length; index++) {
