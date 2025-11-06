@@ -12,6 +12,8 @@
   const DEFAULT_POLL_INTERVAL_MS = 15000;
   const MIN_POLL_INTERVAL_MS = 5000;
   const DEFAULT_MAX_BACKOFF_MS = 60000;
+  const DEFAULT_RENDER_BASE_WIDTH = 1200;
+  const DEFAULT_RENDER_BASE_HEIGHT = 900;
 
   const state = {
     renderer: null,
@@ -86,7 +88,8 @@
       body ? body.clientHeight : 0,
       html ? html.scrollHeight : 0,
       html ? html.offsetHeight : 0,
-      html ? html.clientHeight : 0
+      html ? html.clientHeight : 0,
+      typeof global.innerHeight === 'number' ? global.innerHeight : 0
     ].filter(value => typeof value === 'number' && value > 0);
     if (!values.length) return 0;
     return Math.ceil(Math.max(...values));
@@ -216,16 +219,12 @@
       host.style.removeProperty('--wdash-preview-height');
     }
     if (displayTile) {
-      displayTile.style.removeProperty('--wdash-preview-width');
-      displayTile.style.removeProperty('--wdash-preview-height');
       displayTile.style.removeProperty('maxWidth');
       displayTile.style.removeProperty('minWidth');
       displayTile.style.removeProperty('height');
       displayTile.style.removeProperty('minHeight');
     }
     if (displayPrimary) {
-      displayPrimary.style.removeProperty('--wdash-preview-width');
-      displayPrimary.style.removeProperty('--wdash-preview-height');
       displayPrimary.style.removeProperty('maxWidth');
       displayPrimary.style.removeProperty('height');
       displayPrimary.style.removeProperty('minHeight');
@@ -344,24 +343,16 @@
     const widthPx = `${width}px`;
     const heightPx = `${height}px`;
 
-    if (host) {
-      host.style.setProperty('--wdash-preview-width', widthPx);
-      host.style.setProperty('--wdash-preview-height', heightPx);
-    }
     if (displayTile) {
-      displayTile.style.setProperty('--wdash-preview-width', widthPx);
-      displayTile.style.setProperty('--wdash-preview-height', heightPx);
       displayTile.style.maxWidth = widthPx;
       displayTile.style.minWidth = '0';
-      displayTile.style.height = heightPx;
-      displayTile.style.minHeight = heightPx;
+      displayTile.style.removeProperty('height');
+      displayTile.style.removeProperty('minHeight');
     }
     if (displayPrimary) {
-      displayPrimary.style.setProperty('--wdash-preview-width', widthPx);
-      displayPrimary.style.setProperty('--wdash-preview-height', heightPx);
       displayPrimary.style.maxWidth = widthPx;
-      displayPrimary.style.height = heightPx;
-      displayPrimary.style.minHeight = heightPx;
+      displayPrimary.style.removeProperty('height');
+      displayPrimary.style.removeProperty('minHeight');
     }
     if (status) {
       status.style.maxWidth = widthPx;
@@ -384,9 +375,10 @@
         min-height: 100%;
         display: flex;
         justify-content: center;
-        align-items: flex-start;
+        align-items: stretch;
         padding: 24px 16px 36px;
         box-sizing: border-box;
+        overflow: hidden;
       }
       #${HOST_ID} {
         --wdash-app-font: 'Segoe UI', Roboto, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
@@ -395,10 +387,13 @@
         display: flex;
         flex-direction: column;
         align-items: stretch;
+        justify-content: flex-start;
         gap: 20px;
         padding: 18px 20px 28px;
         margin: 0 auto;
         box-sizing: border-box;
+        height: 100%;
+        min-height: 0;
         --wdash-grid-areas-desktop: 'temp-wind ambient' 'air rain' 'solar rain' 'solar pressure';
         --wdash-grid-areas-tablet: 'temp-wind ambient' 'air rain' 'solar rain' 'solar pressure';
         --wdash-grid-areas-mobile: 'temp-wind' 'ambient' 'air' 'rain' 'solar' 'pressure';
@@ -407,7 +402,6 @@
         --wdash-grid-columns-mobile: minmax(0, 1fr);
         --wdash-grid-gap-desktop: 14px;
         --wdash-grid-gap-tablet: 14px;
-        min-height: 0;
         background: radial-gradient(circle at top, rgba(20,40,80,0.55), rgba(4,10,22,0.92));
         font-family: var(--wdash-app-font);
       }
@@ -415,13 +409,16 @@
         width: 100%;
         max-width: 1200px;
         margin: 0 auto;
+        flex: 0 0 auto;
       }
       #${HOST_ID} .wdash-app-display-tile {
         width: 100%;
         max-width: 1200px;
         margin: 0 auto;
-        --wdash-preview-width: 1200px;
-        --wdash-preview-height: auto;
+        display: flex;
+        flex-direction: column;
+        flex: 1 1 auto;
+        min-height: 0;
       }
       #${HOST_ID} .tile {
         position: relative;
@@ -431,12 +428,20 @@
         box-shadow: none;
         border: 0;
         overflow: visible;
+        display: flex;
+        flex-direction: column;
+        flex: 1 1 auto;
+        min-height: 0;
       }
       #${HOST_ID} .tile-primary {
         position: relative;
         padding: 0;
         background: transparent;
         overflow: visible;
+        display: flex;
+        flex-direction: column;
+        flex: 1 1 auto;
+        min-height: 0;
       }
       #${HOST_ID} .wdash-app-display-tile {
         width: 100%;
@@ -446,17 +451,19 @@
       #${HOST_ID} .wdash-app-display {
         position: relative;
         width: 100%;
-        max-width: var(--wdash-preview-width, 1200px);
+        max-width: 1200px;
         margin: 0 auto;
         display: flex;
         align-items: stretch;
         justify-content: center;
-        min-height: var(--wdash-preview-height, auto);
+        flex: 1 1 auto;
+        min-height: 0;
       }
       #${HOST_ID} .wdash-app-display > * {
         position: relative;
         width: 100%;
-        min-height: var(--wdash-preview-height, auto);
+        height: 100%;
+        min-height: 0;
       }
       #${STATUS_ID} {
         font-family: var(--wdash-app-font);
@@ -986,9 +993,11 @@
 
     const makerPayload = convertMakerApiResponse(response, state.config);
     if (makerPayload) {
+      ensureDefaultLayoutMetadata(makerPayload);
       return { payload: makerPayload, text: JSON.stringify(makerPayload) };
     }
 
+    ensureDefaultLayoutMetadata(response);
     return { payload: response, text: originalText };
   }
 
@@ -1064,6 +1073,41 @@
     return devices.length === 1 ? devices[0] : null;
   }
 
+  function coercePositiveDimension(value) {
+    if (typeof value === 'number') {
+      return Number.isFinite(value) && value > 0 ? value : null;
+    }
+    if (typeof value === 'string') {
+      const match = value.trim().match(/^(-?\d+(?:\.\d+)?)/);
+      if (match) {
+        const parsed = Number(match[1]);
+        if (Number.isFinite(parsed) && parsed > 0) {
+          return parsed;
+        }
+      }
+    }
+    return null;
+  }
+
+  function ensureDefaultLayoutMetadata(payload) {
+    if (!payload || typeof payload !== 'object') {
+      return;
+    }
+    const meta = payload.metadata && typeof payload.metadata === 'object'
+      ? payload.metadata
+      : (payload.metadata = {});
+    const layout = meta.layout && typeof meta.layout === 'object'
+      ? meta.layout
+      : (meta.layout = {});
+
+    if (coercePositiveDimension(layout.baseWidth) == null) {
+      layout.baseWidth = DEFAULT_RENDER_BASE_WIDTH;
+    }
+    if (coercePositiveDimension(layout.baseHeight) == null) {
+      layout.baseHeight = DEFAULT_RENDER_BASE_HEIGHT;
+    }
+  }
+
   function buildPayloadFromDevice(device) {
     const attributes = toAttributeMap(device?.attributes);
     if (!attributes) return null;
@@ -1122,6 +1166,8 @@
       }
       payload.metadata.dashboardUpdatedAt = updated;
     }
+
+    ensureDefaultLayoutMetadata(payload);
 
     return Object.keys(payload).length ? payload : null;
   }
