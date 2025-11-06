@@ -137,6 +137,18 @@ function createRenderer(options = {}) {
     height: null
   };
 
+  const scaleState = {
+    containerWidth: null,
+    containerHeight: null,
+    lastScale: null,
+    lastWarningKey: null
+  };
+
+  const percentConstraintState = {
+    signature: null,
+    keys: new Set()
+  };
+
   const SHARED_DESKTOP_LAYOUT = {
     columns: 'repeat(2, minmax(0, 1fr))',
     gap: '14px',
@@ -917,7 +929,13 @@ function createRenderer(options = {}) {
   }
 
   function resolveMeasuredBaseDimensions(options = {}) {
-    const measurement = measureDisplayTileBaseDimensions();
+    let measurement = options && typeof options.measurement === 'object'
+      ? options.measurement
+      : null;
+
+    if (!measurement) {
+      measurement = measureDisplayTileBaseDimensions();
+    }
     const prevWidth = tileMeasurementState.width;
     const prevHeight = tileMeasurementState.height;
 
@@ -970,6 +988,77 @@ function createRenderer(options = {}) {
   function resetTileMeasurement() {
     tileMeasurementState.width = null;
     tileMeasurementState.height = null;
+  }
+
+  function sanitizePositiveNumber(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || numeric <= 0) return null;
+    return numeric;
+  }
+
+  function emitScaleConstraintWarning(type, context = {}) {
+    const logger = typeof console !== 'undefined' ? console : null;
+    if (!logger || typeof logger.warn !== 'function') return;
+    const width = Number.isFinite(context.width) ? Math.round(context.width) : 'na';
+    const height = Number.isFinite(context.height) ? Math.round(context.height) : 'na';
+    const scale = Number.isFinite(context.scale) ? context.scale.toFixed(6) : 'na';
+    const key = `${type}:${width}x${height}:${scale}`;
+    if (scaleState.lastWarningKey === key) return;
+    scaleState.lastWarningKey = key;
+    if (type === 'too-small') {
+      logger.warn('[WeatherDashboard] Container is smaller than the minimum supported layout size; scale clamped.', context);
+    } else {
+      logger.warn('[WeatherDashboard] Unable to derive dashboard scale from host measurement.', context);
+    }
+  }
+
+  function clearScaleConstraintWarning() {
+    scaleState.lastWarningKey = null;
+  }
+
+  function resetPercentConstraintWarnings(signature) {
+    percentConstraintState.signature = signature || null;
+    percentConstraintState.keys.clear();
+  }
+
+  function emitPercentConstraintWarning(kind, entry) {
+    if (!entry) return;
+    const logger = typeof console !== 'undefined' ? console : null;
+    if (!logger || typeof logger.warn !== 'function') return;
+    const signature = percentConstraintState.signature || 'default';
+    const scale = Number.isFinite(entry.scale) ? entry.scale.toFixed(6) : 'na';
+    const available = Number.isFinite(entry.available) ? Math.round(entry.available) : 'na';
+    const requested = Number.isFinite(entry.requestedPixels) ? Math.round(entry.requestedPixels) : 'na';
+    const key = `${signature}:${kind}:${entry.breakpoint}:${scale}:${available}:${requested}`;
+    if (percentConstraintState.keys.has(key)) return;
+    percentConstraintState.keys.add(key);
+    const label = kind === 'row' ? 'Row' : 'Column';
+    logger.warn(`[WeatherDashboard] ${label} percent tracks scaled to fit the ${entry.breakpoint} layout.`, {
+      breakpoint: entry.breakpoint,
+      scale: entry.scale,
+      available: entry.available,
+      requestedPixels: entry.requestedPixels,
+      finalPixels: entry.finalPixels,
+      remainder: entry.remainder
+    });
+  }
+
+  function checkPercentConstraintWarnings(percentCollector) {
+    if (!percentCollector) return;
+    if (Array.isArray(percentCollector.columns)) {
+      for (const entry of percentCollector.columns) {
+        if (Number.isFinite(entry?.scale) && entry.scale < 0.9999) {
+          emitPercentConstraintWarning('column', entry);
+        }
+      }
+    }
+    if (Array.isArray(percentCollector.rows)) {
+      for (const entry of percentCollector.rows) {
+        if (Number.isFinite(entry?.scale) && entry.scale < 0.9999) {
+          emitPercentConstraintWarning('row', entry);
+        }
+      }
+    }
   }
 
   function safeGetElementRect(element) {
@@ -1552,6 +1641,9 @@ function createRenderer(options = {}) {
       layoutState.templates = finalTemplates;
       layoutState.trackUnit = trackUnit;
       layoutState.pendingApply = true;
+      resetPercentConstraintWarnings(signature);
+    } else if (percentConstraintState.signature !== signature) {
+      resetPercentConstraintWarnings(signature);
     }
 
     if (!changed && !layoutState.pendingApply) return;
@@ -1596,6 +1688,8 @@ function createRenderer(options = {}) {
     } else {
       layoutState.pendingApply = true;
     }
+
+    checkPercentConstraintWarnings(percentCollector);
 
     const diagnosticsContext = buildLayoutDiagnosticsContext({
       hostElement,
@@ -1650,25 +1744,30 @@ function createRenderer(options = {}) {
   function setupScaling(displayTile, content) {
     const root = content.querySelector('.wdash-root');
     if (!root) return;
-    applyScale(root);
-    if (!scaleResizeHandler) {
-      scaleResizeHandler = () => applyScale();
-      window.addEventListener('resize', scaleResizeHandler);
-    }
-    setupBreakpointListeners();
-    if (scaleObserver && typeof scaleObserver.disconnect === 'function') {
-      scaleObserver.disconnect();
-    }
-    scaleObserver = null;
 
-    const handleMeasurement = () => {
-      const measurement = resolveMeasuredBaseDimensions();
+    const handleMeasurement = nextMeasurement => {
+      const measurement = resolveMeasuredBaseDimensions({ measurement: nextMeasurement });
       if (measurement.changed) {
         layoutState.pendingApply = true;
         applyLayoutOverrides(lastSuccessfulPayload?.metadata);
       }
-      applyScale(root);
+      applyScale(root, { measurement });
     };
+
+    const initialMeasurement = resolveMeasuredBaseDimensions();
+    applyScale(root, { measurement: initialMeasurement });
+
+    if (!scaleResizeHandler) {
+      scaleResizeHandler = () => handleMeasurement();
+      window.addEventListener('resize', scaleResizeHandler);
+    }
+
+    setupBreakpointListeners();
+
+    if (scaleObserver && typeof scaleObserver.disconnect === 'function') {
+      scaleObserver.disconnect();
+    }
+    scaleObserver = null;
 
     if (typeof measurementHooks.observe === 'function') {
       const observerHandle = measurementHooks.observe({
@@ -1782,13 +1881,44 @@ function createRenderer(options = {}) {
     return desktop;
   }
 
-  function applyScale(rootEl) {
+  function applyScale(rootEl, options = {}) {
     const root = rootEl || document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-root');
     if (!root) return;
-    const rect = root.getBoundingClientRect();
-    const width = rect.width;
-    const height = rect.height;
-    if (!width || !height) return;
+
+    const measurementOverride = options && typeof options.measurement === 'object'
+      ? options.measurement
+      : null;
+
+    let width = sanitizePositiveNumber(measurementOverride?.width);
+    let height = sanitizePositiveNumber(measurementOverride?.height);
+
+    if (!Number.isFinite(width)) {
+      width = sanitizePositiveNumber(tileMeasurementState.width);
+    }
+    if (!Number.isFinite(height)) {
+      height = sanitizePositiveNumber(tileMeasurementState.height);
+    }
+
+    if (!Number.isFinite(width)) {
+      width = sanitizePositiveNumber(scaleState.containerWidth);
+    }
+    if (!Number.isFinite(height)) {
+      height = sanitizePositiveNumber(scaleState.containerHeight);
+    }
+
+    if (!Number.isFinite(width) || !Number.isFinite(height)) {
+      const rect = safeGetElementRect(root);
+      if (rect) {
+        if (!Number.isFinite(width)) width = sanitizePositiveNumber(rect.width);
+        if (!Number.isFinite(height)) height = sanitizePositiveNumber(rect.height);
+      }
+    }
+
+    if (!Number.isFinite(width) || !Number.isFinite(height)) {
+      emitScaleConstraintWarning('invalid-measurement', { width, height });
+      return;
+    }
+
     const activeBase = getActiveBaseDimensions();
     const baseWidth = Math.max(1, Number(activeBase?.width) || Number(currentBaseWidth) || DEFAULT_BASE_WIDTH);
     const baseHeight = Math.max(1, Number(activeBase?.height) || Number(currentBaseHeight) || DEFAULT_BASE_HEIGHT);
@@ -1796,13 +1926,48 @@ function createRenderer(options = {}) {
     currentBaseHeight = baseHeight;
     root.style.setProperty('--wdash-base-width', `${baseWidth}px`);
     root.style.setProperty('--wdash-base-height', `${baseHeight}px`);
-    const rawScale = Math.min(width / baseWidth, height / baseHeight);
-    const scale = Math.max(0.1, Math.min(rawScale, 1));
+
+    const widthScale = width / baseWidth;
+    const heightScale = height / baseHeight;
+    let rawScale = Math.min(widthScale, heightScale);
+    if (!Number.isFinite(rawScale) || rawScale <= 0) {
+      rawScale = 0;
+    }
+
+    const MIN_SCALE = 0.1;
+    let scale = rawScale;
+    let clamped = false;
+
+    if (!Number.isFinite(scale) || scale <= 0) {
+      scale = MIN_SCALE;
+      clamped = true;
+    } else if (scale < MIN_SCALE) {
+      scale = MIN_SCALE;
+      clamped = true;
+    }
+
     const renderWidth = baseWidth * scale;
     const renderHeight = baseHeight * scale;
     root.style.setProperty('--wdash-scale', `${scale}`);
     root.style.setProperty('--wdash-render-width', `${renderWidth}px`);
     root.style.setProperty('--wdash-render-height', `${renderHeight}px`);
+
+    scaleState.containerWidth = width;
+    scaleState.containerHeight = height;
+    scaleState.lastScale = scale;
+
+    if (clamped && rawScale < scale) {
+      emitScaleConstraintWarning('too-small', {
+        width,
+        height,
+        baseWidth,
+        baseHeight,
+        rawScale,
+        scale
+      });
+    } else {
+      clearScaleConstraintWarning();
+    }
   }
 
   function mergePayloads(payloads) {

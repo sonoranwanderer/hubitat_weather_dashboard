@@ -109,3 +109,168 @@ describe('Renderer measurement hooks', () => {
     expect(typeof observeCalls[0].onMeasure).toBe('function');
   });
 });
+
+describe('Renderer scaling with host measurements', () => {
+  let hooks;
+  let currentMeasurement;
+  let measureMock;
+  let observeMock;
+  let onMeasure;
+  let displayTile;
+  let content;
+  let root;
+
+  beforeEach(() => {
+    document.body.innerHTML = `
+      <div id="tile-0" class="tile">
+        <div class="tile-primary">
+          <div class="wdash-root">
+            <div class="wdash">
+              <div class="wdash-grid" data-empty="true"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+    window.__WDASH_TEST_MODE__ = true;
+    currentMeasurement = { width: 320, height: 480 };
+    measureMock = input => {
+      measureMock.calls.push(input);
+      return { ...currentMeasurement };
+    };
+    measureMock.calls = [];
+    observeMock = input => {
+      observeMock.calls.push(input);
+      onMeasure = typeof input?.onMeasure === 'function' ? input.onMeasure : null;
+      return {
+        disconnect() {
+          observeMock.disconnects += 1;
+        }
+      };
+    };
+    observeMock.calls = [];
+    observeMock.disconnects = 0;
+
+    createRenderer({
+      window,
+      document,
+      globalThis: window,
+      container: document.getElementById('tile-0'),
+      measure: measureMock,
+      observe: observeMock
+    });
+
+    hooks = window.__WDASH_TEST_HOOKS__;
+    displayTile = document.getElementById('tile-0');
+    content = displayTile.querySelector('.tile-primary');
+    root = content.querySelector('.wdash-root');
+
+    hooks.resetTileMeasurement();
+    hooks.resolveMeasuredBaseDimensions({ measurement: currentMeasurement });
+    hooks.applyLayoutOverrides();
+    hooks.setupScaling(displayTile, content);
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+    onMeasure = null;
+  });
+
+  function readScaleState() {
+    return {
+      scale: parseFloat(root.style.getPropertyValue('--wdash-scale')),
+      renderWidth: parseFloat(root.style.getPropertyValue('--wdash-render-width')),
+      renderHeight: parseFloat(root.style.getPropertyValue('--wdash-render-height'))
+    };
+  }
+
+  it('recomputes scale for observed container sizes', () => {
+    expect(typeof onMeasure).toBe('function');
+
+    const scenarios = [
+      { width: 320, height: 480, scale: 320 / 1200, renderWidth: 320, renderHeight: 900 * (320 / 1200) },
+      { width: 768, height: 1024, scale: 768 / 1200, renderWidth: 768, renderHeight: 900 * (768 / 1200) },
+      { width: 1920, height: 1080, scale: 1080 / 900, renderWidth: 1200 * (1080 / 900), renderHeight: 1080 }
+    ];
+
+    scenarios.forEach(scenario => {
+      currentMeasurement = { width: scenario.width, height: scenario.height };
+      if (onMeasure) {
+        onMeasure({ width: scenario.width, height: scenario.height });
+      }
+      const { scale, renderWidth, renderHeight } = readScaleState();
+      expect(Math.abs(scale - scenario.scale) < 1e-6).toBe(true);
+      expect(Math.abs(renderWidth - scenario.renderWidth) < 1e-4).toBe(true);
+      expect(Math.abs(renderHeight - scenario.renderHeight) < 1e-4).toBe(true);
+    });
+  });
+
+  it('warns when measurement constraints require clamping', () => {
+    expect(typeof onMeasure).toBe('function');
+    const originalWarn = console.warn;
+    const warnCalls = [];
+    console.warn = function (...args) {
+      warnCalls.push(args);
+    };
+    const tinyMeasurement = { width: 60, height: 60 };
+    currentMeasurement = { ...tinyMeasurement };
+    if (onMeasure) {
+      onMeasure({ width: tinyMeasurement.width, height: tinyMeasurement.height });
+    }
+    const { scale } = readScaleState();
+    expect(Math.abs(scale - 0.1) < 1e-6).toBe(true);
+    const warningCall = warnCalls.find(call => String(call[0]).includes('Container is smaller'));
+    expect(Boolean(warningCall)).toBe(true);
+    console.warn = originalWarn;
+  });
+
+  it('preserves configured gaps for percent-based layout overrides', () => {
+    const dash = content.querySelector('.wdash');
+    const stableMeasurement = { width: 1200, height: 900 };
+    currentMeasurement = { ...stableMeasurement };
+    hooks.resolveMeasuredBaseDimensions({ measurement: stableMeasurement });
+    hooks.applyLayoutOverrides();
+    if (onMeasure) {
+      onMeasure(stableMeasurement);
+    }
+
+    const originalWarn = console.warn;
+    const warnCalls = [];
+    console.warn = function (...args) {
+      warnCalls.push(args);
+    };
+
+    hooks.applyLayoutOverrides({
+      layout: {
+        trackUnit: 'percent',
+        desktop: {
+          gap: 'var(--wdash-gap)',
+          columns: ['50%', '50%'],
+          rows: [
+            { columns: ['temp-wind', 'ambient'], height: 60 },
+            { columns: ['air', 'rain'], height: 40 }
+          ]
+        }
+      }
+    });
+
+    expect(dash.style.getPropertyValue('--wdash-grid-gap-desktop')).toBe('var(--wdash-gap)');
+    const diagnostics = hooks.layoutState.lastDiagnostics;
+    expect(Boolean(diagnostics)).toBe(true);
+    const percentTracks = diagnostics.percentTracks || { columns: [], rows: [] };
+    if (Array.isArray(percentTracks.columns) && percentTracks.columns.length) {
+      const desktopColumn = percentTracks.columns.find(entry => entry && entry.breakpoint === 'desktop');
+      if (desktopColumn) {
+        expect(Math.abs(desktopColumn.scale - 1) < 1e-6).toBe(true);
+      }
+    }
+    if (Array.isArray(percentTracks.rows) && percentTracks.rows.length) {
+      const desktopRow = percentTracks.rows.find(entry => entry && entry.breakpoint === 'desktop');
+      if (desktopRow) {
+        expect(Math.abs(desktopRow.scale - 1) < 1e-6).toBe(true);
+      }
+    }
+    expect(warnCalls.length).toBe(0);
+    console.warn = originalWarn;
+  });
+});
