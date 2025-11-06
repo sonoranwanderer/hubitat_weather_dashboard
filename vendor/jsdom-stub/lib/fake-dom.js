@@ -159,8 +159,12 @@ class FakeElement {
   }
 
   get textContent() {
-    if (this.children.length) {
-      return this.children.map(child => child.textContent).join('');
+    const childText = this.children.length ? this.children.map(child => child.textContent).join('') : '';
+    if (this._textContent && childText) {
+      return this._textContent + childText;
+    }
+    if (childText) {
+      return childText;
     }
     return this._textContent;
   }
@@ -179,6 +183,91 @@ class FakeElement {
   set innerHTML(value) {
     this._innerHTML = value == null ? '' : String(value);
     this.children = [];
+    this._textContent = '';
+    if (!this._innerHTML) {
+      return;
+    }
+
+    const voidTags = new Set(['br', 'hr', 'img', 'input', 'meta', 'link', 'source', 'track', 'area', 'base', 'col', 'embed', 'param', 'wbr']);
+    const tokenPattern = /<!--[^]*?-->|<[^>]+>|[^<]+/g;
+    const stack = [this];
+    let match;
+    while ((match = tokenPattern.exec(this._innerHTML))) {
+      const token = match[0];
+      const current = stack[stack.length - 1];
+      if (!current) {
+        continue;
+      }
+      if (token.startsWith('<!--')) {
+        continue;
+      }
+      if (token.startsWith('</')) {
+        if (stack.length > 1) {
+          stack.pop();
+        }
+        continue;
+      }
+      if (token.startsWith('<')) {
+        const openMatch = token.match(/^<\s*([^\s\/>]+)([\s\S]*)>$/);
+        if (!openMatch) {
+          continue;
+        }
+        const tagName = openMatch[1].toLowerCase();
+        const attrText = openMatch[2] || '';
+        const element = new FakeElement(tagName, this.ownerDocument);
+
+        const attrRegex = /([^\s=\/>]+)(?:\s*=\s*("[^"]*"|'[^']*'|[^\s"'>]+))?/g;
+        let attrMatch;
+        while ((attrMatch = attrRegex.exec(attrText))) {
+          let name = attrMatch[1];
+          if (!name || name === '/') continue;
+          let rawValue = attrMatch[2];
+          if (rawValue == null) {
+            rawValue = '';
+          } else {
+            rawValue = rawValue.trim();
+            if ((rawValue.startsWith('"') && rawValue.endsWith('"')) || (rawValue.startsWith("'") && rawValue.endsWith("'"))) {
+              rawValue = rawValue.slice(1, -1);
+            }
+          }
+          const value = rawValue;
+          if (name === 'class') {
+            element.className = value;
+            value.split(/\s+/).filter(Boolean).forEach(cls => element.classList.add(cls));
+            element.attributes.set('class', value);
+            continue;
+          }
+          if (name === 'id') {
+            element.setAttribute(name, value);
+            continue;
+          }
+          if (name.startsWith('data-')) {
+            const dataKey = name
+              .slice(5)
+              .replace(/-([a-z])/g, (_, char) => char.toUpperCase());
+            element.dataset[dataKey] = value;
+            element.attributes.set(name, value);
+            continue;
+          }
+          element.setAttribute(name, value);
+        }
+
+        current.appendChild(element);
+        const selfClosing = /\/>\s*$/.test(attrText) || voidTags.has(tagName);
+        if (!selfClosing) {
+          stack.push(element);
+        }
+        continue;
+      }
+
+      const text = token;
+      if (!text) continue;
+      if (!current._textContent) {
+        current._textContent = text;
+      } else {
+        current._textContent += text;
+      }
+    }
   }
 
   setAttribute(name, value) {
@@ -257,6 +346,21 @@ class FakeElement {
     if (this.parentElement) {
       this.parentElement.removeChild(this);
     }
+  }
+
+  addEventListener() {}
+
+  removeEventListener() {}
+
+  closest(selector) {
+    let current = this;
+    while (current) {
+      if (matchesSimple(current, selector)) {
+        return current;
+      }
+      current = current.parentElement;
+    }
+    return null;
   }
 
   setBoundingClientRect(rect) {
@@ -430,10 +534,32 @@ function createTestEnvironment() {
   window.document = document;
   window.window = window;
   window.console = console;
-  window.setTimeout = setTimeout;
-  window.clearTimeout = clearTimeout;
-  window.setInterval = () => 0;
-  window.clearInterval = () => {};
+  const nativeSetTimeout = setTimeout;
+  const nativeClearTimeout = clearTimeout;
+  const clampDelay = value => {
+    if (!Number.isFinite(value) || value < 0) return 0;
+    return Math.min(value, 50);
+  };
+  window.setTimeout = function setTimeoutStub(fn, delay) {
+    if (typeof fn !== 'function') {
+      return 0;
+    }
+    const ms = clampDelay(delay);
+    return nativeSetTimeout(() => {
+      try {
+        fn();
+      } catch (err) {
+        // ignore timer exceptions in stubbed environment
+      }
+    }, ms);
+  };
+  window.clearTimeout = function clearTimeoutStub(handle) {
+    if (handle != null) {
+      nativeClearTimeout(handle);
+    }
+  };
+  window.setInterval = (fn, delay) => window.setTimeout(fn, delay);
+  window.clearInterval = handle => window.clearTimeout(handle);
   window.requestAnimationFrame = fn => setTimeout(fn, 16);
   window.cancelAnimationFrame = id => clearTimeout(id);
   window.Intl = Intl;
@@ -466,6 +592,14 @@ function createTestEnvironment() {
       return false;
     }
   });
+  window.getComputedStyle = element => {
+    const target = element && element.style && element.style.store ? element.style.store : {};
+    return {
+      getPropertyValue(name) {
+        return Object.prototype.hasOwnProperty.call(target, name) ? target[name] : '';
+      }
+    };
+  };
 
   global.__WDASH_TEST_MODE__ = true;
   global.__WDASH_TEST_HOOKS__ = {};
@@ -476,6 +610,7 @@ function createTestEnvironment() {
   global.MutationObserver = window.MutationObserver;
   global.ResizeObserver = window.ResizeObserver;
   global.matchMedia = window.matchMedia;
+  global.getComputedStyle = window.getComputedStyle;
 
   if (!document.documentElement) {
     document.documentElement = new FakeElement('html', document);

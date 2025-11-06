@@ -7555,6 +7555,7 @@ function createLegacyWeatherDashboardRenderer(options = {}) {
       formatLightningDistance,
       setupAirQualityRotation,
       scheduleAirQualityRotation,
+      stopAmbientRotationTimer,
       stopAirQualityRotationTimer,
       clearAirQualityRotation,
       updateAirQualityCard,

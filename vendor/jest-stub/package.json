@@ -1,0 +1,8 @@
+{
+  "name": "jest",
+  "version": "0.0.0-stub",
+  "main": "lib/index.js",
+  "bin": {
+    "jest": "bin/jest.js"
+  }
+}

@@ -419,9 +419,58 @@
     scheduleHostResizeSync();
   }
 
+  function parseQueryFallback(search) {
+    const source = (search || '').replace(/^\?/, '');
+    if (!source) {
+      return [];
+    }
+    return source.split('&').reduce((entries, pair) => {
+      if (!pair) return entries;
+      const index = pair.indexOf('=');
+      let key = pair;
+      let value = '';
+      if (index >= 0) {
+        key = pair.slice(0, index);
+        value = pair.slice(index + 1);
+      }
+      try {
+        key = decodeURIComponent(key.replace(/\+/g, ' '));
+      } catch (err) {
+        key = key.replace(/\+/g, ' ');
+      }
+      try {
+        value = decodeURIComponent(value.replace(/\+/g, ' '));
+      } catch (err) {
+        value = value.replace(/\+/g, ' ');
+      }
+      if (!key) {
+        return entries;
+      }
+      entries.push([key, value]);
+      return entries;
+    }, []);
+  }
+
+  function createQueryParams(search) {
+    const ctor = (global.URLSearchParams || (typeof URLSearchParams === 'function' ? URLSearchParams : null));
+    if (ctor) {
+      try {
+        return new ctor(search);
+      } catch (err) {
+        // Fall through to manual parsing when the constructor throws.
+      }
+    }
+    const entries = parseQueryFallback(search);
+    return {
+      entries() {
+        return entries.slice();
+      }
+    };
+  }
+
   function readQueryConfig() {
     const search = global.location ? global.location.search || '' : '';
-    const params = new URLSearchParams(search);
+    const params = createQueryParams(search);
     const config = {};
     for (const [key, value] of params.entries()) {
       if (Object.prototype.hasOwnProperty.call(config, key)) {
@@ -1057,15 +1106,41 @@
 
   function applyPayloadText(text) {
     if (!dataTileContent) ensureAppShell();
-    if (!dataTileContent) return;
+    if (!dataTileContent) {
+      scheduleHostResizeSync();
+      return { rendered: false, reason: 'no-shell', details: ['Dashboard shell failed to initialize.'] };
+    }
     dataTileContent.textContent = text != null ? String(text) : '';
     const renderer = bootstrapRenderer();
     const api = renderer || (global.weatherDashboard && global.weatherDashboard.__renderer__);
     if (api && typeof api.safeRenderFromData === 'function') {
-      api.safeRenderFromData();
+      try {
+        api.safeRenderFromData();
+        scheduleHostResizeSync();
+        return { rendered: true };
+      } catch (err) {
+        scheduleHostResizeSync();
+        const message = err && err.message ? err.message : String(err);
+        return { rendered: false, reason: 'render-error', details: [message] };
+      }
     }
 
     scheduleHostResizeSync();
+    if (!renderer) {
+      return {
+        rendered: false,
+        reason: 'no-renderer',
+        details: [
+          'Load dashboard/weather-dashboard.js before weather-dashboard-app.js so the renderer factory is registered.'
+        ]
+      };
+    }
+
+    return {
+      rendered: false,
+      reason: 'missing-method',
+      details: ['Registered renderer is missing a safeRenderFromData() method.']
+    };
   }
 
   function buildLoadingDetails(config) {
@@ -1086,24 +1161,59 @@
     state.lastSuccessAt = Date.now();
     const parsed = parseJson(text);
     const normalized = normalizePayloadResponse(parsed, text);
-    applyPayloadText(normalized.text);
+    const renderResult = applyPayloadText(normalized.text);
 
-    const details = [];
     const timestamp = formatTimestamp(state.lastSuccessAt);
-    if (timestamp) {
-      details.push(`Updated ${timestamp}`);
-    }
+    const refreshDetail = `Next refresh in ${formatDuration(state.pollIntervalMs)}.`;
     const summary = buildConfigSummary(state.config);
-    if (summary) details.push(summary);
-    details.push(`Next refresh in ${formatDuration(state.pollIntervalMs)}.`);
-    if (normalized.payload && normalized.payload.metadata && normalized.payload.metadata.generatedAt) {
-      details.push(`Payload generated at ${normalized.payload.metadata.generatedAt}.`);
-    }
-    if (state.validationWarnings.length) {
-      details.push(...state.validationWarnings.map(item => `⚠ ${item}`));
+    const payloadGenerated = normalized.payload && normalized.payload.metadata && normalized.payload.metadata.generatedAt
+      ? `Payload generated at ${normalized.payload.metadata.generatedAt}.`
+      : null;
+
+    if (renderResult.rendered) {
+      const details = [];
+      if (timestamp) {
+        details.push(`Updated ${timestamp}`);
+      }
+      if (summary) {
+        details.push(summary);
+      }
+      details.push(refreshDetail);
+      if (payloadGenerated) {
+        details.push(payloadGenerated);
+      }
+      if (state.validationWarnings.length) {
+        details.push(...state.validationWarnings.map(item => `⚠ ${item}`));
+      }
+      updateStatus('success', 'Weather data updated', details);
+    } else {
+      const details = Array.isArray(renderResult.details) ? renderResult.details.slice() : [];
+      if (timestamp) {
+        details.push(`Fetched ${timestamp}.`);
+      }
+      if (summary) {
+        details.push(summary);
+      }
+      if (payloadGenerated) {
+        details.push(payloadGenerated);
+      }
+      details.push(refreshDetail);
+      if (state.validationWarnings.length) {
+        details.push(...state.validationWarnings.map(item => `⚠ ${item}`));
+      }
+
+      const reason = renderResult.reason;
+      if (reason === 'no-renderer' || reason === 'missing-method') {
+        updateStatus('error', 'Renderer unavailable', details);
+      } else if (reason === 'render-error') {
+        updateStatus('error', 'Unable to render weather data', details);
+      } else if (reason === 'no-shell') {
+        updateStatus('error', 'Unable to render weather data', details.length ? details : ['Dashboard shell unavailable.']);
+      } else {
+        updateStatus('warning', 'Weather data fetched but not rendered', details);
+      }
     }
 
-    updateStatus('success', 'Weather data updated', details);
     scheduleNext(state.pollIntervalMs);
   }
 
