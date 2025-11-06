@@ -24,7 +24,7 @@
         align-items: flex-start;
         padding: 24px 16px 36px;
         box-sizing: border-box;
-        overflow: hidden;
+        overflow: auto;
       }
       .wdash-app-loader {
         display: flex;
@@ -71,10 +71,50 @@
     </div>
     <script>
       (function bootstrap() {
-        var params = new URLSearchParams(window.location.search || '');
-        var rendererSrc = params.get('rendererScript');
-        var appSrc = params.get('appScript');
-        var bundleBase = params.get('bundleBase');
+        function parseQuery(search) {
+          var source = (search || '').replace(/^\?/, '');
+          if (!source) return {};
+          return source.split('&').reduce(function (acc, pair) {
+            if (!pair) return acc;
+            var index = pair.indexOf('=');
+            var key = index >= 0 ? pair.slice(0, index) : pair;
+            var value = index >= 0 ? pair.slice(index + 1) : '';
+            try {
+              key = decodeURIComponent(key.replace(/\+/g, ' '));
+            } catch (err) {
+              key = key.replace(/\+/g, ' ');
+            }
+            try {
+              value = decodeURIComponent(value.replace(/\+/g, ' '));
+            } catch (err) {
+              value = value.replace(/\+/g, ' ');
+            }
+            if (!key) return acc;
+            acc[key] = value;
+            return acc;
+          }, {});
+        }
+
+        var SearchParams = window.URLSearchParams || (typeof URLSearchParams === 'function' ? URLSearchParams : null);
+        var params = null;
+        if (SearchParams) {
+          try {
+            params = new SearchParams(window.location.search || '');
+          } catch (err) {
+            params = null;
+          }
+        }
+        var fallbackParams = params ? null : parseQuery(window.location.search || '');
+        function readParam(name) {
+          if (params && typeof params.get === 'function') {
+            return params.get(name);
+          }
+          return fallbackParams ? fallbackParams[name] : null;
+        }
+
+        var rendererSrc = readParam('rendererScript');
+        var appSrc = readParam('appScript');
+        var bundleBase = readParam('bundleBase');
 
         var resizePending = false;
         var lastHeight = 0;

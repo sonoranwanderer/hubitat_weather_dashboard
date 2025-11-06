@@ -180,6 +180,9 @@ async function runFixture(fixturePath) {
     console.log(`Rendered dashboard fixture: ${fixtureName}`);
   } finally {
     restoreDateNow();
+    if (typeof hooks.stopAmbientRotationTimer === 'function') {
+      hooks.stopAmbientRotationTimer();
+    }
     if (typeof hooks.stopAirQualityRotationTimer === 'function') {
       hooks.stopAirQualityRotationTimer();
     }
