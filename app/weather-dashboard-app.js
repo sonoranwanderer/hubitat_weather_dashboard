@@ -35,6 +35,15 @@
   let dataTileContent = null;
   let pendingHostResizeSync = false;
   let lastReportedHostHeight = 0;
+  const previewResizeState = {
+    pending: false,
+    rootObserver: null,
+    observedRoot: null,
+    displayObserver: null,
+    observedDisplayTile: null,
+    lastWidth: null,
+    lastHeight: null
+  };
 
   const publicApi = {
     get state() {
@@ -122,6 +131,245 @@
     }
   }
 
+  function parseCssPixels(value) {
+    if (value == null) return null;
+    if (typeof value === 'number') {
+      return Number.isFinite(value) ? value : null;
+    }
+    const text = String(value || '').trim();
+    if (!text) return null;
+    const pxMatch = text.match(/^(-?[0-9]+(?:\.[0-9]+)?)px$/i);
+    if (pxMatch) {
+      const parsed = Number(pxMatch[1]);
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+    const numeric = Number(text);
+    return Number.isFinite(numeric) ? numeric : null;
+  }
+
+  function readRenderDimensions(root) {
+    if (!root) return null;
+    let width = null;
+    let height = null;
+
+    if (typeof global.getComputedStyle === 'function') {
+      try {
+        const computed = global.getComputedStyle(root);
+        width = parseCssPixels(computed.getPropertyValue('--wdash-render-width'))
+          ?? parseCssPixels(computed.getPropertyValue('--wdash-base-width'));
+        height = parseCssPixels(computed.getPropertyValue('--wdash-render-height'))
+          ?? parseCssPixels(computed.getPropertyValue('--wdash-base-height'));
+      } catch (err) {
+        /* ignore */
+      }
+    }
+
+    if ((!Number.isFinite(width) || width <= 0 || !Number.isFinite(height) || height <= 0) &&
+        typeof root.getBoundingClientRect === 'function') {
+      const rect = root.getBoundingClientRect();
+      if (!Number.isFinite(width) || width <= 0) {
+        const rectWidth = Number(rect?.width);
+        if (Number.isFinite(rectWidth) && rectWidth > 0) {
+          width = rectWidth;
+        }
+      }
+      if (!Number.isFinite(height) || height <= 0) {
+        const rectHeight = Number(rect?.height);
+        if (Number.isFinite(rectHeight) && rectHeight > 0) {
+          height = rectHeight;
+        }
+      }
+    }
+
+    if ((!Number.isFinite(width) || width <= 0 || !Number.isFinite(height) || height <= 0) &&
+        typeof root.querySelector === 'function') {
+      const dash = root.querySelector('.wdash');
+      if (dash && typeof dash.getBoundingClientRect === 'function') {
+        const dashRect = dash.getBoundingClientRect();
+        if (!Number.isFinite(width) || width <= 0) {
+          const dashWidth = Number(dashRect?.width);
+          if (Number.isFinite(dashWidth) && dashWidth > 0) {
+            width = dashWidth;
+          }
+        }
+        if (!Number.isFinite(height) || height <= 0) {
+          const dashHeight = Number(dashRect?.height);
+          if (Number.isFinite(dashHeight) && dashHeight > 0) {
+            height = dashHeight;
+          }
+        }
+      }
+    }
+
+    if (!Number.isFinite(width) || width <= 0 || !Number.isFinite(height) || height <= 0) {
+      return null;
+    }
+
+    return { width, height };
+  }
+
+  function clearPreviewDimensions() {
+    if (!shellElements) return;
+    const { host, status, displayTile, displayPrimary } = shellElements;
+    if (host) {
+      host.style.removeProperty('--wdash-preview-width');
+      host.style.removeProperty('--wdash-preview-height');
+    }
+    if (displayTile) {
+      displayTile.style.removeProperty('--wdash-preview-width');
+      displayTile.style.removeProperty('--wdash-preview-height');
+      displayTile.style.removeProperty('maxWidth');
+      displayTile.style.removeProperty('minWidth');
+      displayTile.style.removeProperty('height');
+      displayTile.style.removeProperty('minHeight');
+    }
+    if (displayPrimary) {
+      displayPrimary.style.removeProperty('--wdash-preview-width');
+      displayPrimary.style.removeProperty('--wdash-preview-height');
+      displayPrimary.style.removeProperty('maxWidth');
+      displayPrimary.style.removeProperty('height');
+      displayPrimary.style.removeProperty('minHeight');
+    }
+    if (status) {
+      status.style.removeProperty('maxWidth');
+    }
+  }
+
+  function requestPreviewSizeSync() {
+    if (previewResizeState.pending) return;
+    previewResizeState.pending = true;
+    const run = () => {
+      previewResizeState.pending = false;
+      syncPreviewDimensions();
+    };
+    if (typeof global.requestAnimationFrame === 'function') {
+      global.requestAnimationFrame(() => {
+        if (typeof global.requestAnimationFrame === 'function') {
+          global.requestAnimationFrame(run);
+        } else if (typeof global.setTimeout === 'function') {
+          global.setTimeout(run, 16);
+        } else {
+          run();
+        }
+      });
+    } else if (typeof global.setTimeout === 'function') {
+      global.setTimeout(run, 32);
+    } else {
+      run();
+    }
+  }
+
+  function ensurePreviewResizeObservers(root, displayTile) {
+    if (typeof global.ResizeObserver !== 'function') return;
+
+    if (!previewResizeState.rootObserver) {
+      previewResizeState.rootObserver = new global.ResizeObserver(() => {
+        requestPreviewSizeSync();
+      });
+    }
+    if (previewResizeState.observedRoot !== root) {
+      if (previewResizeState.observedRoot) {
+        try {
+          previewResizeState.rootObserver.unobserve(previewResizeState.observedRoot);
+        } catch (err) {
+          /* ignore */
+        }
+      }
+      previewResizeState.observedRoot = root || null;
+      if (root) {
+        try {
+          previewResizeState.rootObserver.observe(root);
+        } catch (err) {
+          /* ignore */
+        }
+      }
+    }
+
+    if (!previewResizeState.displayObserver) {
+      previewResizeState.displayObserver = new global.ResizeObserver(() => {
+        requestPreviewSizeSync();
+      });
+    }
+    if (previewResizeState.observedDisplayTile !== displayTile) {
+      if (previewResizeState.observedDisplayTile) {
+        try {
+          previewResizeState.displayObserver.unobserve(previewResizeState.observedDisplayTile);
+        } catch (err) {
+          /* ignore */
+        }
+      }
+      previewResizeState.observedDisplayTile = displayTile || null;
+      if (displayTile) {
+        try {
+          previewResizeState.displayObserver.observe(displayTile);
+        } catch (err) {
+          /* ignore */
+        }
+      }
+    }
+  }
+
+  function syncPreviewDimensions() {
+    const shell = shellElements || ensureAppShell();
+    if (!shell) return;
+
+    const { host, status, displayTile, displayPrimary } = shell;
+    const root = displayPrimary ? displayPrimary.querySelector('.wdash-root') : null;
+
+    ensurePreviewResizeObservers(root, displayTile);
+
+    if (!root) {
+      if (previewResizeState.lastWidth != null || previewResizeState.lastHeight != null) {
+        previewResizeState.lastWidth = null;
+        previewResizeState.lastHeight = null;
+        clearPreviewDimensions();
+        scheduleHostResizeSync();
+      }
+      return;
+    }
+
+    const dimensions = readRenderDimensions(root);
+    if (!dimensions) return;
+
+    const width = Math.max(1, Math.round(dimensions.width));
+    const height = Math.max(1, Math.round(dimensions.height));
+
+    if (previewResizeState.lastWidth === width && previewResizeState.lastHeight === height) {
+      return;
+    }
+
+    previewResizeState.lastWidth = width;
+    previewResizeState.lastHeight = height;
+
+    const widthPx = `${width}px`;
+    const heightPx = `${height}px`;
+
+    if (host) {
+      host.style.setProperty('--wdash-preview-width', widthPx);
+      host.style.setProperty('--wdash-preview-height', heightPx);
+    }
+    if (displayTile) {
+      displayTile.style.setProperty('--wdash-preview-width', widthPx);
+      displayTile.style.setProperty('--wdash-preview-height', heightPx);
+      displayTile.style.maxWidth = widthPx;
+      displayTile.style.minWidth = '0';
+      displayTile.style.height = heightPx;
+      displayTile.style.minHeight = heightPx;
+    }
+    if (displayPrimary) {
+      displayPrimary.style.setProperty('--wdash-preview-width', widthPx);
+      displayPrimary.style.setProperty('--wdash-preview-height', heightPx);
+      displayPrimary.style.maxWidth = widthPx;
+      displayPrimary.style.height = heightPx;
+      displayPrimary.style.minHeight = heightPx;
+    }
+    if (status) {
+      status.style.maxWidth = widthPx;
+    }
+
+    scheduleHostResizeSync();
+  }
+
   function injectStyles() {
     const doc = global.document;
     if (!doc || doc.getElementById(STYLE_ID)) return;
@@ -163,11 +411,17 @@
         background: radial-gradient(circle at top, rgba(20,40,80,0.55), rgba(4,10,22,0.92));
         font-family: var(--wdash-app-font);
       }
-      #${HOST_ID} .wdash-app-status,
+      #${HOST_ID} .wdash-app-status {
+        width: 100%;
+        max-width: 1200px;
+        margin: 0 auto;
+      }
       #${HOST_ID} .wdash-app-display-tile {
         width: 100%;
         max-width: 1200px;
         margin: 0 auto;
+        --wdash-preview-width: 1200px;
+        --wdash-preview-height: auto;
       }
       #${HOST_ID} .tile {
         position: relative;
@@ -192,17 +446,17 @@
       #${HOST_ID} .wdash-app-display {
         position: relative;
         width: 100%;
-        max-width: 1200px;
+        max-width: var(--wdash-preview-width, 1200px);
         margin: 0 auto;
-        aspect-ratio: 4 / 3;
         display: flex;
         align-items: stretch;
         justify-content: center;
+        min-height: var(--wdash-preview-height, auto);
       }
       #${HOST_ID} .wdash-app-display > * {
         position: relative;
         width: 100%;
-        height: 100%;
+        min-height: var(--wdash-preview-height, auto);
       }
       #${STATUS_ID} {
         font-family: var(--wdash-app-font);
@@ -372,6 +626,7 @@
         dataTile,
         dataPrimary
       };
+      requestPreviewSizeSync();
     }
 
     scheduleHostResizeSync();
@@ -416,6 +671,7 @@
       status.style.minHeight = `${nextMin}px`;
     }
 
+    requestPreviewSizeSync();
     scheduleHostResizeSync();
   }
 
@@ -1116,15 +1372,18 @@
     if (api && typeof api.safeRenderFromData === 'function') {
       try {
         api.safeRenderFromData();
+        requestPreviewSizeSync();
         scheduleHostResizeSync();
         return { rendered: true };
       } catch (err) {
+        requestPreviewSizeSync();
         scheduleHostResizeSync();
         const message = err && err.message ? err.message : String(err);
         return { rendered: false, reason: 'render-error', details: [message] };
       }
     }
 
+    requestPreviewSizeSync();
     scheduleHostResizeSync();
     if (!renderer) {
       return {
@@ -1311,13 +1570,16 @@
   function initialize() {
     injectStyles();
     ensureAppShell();
+    requestPreviewSizeSync();
     bootstrapRenderer();
     configureAndStart();
   }
 
   if (typeof global.addEventListener === 'function') {
     global.addEventListener('resize', scheduleHostResizeSync);
+    global.addEventListener('resize', requestPreviewSizeSync);
     global.addEventListener('load', scheduleHostResizeSync);
+    global.addEventListener('load', requestPreviewSizeSync, { once: true });
   }
 
   whenDomReady(initialize);
