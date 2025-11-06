@@ -141,7 +141,9 @@ function createRenderer(options = {}) {
     containerWidth: null,
     containerHeight: null,
     lastScale: null,
-    lastWarningKey: null
+    lastWarningKey: null,
+    lastDiagnostics: null,
+    listeners: new Set()
   };
 
   const percentConstraintState = {
@@ -1014,6 +1016,167 @@ function createRenderer(options = {}) {
 
   function clearScaleConstraintWarning() {
     scaleState.lastWarningKey = null;
+  }
+
+  function sanitizeDiagnosticsMeasurement(measurement) {
+    if (!measurement || typeof measurement !== 'object') {
+      return null;
+    }
+    const normalized = {
+      width: Number.isFinite(measurement.width) ? Number(measurement.width) : null,
+      height: Number.isFinite(measurement.height) ? Number(measurement.height) : null,
+      strategy: measurement.strategy != null ? String(measurement.strategy) : null,
+      widthSource: null,
+      heightSource: null,
+      candidates: null
+    };
+
+    if (measurement.widthSource && typeof measurement.widthSource === 'object') {
+      normalized.widthSource = {
+        role: measurement.widthSource.role != null ? String(measurement.widthSource.role) : null,
+        description: measurement.widthSource.description != null
+          ? String(measurement.widthSource.description)
+          : null,
+        width: Number.isFinite(measurement.widthSource.width)
+          ? Number(measurement.widthSource.width)
+          : null
+      };
+    }
+
+    if (measurement.heightSource && typeof measurement.heightSource === 'object') {
+      normalized.heightSource = {
+        role: measurement.heightSource.role != null ? String(measurement.heightSource.role) : null,
+        description: measurement.heightSource.description != null
+          ? String(measurement.heightSource.description)
+          : null,
+        height: Number.isFinite(measurement.heightSource.height)
+          ? Number(measurement.heightSource.height)
+          : null
+      };
+    }
+
+    if (Array.isArray(measurement.candidates) && measurement.candidates.length) {
+      normalized.candidates = measurement.candidates.map(candidate => {
+        if (!candidate || typeof candidate !== 'object') {
+          return null;
+        }
+        return {
+          role: candidate.role != null ? String(candidate.role) : null,
+          description: candidate.description != null ? String(candidate.description) : null,
+          width: Number.isFinite(candidate.width) ? Number(candidate.width) : null,
+          height: Number.isFinite(candidate.height) ? Number(candidate.height) : null
+        };
+      }).filter(Boolean);
+    }
+
+    return normalized;
+  }
+
+  function cloneScaleDiagnostics(diag) {
+    if (!diag || typeof diag !== 'object') return null;
+    const cloneCandidates = entry => {
+      if (!Array.isArray(entry)) return null;
+      return entry.map(item => (item ? { ...item } : item));
+    };
+    const cloneSources = sources => {
+      if (!sources || typeof sources !== 'object') return { measurement: null, tile: null, container: null };
+      return {
+        measurement: sources.measurement ? {
+          ...sources.measurement,
+          widthSource: sources.measurement.widthSource ? { ...sources.measurement.widthSource } : null,
+          heightSource: sources.measurement.heightSource ? { ...sources.measurement.heightSource } : null,
+          candidates: cloneCandidates(sources.measurement.candidates)
+        } : null,
+        tile: sources.tile ? { ...sources.tile } : null,
+        container: sources.container ? { ...sources.container } : null
+      };
+    };
+    return {
+      timestamp: diag.timestamp,
+      warning: diag.warning || null,
+      scale: diag.scale ? { ...diag.scale } : null,
+      base: diag.base ? { ...diag.base } : null,
+      container: diag.container ? { ...diag.container } : null,
+      sources: cloneSources(diag.sources)
+    };
+  }
+
+  function captureScaleDiagnostics() {
+    return cloneScaleDiagnostics(scaleState.lastDiagnostics);
+  }
+
+  function notifyScaleDiagnostics(diagnostics) {
+    scaleState.lastDiagnostics = diagnostics;
+    if (!scaleState.listeners || scaleState.listeners.size === 0) {
+      return;
+    }
+    for (const listener of Array.from(scaleState.listeners)) {
+      if (typeof listener !== 'function') continue;
+      try {
+        listener(cloneScaleDiagnostics(diagnostics));
+      } catch (err) {
+        if (typeof console !== 'undefined' && console?.warn) {
+          console.warn('[WeatherDashboard] Scale diagnostics listener error', err);
+        }
+      }
+    }
+  }
+
+  function subscribeScaleDiagnostics(listener) {
+    if (typeof listener !== 'function') {
+      return () => {};
+    }
+    scaleState.listeners.add(listener);
+    return () => {
+      scaleState.listeners.delete(listener);
+    };
+  }
+
+  function buildScaleDiagnosticsContext(context = {}) {
+    const warning = context.warning || null;
+    const measurement = sanitizeDiagnosticsMeasurement(context.measurement);
+    const appliedScale = Number.isFinite(context.scale) ? context.scale : null;
+    const rawScale = Number.isFinite(context.rawScale) ? context.rawScale : null;
+    const minScale = Number.isFinite(context.minScale) ? context.minScale : null;
+    const baseWidth = Number.isFinite(context.baseWidth) ? context.baseWidth : null;
+    const baseHeight = Number.isFinite(context.baseHeight) ? context.baseHeight : null;
+    const containerWidth = Number.isFinite(context.width) ? context.width : null;
+    const containerHeight = Number.isFinite(context.height) ? context.height : null;
+
+    const tileWidth = Number.isFinite(tileMeasurementState.width) ? Number(tileMeasurementState.width) : null;
+    const tileHeight = Number.isFinite(tileMeasurementState.height) ? Number(tileMeasurementState.height) : null;
+    const storedWidth = Number.isFinite(scaleState.containerWidth) ? Number(scaleState.containerWidth) : null;
+    const storedHeight = Number.isFinite(scaleState.containerHeight) ? Number(scaleState.containerHeight) : null;
+
+    return {
+      timestamp: Date.now(),
+      warning,
+      scale: {
+        applied: appliedScale,
+        raw: rawScale,
+        min: minScale,
+        clamped: warning === 'too-small'
+      },
+      base: {
+        width: baseWidth,
+        height: baseHeight
+      },
+      container: {
+        width: containerWidth,
+        height: containerHeight
+      },
+      sources: {
+        measurement,
+        tile: {
+          width: tileWidth,
+          height: tileHeight
+        },
+        container: {
+          width: storedWidth,
+          height: storedHeight
+        }
+      }
+    };
   }
 
   function resetPercentConstraintWarnings(signature) {
@@ -1915,6 +2078,17 @@ function createRenderer(options = {}) {
     }
 
     if (!Number.isFinite(width) || !Number.isFinite(height)) {
+      notifyScaleDiagnostics(buildScaleDiagnosticsContext({
+        width: Number.isFinite(width) ? width : null,
+        height: Number.isFinite(height) ? height : null,
+        baseWidth: currentBaseWidth,
+        baseHeight: currentBaseHeight,
+        scale: null,
+        rawScale: null,
+        minScale: MIN_SCALE,
+        measurement: measurementOverride,
+        warning: 'invalid-measurement'
+      }));
       emitScaleConstraintWarning('invalid-measurement', { width, height });
       return;
     }
@@ -1956,7 +2130,8 @@ function createRenderer(options = {}) {
     scaleState.containerHeight = height;
     scaleState.lastScale = scale;
 
-    if (clamped && rawScale < scale) {
+    const warningType = clamped && rawScale < scale ? 'too-small' : null;
+    if (warningType === 'too-small') {
       emitScaleConstraintWarning('too-small', {
         width,
         height,
@@ -1968,6 +2143,18 @@ function createRenderer(options = {}) {
     } else {
       clearScaleConstraintWarning();
     }
+
+    notifyScaleDiagnostics(buildScaleDiagnosticsContext({
+      width,
+      height,
+      baseWidth,
+      baseHeight,
+      scale,
+      rawScale,
+      minScale: MIN_SCALE,
+      measurement: measurementOverride,
+      warning: warningType
+    }));
   }
 
   function mergePayloads(payloads) {
@@ -7814,7 +8001,9 @@ function createRenderer(options = {}) {
     layoutState,
     tempWindState,
     ensureTileAdapter,
-    getTileAdapter: () => tileAdapter
+    getTileAdapter: () => tileAdapter,
+    captureScaleDiagnostics,
+    subscribeScaleDiagnostics
   };
 
   if (!IS_TEST_ENV && typeof window !== 'undefined') {
@@ -7822,6 +8011,26 @@ function createRenderer(options = {}) {
     window.weatherDashboard.__renderer__ = api;
     window.weatherDashboard.logLayoutDiagnostics = () => logLayoutDiagnostics(null, { force: true });
     window.weatherDashboard.captureLayoutDiagnostics = () => layoutState.lastDiagnostics;
+    window.weatherDashboard.captureScaleDiagnostics = captureScaleDiagnostics;
+    window.weatherDashboard.logScaleDiagnostics = () => {
+      const snapshot = captureScaleDiagnostics();
+      if (snapshot && window.console && typeof window.console.info === 'function') {
+        window.console.info('[WeatherDashboard] Scale diagnostics', snapshot);
+      } else if (window.console && typeof window.console.warn === 'function') {
+        window.console.warn('[WeatherDashboard] No scale diagnostics available');
+      }
+      return snapshot;
+    };
+    window.weatherDashboard.subscribeScaleDiagnostics = listener => {
+      const unsubscribe = subscribeScaleDiagnostics(listener);
+      return () => {
+        try {
+          unsubscribe();
+        } catch (err) {
+          /* ignore */
+        }
+      };
+    };
   }
 
   if (IS_TEST_ENV) {
@@ -7844,6 +8053,8 @@ function createRenderer(options = {}) {
       measureDisplayTileBaseDimensions,
       resetTileMeasurement,
       logLayoutDiagnostics,
+      captureScaleDiagnostics,
+      subscribeScaleDiagnostics,
       buildLayoutDiagnosticsContext,
       applyTemperatureUnitsFromMetadata,
       applyRainUnitsFromMetadata,

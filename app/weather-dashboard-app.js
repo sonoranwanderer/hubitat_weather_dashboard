@@ -46,6 +46,12 @@
     lastWidth: null,
     lastHeight: null
   };
+  const previewDiagnosticsState = {
+    enabled: false,
+    overlay: null,
+    unsubscribe: null,
+    renderer: null
+  };
 
   function isElement(value) {
     return value && typeof value === 'object' && value.nodeType === 1;
@@ -245,13 +251,244 @@
     };
   }
 
+  function shouldEnableScaleDiagnostics() {
+    const search = global.location ? global.location.search || '' : '';
+    if (!search) return false;
+    let enabled = false;
+    try {
+      const params = createQueryParams(search);
+      const entries = typeof params?.entries === 'function' ? params.entries() : [];
+      for (const [rawKey, rawValue] of entries) {
+        const key = String(rawKey || '').toLowerCase();
+        if (key !== 'diagnostics' && key !== 'debug') {
+          continue;
+        }
+        const valueText = String(rawValue || '').toLowerCase();
+        const tokens = valueText
+          .split(/[\s,]+/)
+          .map(token => token.trim())
+          .filter(Boolean);
+        if (!tokens.length) {
+          if (key === 'diagnostics' || valueText === '1' || valueText === 'true') {
+            enabled = true;
+            break;
+          }
+        }
+        if (tokens.some(token => token === 'scale' || token === 'scaling' || token === 'render')) {
+          enabled = true;
+          break;
+        }
+        if (valueText === '1' || valueText === 'true') {
+          enabled = true;
+          break;
+        }
+      }
+    } catch (err) {
+      enabled = false;
+    }
+    return enabled;
+  }
+
+  function normalizeUnsubscribeHandle(handle) {
+    if (!handle) return null;
+    if (typeof handle === 'function') return handle;
+    if (typeof handle === 'object') {
+      if (typeof handle.unsubscribe === 'function') {
+        return () => handle.unsubscribe();
+      }
+      if (typeof handle.disconnect === 'function') {
+        return () => handle.disconnect();
+      }
+      if (typeof handle.dispose === 'function') {
+        return () => handle.dispose();
+      }
+      if (typeof handle.stop === 'function') {
+        return () => handle.stop();
+      }
+    }
+    return null;
+  }
+
+  function ensureDiagnosticsOverlay() {
+    const doc = global.document;
+    if (!doc || !doc.body) return null;
+    if (previewDiagnosticsState.overlay && previewDiagnosticsState.overlay.isConnected) {
+      return previewDiagnosticsState.overlay;
+    }
+    const overlay = doc.createElement('div');
+    overlay.className = 'wdash-app-diagnostics';
+    overlay.style.display = 'none';
+    doc.body.appendChild(overlay);
+    previewDiagnosticsState.overlay = overlay;
+    return overlay;
+  }
+
+  function formatScaleNumber(value) {
+    if (!Number.isFinite(value)) return 'n/a';
+    const magnitude = Math.abs(value);
+    if (magnitude >= 100) return value.toFixed(0);
+    if (magnitude >= 10) return value.toFixed(2);
+    return value.toFixed(3);
+  }
+
+  function formatPixelSize(value) {
+    if (!Number.isFinite(value)) return 'n/a';
+    return `${Math.round(value)}px`;
+  }
+
+  function formatSourceEntry(source, dimensionKey) {
+    if (!source || typeof source !== 'object') {
+      return 'n/a';
+    }
+    const role = source.role ? String(source.role) : '';
+    const description = source.description ? String(source.description) : '';
+    const label = role && description && role !== description
+      ? `${role} • ${description}`
+      : (role || description || 'source');
+    const dimensionValue = Number.isFinite(source[dimensionKey]) ? `${Math.round(source[dimensionKey])}px` : null;
+    return dimensionValue ? `${label} (${dimensionValue})` : label;
+  }
+
+  function renderDiagnosticsOverlay(diagnostics) {
+    const overlay = ensureDiagnosticsOverlay();
+    if (!overlay) return;
+    const doc = overlay.ownerDocument || global.document;
+    overlay.style.display = 'block';
+    overlay.innerHTML = '';
+    const title = doc.createElement('div');
+    title.className = 'wdash-app-diagnostics__title';
+    title.textContent = 'Scale diagnostics';
+    overlay.appendChild(title);
+
+    const body = doc.createElement('div');
+    body.className = 'wdash-app-diagnostics__body';
+
+    if (!diagnostics) {
+      overlay.dataset.warning = 'false';
+      const row = doc.createElement('div');
+      row.textContent = 'Awaiting host measurement…';
+      body.appendChild(row);
+      overlay.appendChild(body);
+      return;
+    }
+
+    overlay.dataset.warning = diagnostics.warning ? 'true' : 'false';
+
+    const lines = [];
+    lines.push(`Scale ${formatScaleNumber(diagnostics.scale?.applied)} (raw ${formatScaleNumber(diagnostics.scale?.raw)}, min ${formatScaleNumber(diagnostics.scale?.min)})`);
+    lines.push(`Container ${formatPixelSize(diagnostics.container?.width)} × ${formatPixelSize(diagnostics.container?.height)}`);
+    lines.push(`Base ${formatPixelSize(diagnostics.base?.width)} × ${formatPixelSize(diagnostics.base?.height)}`);
+    const strategy = diagnostics.sources?.measurement?.strategy || 'n/a';
+    lines.push(`Strategy ${strategy}`);
+    lines.push(`Width source ${formatSourceEntry(diagnostics.sources?.measurement?.widthSource, 'width')}`);
+    lines.push(`Height source ${formatSourceEntry(diagnostics.sources?.measurement?.heightSource, 'height')}`);
+    lines.push(diagnostics.warning ? `Warning ${diagnostics.warning}` : 'Warning none');
+
+    lines.forEach(text => {
+      if (!text) return;
+      const row = doc.createElement('div');
+      row.textContent = text;
+      body.appendChild(row);
+    });
+
+    overlay.appendChild(body);
+  }
+
+  function disableScaleDiagnosticsOverlay() {
+    if (typeof previewDiagnosticsState.unsubscribe === 'function') {
+      try {
+        previewDiagnosticsState.unsubscribe();
+      } catch (err) {
+        /* ignore */
+      }
+    }
+    previewDiagnosticsState.unsubscribe = null;
+    previewDiagnosticsState.renderer = null;
+    previewDiagnosticsState.enabled = false;
+    const overlay = previewDiagnosticsState.overlay;
+    if (overlay) {
+      overlay.style.display = 'none';
+      overlay.innerHTML = '';
+      overlay.dataset.warning = 'false';
+    }
+  }
+
+  function enableScaleDiagnosticsOverlay(renderer) {
+    const overlay = ensureDiagnosticsOverlay();
+    if (!overlay) return;
+    if (previewDiagnosticsState.unsubscribe) {
+      try {
+        previewDiagnosticsState.unsubscribe();
+      } catch (err) {
+        /* ignore */
+      }
+      previewDiagnosticsState.unsubscribe = null;
+    }
+    previewDiagnosticsState.enabled = true;
+    previewDiagnosticsState.renderer = renderer || null;
+    renderDiagnosticsOverlay(null);
+
+    if (!renderer) {
+      return;
+    }
+
+    if (typeof renderer.captureScaleDiagnostics === 'function') {
+      try {
+        const snapshot = renderer.captureScaleDiagnostics();
+        if (snapshot) {
+          renderDiagnosticsOverlay(snapshot);
+        }
+      } catch (err) {
+        /* ignore */
+      }
+    }
+
+    if (typeof renderer.subscribeScaleDiagnostics === 'function') {
+      try {
+        const handle = renderer.subscribeScaleDiagnostics(diagnostics => {
+          renderDiagnosticsOverlay(diagnostics);
+        });
+        previewDiagnosticsState.unsubscribe = normalizeUnsubscribeHandle(handle);
+      } catch (err) {
+        previewDiagnosticsState.unsubscribe = null;
+      }
+    }
+  }
+
+  function maybeUpdateScaleDiagnostics(renderer) {
+    if (!shouldEnableScaleDiagnostics()) {
+      if (previewDiagnosticsState.enabled) {
+        disableScaleDiagnosticsOverlay();
+      }
+      return;
+    }
+    if (previewDiagnosticsState.enabled && previewDiagnosticsState.renderer === renderer && previewDiagnosticsState.unsubscribe) {
+      return;
+    }
+    enableScaleDiagnosticsOverlay(renderer || null);
+  }
+
   const publicApi = {
     get state() {
       return { ...state };
     },
     refreshNow,
     stop: stopPolling,
-    reconfigure: configureAndStart
+    reconfigure: configureAndStart,
+    enableDiagnosticsOverlay() {
+      enableScaleDiagnosticsOverlay(state.renderer || null);
+    },
+    disableDiagnosticsOverlay: disableScaleDiagnosticsOverlay,
+    captureScaleDiagnostics() {
+      if (state.renderer && typeof state.renderer.captureScaleDiagnostics === 'function') {
+        try {
+          return state.renderer.captureScaleDiagnostics();
+        } catch (err) {
+          return null;
+        }
+      }
+      return null;
+    }
   };
 
   try {
@@ -714,6 +951,37 @@
       @media (max-width: 720px) {
         #${HOST_ID} .wdash-grid { grid-template-areas: var(--wdash-grid-areas-mobile); grid-template-columns: var(--wdash-grid-columns-mobile); gap: var(--wdash-grid-gap-mobile); }
         #${HOST_ID} .wdash { --wdash-frame-gap: var(--wdash-frame-gap-mobile); }
+      }
+      .wdash-app-diagnostics {
+        position: fixed;
+        top: 16px;
+        right: 16px;
+        z-index: 10000;
+        background: rgba(8, 16, 32, 0.88);
+        color: #f0f4ff;
+        padding: 12px 14px;
+        border-radius: 10px;
+        font-family: var(--wdash-app-font);
+        font-size: 12px;
+        line-height: 1.45;
+        box-shadow: 0 12px 28px rgba(0, 0, 0, 0.4);
+        border: 1px solid rgba(98, 134, 255, 0.4);
+        pointer-events: none;
+        max-width: min(340px, calc(100vw - 32px));
+        white-space: normal;
+      }
+      .wdash-app-diagnostics[data-warning="true"] {
+        border-color: rgba(255, 134, 134, 0.7);
+        box-shadow: 0 12px 32px rgba(255, 72, 72, 0.35);
+      }
+      .wdash-app-diagnostics__title {
+        font-weight: 700;
+        margin-bottom: 4px;
+        font-size: 13px;
+        letter-spacing: 0.02em;
+      }
+      .wdash-app-diagnostics__body {
+        opacity: 0.9;
       }
       .wdash-hidden-tile {
         display: none !important;
@@ -1581,9 +1849,11 @@
         observe: observeRendererContainer
       });
       state.renderer = renderer || (global.weatherDashboard && global.weatherDashboard.__renderer__) || null;
+      maybeUpdateScaleDiagnostics(state.renderer);
       return state.renderer;
     } catch (err) {
       updateStatus('error', 'Failed to initialize renderer', [err.message || String(err)]);
+      maybeUpdateScaleDiagnostics(null);
       return null;
     }
   }

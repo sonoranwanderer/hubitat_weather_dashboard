@@ -273,4 +273,42 @@ describe('Renderer scaling with host measurements', () => {
     expect(warnCalls.length).toBe(0);
     console.warn = originalWarn;
   });
+
+  it('exposes scale diagnostics snapshots and subscriptions', () => {
+    const capture = hooks.captureScaleDiagnostics;
+    const subscribe = hooks.subscribeScaleDiagnostics;
+    expect(typeof capture).toBe('function');
+    expect(typeof subscribe).toBe('function');
+
+    const initial = capture();
+    expect(initial).not.toBeNull();
+    expect(initial.container.width).toBe(currentMeasurement.width);
+    expect(initial.container.height).toBe(currentMeasurement.height);
+
+    const updates = [];
+    const unsubscribe = subscribe(diag => {
+      updates.push(diag);
+    });
+    expect(typeof unsubscribe).toBe('function');
+
+    if (onMeasure) {
+      onMeasure({ width: 768, height: 1024 });
+      onMeasure({ width: 1920, height: 1080 });
+    }
+
+    expect(updates.length > 0).toBe(true);
+    const last = updates[updates.length - 1];
+    expect(last.container.width).toBe(1920);
+    expect(last.container.height).toBe(1080);
+    expect(Math.abs(last.scale.applied - (1080 / 900)) < 1e-6).toBe(true);
+    expect(last.scale.clamped).toBe(false);
+
+    unsubscribe();
+
+    const previousCount = updates.length;
+    if (onMeasure) {
+      onMeasure({ width: 640, height: 640 });
+    }
+    expect(updates.length).toBe(previousCount);
+  });
 });
