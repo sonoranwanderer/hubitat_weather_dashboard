@@ -7483,7 +7483,6 @@ function createLegacyWeatherDashboardRenderer(options = {}) {
     safeRenderFromData,
     renderFromData,
     renderFallbackState,
-    render,
     mergePayloads,
     render,
     applyLayoutOverrides, // Keep for now, will be encapsulated later
