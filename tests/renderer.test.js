@@ -559,8 +559,10 @@ describe('Renderer scaling with host measurements', () => {
 
     frame.getBoundingClientRect = () => {
       const scaleValue = readScale();
-      const width = baseWidth * scaleValue;
-      const height = baseHeight * scaleValue;
+      const intrinsicWidth = hooks.layoutState.baseDimensions.desktop.width;
+      const intrinsicHeight = hooks.layoutState.baseDimensions.desktop.height;
+      const width = intrinsicWidth * scaleValue;
+      const height = intrinsicHeight * scaleValue;
       return {
         top: 0,
         left: 0,
@@ -639,5 +641,189 @@ describe('Renderer scaling with host measurements', () => {
     expect(diagnostics.layout.summary.hasOverflow).toBe(false);
     const lastAdjustment = diagnostics.scale.adjustments[diagnostics.scale.adjustments.length - 1];
     expect(Math.abs(lastAdjustment.to - diagnostics.scale.applied) < 1e-6).toBe(true);
+  });
+
+  it('expands layout rows when card content exceeds defaults', () => {
+    expect(typeof onMeasure).toBe('function');
+
+    const dash = content.querySelector('.wdash');
+    const frame = root.querySelector('.wdash-frame');
+    const grid = dash.querySelector('.wdash-grid');
+
+    const baseWidth = hooks.layoutState.baseDimensions.desktop.width;
+    const baseHeight = hooks.layoutState.baseDimensions.desktop.height;
+    const baselineRows = hooks.layoutState.rowHeights.desktop.slice();
+
+    const frameGap = parsePx(dash.style.getPropertyValue('--wdash-frame-gap-desktop')) || 14;
+    const gap = parsePx(dash.style.getPropertyValue('--wdash-grid-gap-desktop')) || 14;
+    const contentWidth = baseWidth - frameGap * 2;
+    const columnWidth = (contentWidth - gap) / 2;
+    const columnLeft = frameGap;
+    const columnRightLeft = frameGap + columnWidth + gap;
+
+    const rowTops = [
+      frameGap,
+      frameGap + baselineRows[0] + gap,
+      frameGap + baselineRows[0] + gap + baselineRows[1] + gap,
+      frameGap + baselineRows[0] + gap + baselineRows[1] + gap + baselineRows[2] + gap
+    ];
+
+    grid.dataset.empty = 'false';
+    grid.innerHTML = `
+      <section class="wdash-card wdash-card--temp-wind"></section>
+      <section class="wdash-card wdash-card--ambient"></section>
+      <section class="wdash-card wdash-card--air"></section>
+      <section class="wdash-card wdash-card--rain"></section>
+      <section class="wdash-card wdash-card--solar"></section>
+      <section class="wdash-card wdash-card--pressure"></section>
+    `;
+
+    const tempCard = grid.querySelector('.wdash-card--temp-wind');
+    const ambientCard = grid.querySelector('.wdash-card--ambient');
+    const airCard = grid.querySelector('.wdash-card--air');
+    const rainCard = grid.querySelector('.wdash-card--rain');
+    const solarCard = grid.querySelector('.wdash-card--solar');
+    const pressureCard = grid.querySelector('.wdash-card--pressure');
+
+    const readScale = () => {
+      const value = root.style.getPropertyValue('--wdash-scale');
+      const numeric = Number(value);
+      return Number.isFinite(numeric) ? numeric : 1;
+    };
+
+    frame.getBoundingClientRect = () => {
+      const scaleValue = readScale();
+      const intrinsicWidth = hooks.layoutState.baseDimensions.desktop.width;
+      const intrinsicHeight = hooks.layoutState.baseDimensions.desktop.height;
+      const width = intrinsicWidth * scaleValue;
+      const height = intrinsicHeight * scaleValue;
+      return {
+        top: 0,
+        left: 0,
+        x: 0,
+        y: 0,
+        right: width,
+        bottom: height,
+        width,
+        height
+      };
+    };
+    dash.getBoundingClientRect = frame.getBoundingClientRect;
+
+    const makeRect = ({ top, left, width, height }) => () => {
+      const scaleValue = readScale();
+      const scaledLeft = left * scaleValue;
+      const scaledTop = top * scaleValue;
+      const scaledWidth = width * scaleValue;
+      const scaledHeight = height * scaleValue;
+      return {
+        top: scaledTop,
+        left: scaledLeft,
+        x: scaledLeft,
+        y: scaledTop,
+        right: scaledLeft + scaledWidth,
+        bottom: scaledTop + scaledHeight,
+        width: scaledWidth,
+        height: scaledHeight
+      };
+    };
+
+    tempCard.getBoundingClientRect = makeRect({
+      top: rowTops[0],
+      left: columnLeft,
+      width: columnWidth,
+      height: baselineRows[0]
+    });
+    ambientCard.getBoundingClientRect = makeRect({
+      top: rowTops[0],
+      left: columnRightLeft,
+      width: columnWidth,
+      height: baselineRows[0]
+    });
+
+    const extraHeight = 80;
+    const adjustedRowTops = rowTops.map((value, index) => {
+      if (index <= 1) return value;
+      return value + extraHeight;
+    });
+    airCard.getBoundingClientRect = makeRect({
+      top: rowTops[1],
+      left: columnLeft,
+      width: columnWidth,
+      height: baselineRows[1] + extraHeight
+    });
+
+    const rainSpanHeight = baselineRows[1] + extraHeight + baselineRows[2] + gap;
+    rainCard.getBoundingClientRect = makeRect({
+      top: rowTops[1],
+      left: columnRightLeft,
+      width: columnWidth,
+      height: rainSpanHeight
+    });
+
+    const solarSpanHeight = baselineRows[2] + baselineRows[3] + gap;
+    solarCard.getBoundingClientRect = makeRect({
+      top: adjustedRowTops[2],
+      left: columnLeft,
+      width: columnWidth,
+      height: solarSpanHeight
+    });
+
+    pressureCard.getBoundingClientRect = makeRect({
+      top: adjustedRowTops[3],
+      left: columnRightLeft,
+      width: columnWidth,
+      height: baselineRows[3]
+    });
+
+    const stableMeasurement = { width: baseWidth, height: baseHeight };
+    currentMeasurement = { ...stableMeasurement };
+    hooks.resolveMeasuredBaseDimensions({ measurement: stableMeasurement });
+    hooks.applyLayoutOverrides();
+    if (onMeasure) {
+      onMeasure(stableMeasurement);
+    }
+
+    const updatedRows = hooks.layoutState.rowHeights.desktop;
+    const rainOverflow = rainSpanHeight - (baselineRows[1] + baselineRows[2] + gap);
+    const rainShare = rainOverflow / 2;
+    const expectedRow1Height = baselineRows[1] + extraHeight + rainShare;
+    const expectedRow2Height = baselineRows[2] + rainShare;
+    expect(Math.abs(updatedRows[1] - expectedRow1Height) < 1e-6).toBe(true);
+    expect(Math.abs(updatedRows[2] - expectedRow2Height) < 1e-6).toBe(true);
+    expect(Math.abs(updatedRows[0] - baselineRows[0]) < 1e-6).toBe(true);
+
+    const dynamicRows = hooks.layoutState.dynamicRowHeights.desktop;
+    expect(Math.abs(dynamicRows[1] - expectedRow1Height) < 1e-6).toBe(true);
+    expect(Math.abs(dynamicRows[2] - expectedRow2Height) < 1e-6).toBe(true);
+
+    const updatedBaseHeight = hooks.layoutState.baseDimensions.desktop.height;
+    const totalGrowth = (expectedRow1Height - baselineRows[1]) + (expectedRow2Height - baselineRows[2]);
+    expect(Math.abs(updatedBaseHeight - (baseHeight + totalGrowth)) < 1e-6).toBe(true);
+
+    const { scale } = readScaleState();
+    const expectedScale = Math.min(
+      1,
+      baseHeight > 0 ? baseHeight / updatedBaseHeight : 1
+    );
+    expect(Math.abs(scale - expectedScale) < 1e-6).toBe(true);
+
+    const diag = hooks.captureScaleDiagnostics();
+    expect(Math.abs((diag.rows?.intrinsic?.desktop?.[1] || 0) - expectedRow1Height) < 1e-6).toBe(true);
+    expect(Math.abs((diag.rows?.intrinsic?.desktop?.[2] || 0) - expectedRow2Height) < 1e-6).toBe(true);
+    const rowAdjustment = Array.isArray(diag.rows?.adjustments)
+      ? diag.rows.adjustments.find(entry => entry && entry.breakpoint === 'desktop' && entry.row === 1)
+      : null;
+    expect(rowAdjustment).not.toBeNull();
+    if (rowAdjustment) {
+      expect(Math.abs((rowAdjustment.applied || 0) - expectedRow1Height) < 1e-6).toBe(true);
+    }
+    const rowTwoAdjustment = Array.isArray(diag.rows?.adjustments)
+      ? diag.rows.adjustments.find(entry => entry && entry.breakpoint === 'desktop' && entry.row === 2)
+      : null;
+    expect(rowTwoAdjustment).not.toBeNull();
+    if (rowTwoAdjustment) {
+      expect(Math.abs((rowTwoAdjustment.applied || 0) - expectedRow2Height) < 1e-6).toBe(true);
+    }
   });
 });

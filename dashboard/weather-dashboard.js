@@ -342,8 +342,26 @@
           baseClampAdjustments: [],
           baseIntrinsicAdjustments: [],
           rowClampAdjustments: [],
-          lastCollisionSignature: null
+          lastCollisionSignature: null,
+          rowHeights: {
+            desktop: [],
+            tablet: [],
+            mobile: []
+          },
+          dynamicRowHeights: {
+            desktop: [],
+            tablet: [],
+            mobile: []
+          },
+          dynamicRowAdjustments: [],
+          rowAreaLookup: {
+            desktop: null,
+            tablet: null,
+            mobile: null
+          }
         };
+      
+        let intrinsicRowAdjustmentInProgress = false;
       
         const TEMP_COLORS = [
           { max: -20, colors: ['#70a9ff', '#3c6aff'] },
@@ -1447,6 +1465,204 @@
           };
         }
       
+        function cloneLayoutRowEntry(entry) {
+          if (!entry || typeof entry !== 'object') {
+            return entry;
+          }
+          const clone = { ...entry };
+          if (Array.isArray(entry.columns)) {
+            clone.columns = entry.columns.slice();
+          }
+          return clone;
+        }
+      
+        function cloneLayoutStructure(layoutConfig) {
+          const clone = {};
+          if (!layoutConfig || typeof layoutConfig !== 'object') {
+            return clone;
+          }
+          for (const key of BREAKPOINTS) {
+            const section = layoutConfig[key];
+            if (Array.isArray(section)) {
+              clone[key] = section.map(cloneLayoutRowEntry);
+            } else if (isPlainObject(section)) {
+              const sectionClone = { ...section };
+              if (Array.isArray(section.rows)) {
+                sectionClone.rows = section.rows.map(cloneLayoutRowEntry);
+              }
+              clone[key] = sectionClone;
+            } else {
+              clone[key] = section;
+            }
+          }
+          return clone;
+        }
+      
+        function applyDynamicRowHeightsToLayout(layoutConfig, dynamicConfig, options = {}) {
+          if (!layoutConfig || typeof layoutConfig !== 'object') {
+            return layoutConfig;
+          }
+          const trackUnit = options.trackUnit || DEFAULT_TRACK_UNIT;
+          if (trackUnit === 'percent') {
+            return layoutConfig;
+          }
+          const EPSILON = 0.0001;
+          for (const breakpoint of BREAKPOINTS) {
+            const dynamicRows = Array.isArray(dynamicConfig?.[breakpoint]) ? dynamicConfig[breakpoint] : null;
+            if (!dynamicRows || !dynamicRows.length) {
+              continue;
+            }
+            const section = layoutConfig[breakpoint];
+            const rows = Array.isArray(section)
+              ? section
+              : Array.isArray(section?.rows)
+                ? section.rows
+                : null;
+            if (!rows || !rows.length) {
+              continue;
+            }
+            let rowIndex = 0;
+            for (const entry of rows) {
+              if (!entry || typeof entry !== 'object') {
+                rowIndex += Math.max(1, Number(entry?.repeat) || 1);
+                continue;
+              }
+              const repeat = Math.max(1, Number(entry.repeat) || 1);
+              const heightKey = Object.prototype.hasOwnProperty.call(entry, 'height')
+                ? 'height'
+                : Object.prototype.hasOwnProperty.call(entry, 'rowHeight')
+                  ? 'rowHeight'
+                  : Object.prototype.hasOwnProperty.call(entry, 'size')
+                    ? 'size'
+                    : null;
+              if (!heightKey) {
+                rowIndex += repeat;
+                continue;
+              }
+              const currentValue = parseDimensionValue(entry[heightKey]);
+              let desired = Number.isFinite(currentValue) ? currentValue : 0;
+              for (let i = 0; i < repeat; i += 1) {
+                const dynamicValue = parseDimensionValue(dynamicRows[rowIndex + i]);
+                if (Number.isFinite(dynamicValue) && dynamicValue > desired) {
+                  desired = dynamicValue;
+                }
+              }
+              if (Number.isFinite(desired) && desired > 0 && (!Number.isFinite(currentValue) || desired > currentValue + EPSILON)) {
+                entry[heightKey] = desired;
+              }
+              rowIndex += repeat;
+            }
+          }
+          return layoutConfig;
+        }
+      
+        function extractRowHeightsFromLayout(layoutConfig, options = {}) {
+          const result = {};
+          if (!layoutConfig || typeof layoutConfig !== 'object') {
+            for (const key of BREAKPOINTS) {
+              result[key] = [];
+            }
+            return result;
+          }
+          for (const key of BREAKPOINTS) {
+            const section = layoutConfig[key];
+            const rows = Array.isArray(section)
+              ? section
+              : Array.isArray(section?.rows)
+                ? section.rows
+                : [];
+            if (!rows.length) {
+              result[key] = [];
+              continue;
+            }
+            const heights = [];
+            let rowIndex = 0;
+            for (const entry of rows) {
+              const repeat = Math.max(1, Number(entry?.repeat) || 1);
+              const numericHeight = parseDimensionValue(
+                Object.prototype.hasOwnProperty.call(entry || {}, 'height')
+                  ? entry.height
+                  : Object.prototype.hasOwnProperty.call(entry || {}, 'rowHeight')
+                    ? entry.rowHeight
+                    : (entry || {}).size
+              );
+              for (let i = 0; i < repeat; i += 1) {
+                heights[rowIndex + i] = Number.isFinite(numericHeight) ? numericHeight : null;
+              }
+              rowIndex += repeat;
+            }
+            result[key] = heights;
+          }
+          return result;
+        }
+      
+        function cloneRowHeightMap(source) {
+          const result = {};
+          for (const key of BREAKPOINTS) {
+            const list = Array.isArray(source?.[key]) ? source[key] : [];
+            result[key] = list.map(value => (Number.isFinite(value) ? Number(value) : null));
+          }
+          return result;
+        }
+      
+        function syncDynamicRowHeights(rowHeights) {
+          layoutState.dynamicRowHeights = layoutState.dynamicRowHeights || { desktop: [], tablet: [], mobile: [] };
+          for (const key of BREAKPOINTS) {
+            const count = Array.isArray(rowHeights?.[key]) ? rowHeights[key].length : 0;
+            let dynamic = layoutState.dynamicRowHeights[key];
+            if (!Array.isArray(dynamic)) {
+              dynamic = [];
+            }
+            if (dynamic.length > count) {
+              dynamic.length = count;
+            }
+            while (dynamic.length < count) {
+              dynamic.push(null);
+            }
+            layoutState.dynamicRowHeights[key] = dynamic;
+          }
+        }
+      
+        function buildRowAreaLookup(templates) {
+          const lookup = {};
+          for (const key of BREAKPOINTS) {
+            const template = templates?.[key];
+            if (!template || typeof template.areas !== 'string') {
+              lookup[key] = { rows: [], areaSpan: new Map() };
+              continue;
+            }
+            const lines = template.areas
+              .split(/\n+/)
+              .map(line => line.replace(/["']/g, ' ').trim())
+              .filter(Boolean);
+            const rows = [];
+            const areaSpan = new Map();
+            lines.forEach((line, rowIndex) => {
+              const tokens = line
+                .split(/\s+/)
+                .map(normalizeAreaToken)
+                .filter(token => token && token !== '.');
+              rows[rowIndex] = tokens;
+              tokens.forEach(token => {
+                if (!areaSpan.has(token)) {
+                  areaSpan.set(token, { start: rowIndex, end: rowIndex });
+                } else {
+                  const span = areaSpan.get(token);
+                  span.start = Math.min(span.start, rowIndex);
+                  span.end = Math.max(span.end, rowIndex);
+                  areaSpan.set(token, span);
+                }
+              });
+            });
+            lookup[key] = { rows, areaSpan };
+          }
+          return lookup;
+        }
+      
+        layoutState.rowHeights = extractRowHeightsFromLayout(DEFAULT_LAYOUT, { trackUnit: DEFAULT_TRACK_UNIT });
+        syncDynamicRowHeights(layoutState.rowHeights);
+        layoutState.rowAreaLookup = buildRowAreaLookup(DEFAULT_TEMPLATES);
+      
         function buildLayoutRowMinimums(layout) {
           const minima = {};
           if (!layout || typeof layout !== 'object') {
@@ -1568,6 +1784,19 @@
             if (!Array.isArray(entry)) return null;
             return entry.map(item => (item ? { ...item } : item));
           };
+          const cloneRows = rows => {
+            if (!rows || typeof rows !== 'object') return null;
+            const baseline = cloneRowHeightMap(rows.baseline);
+            const intrinsic = cloneRowHeightMap(rows.intrinsic);
+            const adjustments = Array.isArray(rows.adjustments)
+              ? rows.adjustments.map(entry => (entry ? { ...entry } : entry))
+              : [];
+            return {
+              baseline,
+              intrinsic,
+              adjustments
+            };
+          };
           const cloneSources = sources => {
             if (!sources || typeof sources !== 'object') return { measurement: null, tile: null, container: null };
             return {
@@ -1589,7 +1818,8 @@
             container: diag.container ? { ...diag.container } : null,
             sources: cloneSources(diag.sources),
             inline: cloneInlineDiagnostics(diag.inline),
-            layout: cloneLayoutDiagnostics(diag.layout)
+            layout: cloneLayoutDiagnostics(diag.layout),
+            rows: cloneRows(diag.rows)
           };
         }
       
@@ -1840,6 +2070,130 @@
           };
         }
       
+        function maybeRecordIntrinsicRowHeights(layoutDiagnostics, options = {}) {
+          if (!layoutDiagnostics || intrinsicRowAdjustmentInProgress) {
+            return false;
+          }
+          if (layoutState.trackUnit === 'percent') {
+            return false;
+          }
+          const scaleValue = Number(options.scale);
+          if (!Number.isFinite(scaleValue) || scaleValue <= 0) {
+            return false;
+          }
+          const breakpoint = getActiveBreakpoint();
+          const baselineHeights = Array.isArray(layoutState.rowHeights?.[breakpoint])
+            ? layoutState.rowHeights[breakpoint]
+            : null;
+          if (!baselineHeights || !baselineHeights.length) {
+            return false;
+          }
+          const areaLookup = layoutState.rowAreaLookup?.[breakpoint];
+          const spanMap = areaLookup && areaLookup.areaSpan instanceof Map ? areaLookup.areaSpan : null;
+          if (!spanMap || spanMap.size === 0) {
+            return false;
+          }
+          const cards = Array.isArray(layoutDiagnostics.cards) ? layoutDiagnostics.cards : [];
+          if (!cards.length) {
+            return false;
+          }
+      
+          const gapValue = parseDimensionValue(layoutState.gaps?.[breakpoint]);
+          const rowGap = Number.isFinite(gapValue) ? gapValue : 0;
+          const rowGrowth = new Array(baselineHeights.length).fill(0);
+          const EPSILON = 0.5;
+      
+          cards.forEach(card => {
+            if (!card || !card.rect) return;
+            const rawHeight = Number(card.rect.height);
+            if (!Number.isFinite(rawHeight) || rawHeight <= 0) return;
+            const intrinsicHeight = rawHeight / scaleValue;
+            if (!Number.isFinite(intrinsicHeight) || intrinsicHeight <= 0) return;
+            const key = card.key != null ? normalizeAreaToken(String(card.key)) : null;
+            if (!key) return;
+            const span = spanMap.get(key);
+            if (!span || !Number.isInteger(span.start) || !Number.isInteger(span.end)) return;
+            const start = Math.max(0, span.start);
+            const end = Math.min(baselineHeights.length - 1, span.end);
+            if (end < start) return;
+            let expected = 0;
+            let validSpan = true;
+            for (let row = start; row <= end; row += 1) {
+              const height = Number(baselineHeights[row]);
+              if (!Number.isFinite(height) || height <= 0) {
+                validSpan = false;
+                break;
+              }
+              expected += height;
+            }
+            if (!validSpan) return;
+            const spanRows = end - start + 1;
+            if (spanRows <= 0) return;
+            expected += rowGap * Math.max(0, spanRows - 1);
+            if (!(intrinsicHeight > expected + EPSILON)) return;
+            const extra = intrinsicHeight - expected;
+            const share = extra / spanRows;
+            for (let row = start; row <= end; row += 1) {
+              if (!Number.isFinite(rowGrowth[row])) {
+                rowGrowth[row] = 0;
+              }
+              rowGrowth[row] += share;
+            }
+          });
+      
+          let updated = false;
+          const dynamic = layoutState.dynamicRowHeights?.[breakpoint];
+          if (!Array.isArray(dynamic)) {
+            layoutState.dynamicRowHeights[breakpoint] = new Array(baselineHeights.length).fill(null);
+          }
+          const targetDynamic = layoutState.dynamicRowHeights[breakpoint];
+          layoutState.dynamicRowAdjustments = Array.isArray(layoutState.dynamicRowAdjustments)
+            ? layoutState.dynamicRowAdjustments
+            : [];
+      
+          for (let rowIndex = 0; rowIndex < baselineHeights.length; rowIndex += 1) {
+            const baseHeight = Number(baselineHeights[rowIndex]);
+            if (!Number.isFinite(baseHeight) || baseHeight <= 0) {
+              continue;
+            }
+            const growth = Number(rowGrowth[rowIndex]);
+            if (!Number.isFinite(growth) || growth <= EPSILON) {
+              continue;
+            }
+            const desired = baseHeight + growth;
+            const existingDynamic = Number(targetDynamic[rowIndex]);
+            const current = Number.isFinite(existingDynamic) && existingDynamic > baseHeight ? existingDynamic : baseHeight;
+            if (!(desired > current + EPSILON)) {
+              continue;
+            }
+            targetDynamic[rowIndex] = desired;
+            layoutState.dynamicRowAdjustments.push({
+              breakpoint,
+              row: rowIndex,
+              measured: desired,
+              original: baseHeight,
+              applied: desired
+            });
+            updated = true;
+          }
+      
+          if (!updated) {
+            return false;
+          }
+      
+          while (layoutState.dynamicRowAdjustments.length > 20) {
+            layoutState.dynamicRowAdjustments.shift();
+          }
+      
+          intrinsicRowAdjustmentInProgress = true;
+          try {
+            applyLayoutOverrides(lastSuccessfulPayload?.metadata);
+          } finally {
+            intrinsicRowAdjustmentInProgress = false;
+          }
+          return true;
+        }
+      
         function emitLayoutCollisionWarnings(layoutDiagnostics) {
           if (!layoutDiagnostics || typeof layoutDiagnostics !== 'object') {
             layoutState.lastCollisionSignature = null;
@@ -1971,9 +2325,21 @@
           const clampAdjustments = Array.isArray(layoutState.baseClampAdjustments)
             ? layoutState.baseClampAdjustments
             : [];
+          const rowBaseline = cloneRowHeightMap(layoutState.rowHeights);
+          const rowIntrinsic = cloneRowHeightMap(layoutState.dynamicRowHeights);
+          const rowIntrinsicAdjustments = Array.isArray(layoutState.dynamicRowAdjustments)
+            ? layoutState.dynamicRowAdjustments.map(entry => ({
+                breakpoint: entry.breakpoint,
+                row: Number.isFinite(entry.row) ? entry.row : null,
+                measured: Number.isFinite(entry.measured) ? entry.measured : null,
+                original: Number.isFinite(entry.original) ? entry.original : null,
+                applied: Number.isFinite(entry.applied) ? entry.applied : null
+              }))
+            : [];
       
           return {
             timestamp: Date.now(),
+            activeBreakpoint: getActiveBreakpoint(),
             warning,
             scale: {
               applied: appliedScale,
@@ -2019,7 +2385,12 @@
               }
             },
             inline: cloneInlineDiagnostics(context.inline),
-            layout: cloneLayoutDiagnostics(context.layout)
+            layout: cloneLayoutDiagnostics(context.layout),
+            rows: {
+              baseline: rowBaseline,
+              intrinsic: rowIntrinsic,
+              adjustments: rowIntrinsicAdjustments
+            }
           };
         }
       
@@ -2166,6 +2537,11 @@
           }
       
           const rowCounts = options.rowCounts || {};
+          const appliedRowHeights = cloneRowHeightMap(options.rowHeights || layoutState.rowHeights);
+          const intrinsicRowHeights = cloneRowHeightMap(options.dynamicRows || layoutState.dynamicRowHeights);
+          const intrinsicRowAdjustmentsList = Array.isArray(options.dynamicAdjustments)
+            ? options.dynamicAdjustments
+            : (Array.isArray(layoutState.dynamicRowAdjustments) ? layoutState.dynamicRowAdjustments : []);
       
           const context = {
             timestamp: new Date().toISOString(),
@@ -2233,6 +2609,17 @@
               raw: options.rowsRaw || {},
               applied: options.rowsApplied || {},
               counts: rowCounts,
+              heights: appliedRowHeights,
+              intrinsic: intrinsicRowHeights,
+              intrinsicAdjustments: intrinsicRowAdjustmentsList.length
+                ? intrinsicRowAdjustmentsList.map(entry => ({
+                    breakpoint: entry.breakpoint,
+                    row: Number.isFinite(entry.row) ? entry.row : null,
+                    measured: Number.isFinite(entry.measured) ? entry.measured : null,
+                    original: Number.isFinite(entry.original) ? entry.original : null,
+                    applied: Number.isFinite(entry.applied) ? entry.applied : null
+                  }))
+                : [],
               adjustments: rowAdjustments.length
                 ? rowAdjustments.map(entry => ({
                     breakpoint: entry.breakpoint,
@@ -2471,7 +2858,10 @@
             inheritedRows = defaultRows;
             layoutForCompile[key] = defaultRows;
           }
-          const rowClampResult = clampLayoutRows(layoutForCompile, {
+          const layoutForClamp = cloneLayoutStructure(layoutForCompile);
+          applyDynamicRowHeightsToLayout(layoutForClamp, layoutState.dynamicRowHeights, { trackUnit });
+      
+          const rowClampResult = clampLayoutRows(layoutForClamp, {
             minimums: DEFAULT_ROW_MINIMUMS,
             trackUnit
           });
@@ -2479,6 +2869,10 @@
           layoutState.rowClampAdjustments = Array.isArray(rowClampResult.adjustments)
             ? rowClampResult.adjustments.slice()
             : [];
+      
+          const appliedRowHeights = extractRowHeightsFromLayout(layoutForCompileClamped, { trackUnit });
+          layoutState.rowHeights = appliedRowHeights;
+          syncDynamicRowHeights(appliedRowHeights);
       
           const compiled = compileLayoutTemplates(layoutForCompileClamped, { trackUnit });
           const normalizedAreas = {
@@ -2743,6 +3137,7 @@
           });
       
           layoutState.normalizedAreas = normalizedAreas;
+          layoutState.rowAreaLookup = buildRowAreaLookup(finalTemplates);
           const changed = layoutState.signature !== signature;
           if (changed) {
             layoutState.signature = signature;
@@ -2836,6 +3231,9 @@
               tablet: finalTemplates.tablet.rows,
               mobile: finalTemplates.mobile.rows
             },
+            rowHeights: appliedRowHeights,
+            intrinsicRows: cloneRowHeightMap(layoutState.dynamicRowHeights),
+            intrinsicAdjustments: layoutState.baseIntrinsicAdjustments,
             rowCounts: {
               desktop: compiled.desktop.rowCount,
               tablet: compiled.tablet.rowCount,
@@ -3169,6 +3567,10 @@
             const applied = applyScaleStyles(adjustedScale);
             inlineSnapshot = applied.inline;
             layoutDiagnostics = collectLayoutCollisionDiagnostics(root, { frame, dash });
+      
+            if (maybeRecordIntrinsicRowHeights(layoutDiagnostics, { scale: adjustedScale })) {
+              return;
+            }
       
             const hasCollisions = Boolean(layoutDiagnostics?.summary?.hasCollisions);
             const hasOverflow = Boolean(layoutDiagnostics?.summary?.hasOverflow);

@@ -436,6 +436,41 @@
       }
     }
 
+    const activeBreakpoint = diagnostics.activeBreakpoint || 'desktop';
+    const rows = diagnostics.rows || null;
+    if (rows) {
+      const baselineRows = Array.isArray(rows.baseline?.[activeBreakpoint])
+        ? rows.baseline[activeBreakpoint]
+        : [];
+      const intrinsicRows = Array.isArray(rows.intrinsic?.[activeBreakpoint])
+        ? rows.intrinsic[activeBreakpoint]
+        : [];
+      if (baselineRows.length) {
+        const formatted = baselineRows.map(value => formatPixelSize(value));
+        lines.push(`Rows ${activeBreakpoint} baseline ${formatted.join(', ')}`);
+      }
+      if (intrinsicRows.length) {
+        const formatted = intrinsicRows.map(value => formatPixelSize(value));
+        const hasIncrease = intrinsicRows.some((value, index) => {
+          const base = baselineRows[index];
+          return Number.isFinite(value) && (!Number.isFinite(base) || value > base + 0.5);
+        });
+        if (hasIncrease) {
+          lines.push(`Rows ${activeBreakpoint} intrinsic ${formatted.join(', ')}`);
+        }
+      }
+      const intrinsicAdjustments = Array.isArray(rows.adjustments)
+        ? rows.adjustments.filter(entry => entry && entry.breakpoint === activeBreakpoint)
+        : [];
+      intrinsicAdjustments.forEach(entry => {
+        const rowNumber = Number.isFinite(entry.row) ? entry.row + 1 : '?';
+        const original = formatPixelSize(entry.original);
+        const applied = formatPixelSize(entry.applied);
+        const measured = formatPixelSize(entry.measured);
+        lines.push(`Row adjust ${activeBreakpoint} #${rowNumber}: ${original} → ${applied} (measured ${measured})`);
+      });
+    }
+
     if (layout) {
       const cardCount = Array.isArray(layout.cards) ? layout.cards.length : 0;
       lines.push(`Cards measured ${cardCount}`);
