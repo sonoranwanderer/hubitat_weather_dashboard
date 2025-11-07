@@ -191,12 +191,19 @@ describe('Renderer scaling with host measurements', () => {
       scale: parseFloat(root.style.getPropertyValue('--wdash-scale')),
       renderWidth: parseFloat(root.style.getPropertyValue('--wdash-render-width')),
       renderHeight: parseFloat(root.style.getPropertyValue('--wdash-render-height')),
+      rootWidth: parsePx(root?.style?.width || ''),
+      rootHeight: parsePx(root?.style?.height || ''),
+      rootMaxWidth: parsePx(root?.style?.maxWidth || ''),
+      rootMaxHeight: parsePx(root?.style?.maxHeight || ''),
       frameWidth: parsePx(frame?.style?.width || ''),
       frameHeight: parsePx(frame?.style?.height || ''),
+      frameMaxWidth: parsePx(frame?.style?.maxWidth || ''),
+      frameMaxHeight: parsePx(frame?.style?.maxHeight || ''),
       dashWidth: parsePx(dash?.style?.width || ''),
       dashHeight: parsePx(dash?.style?.height || ''),
       dashTransform: dash?.style?.transform || '',
-      dashTransformOrigin: dash?.style?.transformOrigin || ''
+      dashTransformOrigin: dash?.style?.transformOrigin || '',
+      dashZoom: dash && dash.style && dash.style.zoom ? Number(dash.style.zoom) : NaN
     };
   }
 
@@ -221,12 +228,19 @@ describe('Renderer scaling with host measurements', () => {
         scale,
         renderWidth,
         renderHeight,
+        rootWidth,
+        rootHeight,
+        rootMaxWidth,
+        rootMaxHeight,
         frameWidth,
         frameHeight,
+        frameMaxWidth,
+        frameMaxHeight,
         dashWidth,
         dashHeight,
         dashTransform,
-        dashTransformOrigin
+        dashTransformOrigin,
+        dashZoom
       } = readScaleState();
       const expectedScale = Math.min(
         scenario.width / baseWidth,
@@ -237,14 +251,21 @@ describe('Renderer scaling with host measurements', () => {
       expect(Math.abs(scale - expectedScale) < 1e-6).toBe(true);
       expect(Math.abs(renderWidth - expectedRenderWidth) < 1e-4).toBe(true);
       expect(Math.abs(renderHeight - expectedRenderHeight) < 1e-4).toBe(true);
+      expect(Math.abs(rootWidth - scenario.width) < 1e-4).toBe(true);
+      expect(Math.abs(rootHeight - scenario.height) < 1e-4).toBe(true);
+      expect(Math.abs(rootMaxWidth - scenario.width) < 1e-4).toBe(true);
+      expect(Math.abs(rootMaxHeight - scenario.height) < 1e-4).toBe(true);
       expect(Math.abs(frameWidth - expectedRenderWidth) < 1e-4).toBe(true);
       expect(Math.abs(frameHeight - expectedRenderHeight) < 1e-4).toBe(true);
+      expect(Math.abs(frameMaxWidth - expectedRenderWidth) < 1e-4).toBe(true);
+      expect(Math.abs(frameMaxHeight - expectedRenderHeight) < 1e-4).toBe(true);
       expect(Math.abs(dashWidth - baseWidth) < 1e-4).toBe(true);
       expect(Math.abs(dashHeight - baseHeight) < 1e-4).toBe(true);
       expect(dashTransform.startsWith('scale(')).toBe(true);
       const transformValue = Number(dashTransform.slice(6, -1));
       expect(Math.abs(transformValue - expectedScale) < 1e-6).toBe(true);
       expect(dashTransformOrigin).toBe('top left');
+      expect(Math.abs(dashZoom - expectedScale) < 1e-6).toBe(true);
     });
   });
 
@@ -391,10 +412,23 @@ describe('Renderer scaling with host measurements', () => {
     expect(typeof capture).toBe('function');
     expect(typeof subscribe).toBe('function');
 
+    const baseWidth = hooks.layoutState.baseDimensions.desktop.width;
+    const baseHeight = hooks.layoutState.baseDimensions.desktop.height;
+
     const initial = capture();
     expect(initial).not.toBeNull();
     expect(initial.container.width).toBe(currentMeasurement.width);
     expect(initial.container.height).toBe(currentMeasurement.height);
+    expect(initial.inline?.root?.width).toBe(currentMeasurement.width);
+    expect(initial.inline?.root?.height).toBe(currentMeasurement.height);
+    const initialScale = initial.scale?.applied || 0;
+    const expectedInitialRenderWidth = baseWidth * initialScale;
+    const expectedInitialRenderHeight = baseHeight * initialScale;
+    expect(Math.abs((initial.inline?.frame?.width || 0) - expectedInitialRenderWidth) < 1e-4).toBe(true);
+    expect(Math.abs((initial.inline?.frame?.height || 0) - expectedInitialRenderHeight) < 1e-4).toBe(true);
+    if (initial.inline?.dash?.zoom != null) {
+      expect(Math.abs(initial.inline.dash.zoom - initialScale) < 1e-6).toBe(true);
+    }
 
     const updates = [];
     const unsubscribe = subscribe(diag => {
@@ -407,9 +441,6 @@ describe('Renderer scaling with host measurements', () => {
       onMeasure({ width: 1920, height: 1080 });
     }
 
-    const baseWidth = hooks.layoutState.baseDimensions.desktop.width;
-    const baseHeight = hooks.layoutState.baseDimensions.desktop.height;
-
     expect(updates.length > 0).toBe(true);
     const last = updates[updates.length - 1];
     expect(last.container.width).toBe(1920);
@@ -417,6 +448,13 @@ describe('Renderer scaling with host measurements', () => {
     const expectedScale = Math.min(1920 / baseWidth, 1080 / baseHeight);
     expect(Math.abs(last.scale.applied - expectedScale) < 1e-6).toBe(true);
     expect(last.scale.clamped).toBe(false);
+    expect(Math.abs((last.inline?.root?.width || 0) - 1920) < 1e-4).toBe(true);
+    expect(Math.abs((last.inline?.root?.height || 0) - 1080) < 1e-4).toBe(true);
+    expect(Math.abs((last.inline?.frame?.width || 0) - (baseWidth * expectedScale)) < 1e-4).toBe(true);
+    expect(Math.abs((last.inline?.frame?.height || 0) - (baseHeight * expectedScale)) < 1e-4).toBe(true);
+    if (last.inline?.dash?.zoom != null) {
+      expect(Math.abs(last.inline.dash.zoom - expectedScale) < 1e-6).toBe(true);
+    }
 
     unsubscribe();
 

@@ -1264,7 +1264,8 @@
             scale: diag.scale ? { ...diag.scale } : null,
             base: diag.base ? { ...diag.base } : null,
             container: diag.container ? { ...diag.container } : null,
-            sources: cloneSources(diag.sources)
+            sources: cloneSources(diag.sources),
+            inline: cloneInlineDiagnostics(diag.inline)
           };
         }
       
@@ -1296,6 +1297,33 @@
           scaleState.listeners.add(listener);
           return () => {
             scaleState.listeners.delete(listener);
+          };
+        }
+      
+        function cloneInlineDiagnosticsEntry(entry) {
+          if (!entry || typeof entry !== 'object') return null;
+          const width = Number.isFinite(entry.width) ? Number(entry.width) : null;
+          const height = Number.isFinite(entry.height) ? Number(entry.height) : null;
+          const maxWidth = Number.isFinite(entry.maxWidth) ? Number(entry.maxWidth) : null;
+          const maxHeight = Number.isFinite(entry.maxHeight) ? Number(entry.maxHeight) : null;
+          const zoom = Number.isFinite(entry.zoom) ? Number(entry.zoom) : null;
+          return {
+            width,
+            height,
+            maxWidth,
+            maxHeight,
+            transform: entry.transform != null ? String(entry.transform) : null,
+            transformOrigin: entry.transformOrigin != null ? String(entry.transformOrigin) : null,
+            zoom
+          };
+        }
+      
+        function cloneInlineDiagnostics(inline) {
+          if (!inline || typeof inline !== 'object') return null;
+          return {
+            root: cloneInlineDiagnosticsEntry(inline.root),
+            frame: cloneInlineDiagnosticsEntry(inline.frame),
+            dash: cloneInlineDiagnosticsEntry(inline.dash)
           };
         }
       
@@ -1357,7 +1385,8 @@
                 width: storedWidth,
                 height: storedHeight
               }
-            }
+            },
+            inline: cloneInlineDiagnostics(context.inline)
           };
         }
       
@@ -2353,6 +2382,10 @@
           root.style.setProperty('--wdash-scale', `${scale}`);
           root.style.setProperty('--wdash-render-width', `${renderWidth}px`);
           root.style.setProperty('--wdash-render-height', `${renderHeight}px`);
+          root.style.width = `${width}px`;
+          root.style.height = `${height}px`;
+          root.style.maxWidth = `${width}px`;
+          root.style.maxHeight = `${height}px`;
       
           const frame = root.querySelector('.wdash-frame');
           const dash = frame ? frame.querySelector('.wdash') : root.querySelector('.wdash');
@@ -2360,13 +2393,55 @@
           if (frame && frame.style) {
             frame.style.width = `${renderWidth}px`;
             frame.style.height = `${renderHeight}px`;
+            frame.style.maxWidth = `${renderWidth}px`;
+            frame.style.maxHeight = `${renderHeight}px`;
           }
+      
+          let inlineSnapshot = null;
       
           if (dash && dash.style) {
             dash.style.width = `${baseWidth}px`;
             dash.style.height = `${baseHeight}px`;
             dash.style.transformOrigin = 'top left';
             dash.style.transform = `scale(${scale})`;
+            dash.style.zoom = Number.isFinite(scale) ? `${scale}` : '';
+            inlineSnapshot = {
+              root: {
+                width,
+                height,
+                maxWidth: width,
+                maxHeight: height
+              },
+              frame: {
+                width: renderWidth,
+                height: renderHeight,
+                maxWidth: renderWidth,
+                maxHeight: renderHeight
+              },
+              dash: {
+                width: baseWidth,
+                height: baseHeight,
+                transform: dash.style.transform || null,
+                transformOrigin: dash.style.transformOrigin || null,
+                zoom: Number.isFinite(scale) ? scale : null
+              }
+            };
+          } else {
+            inlineSnapshot = {
+              root: {
+                width,
+                height,
+                maxWidth: width,
+                maxHeight: height
+              },
+              frame: frame && frame.style ? {
+                width: renderWidth,
+                height: renderHeight,
+                maxWidth: renderWidth,
+                maxHeight: renderHeight
+              } : null,
+              dash: null
+            };
           }
       
           scaleState.containerWidth = width;
@@ -2396,7 +2471,8 @@
             rawScale,
             minScale: MIN_SCALE,
             measurement: measurementOverride,
-            warning: warningType
+            warning: warningType,
+            inline: inlineSnapshot
           }));
         }
       

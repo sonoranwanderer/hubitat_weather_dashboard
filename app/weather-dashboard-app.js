@@ -396,6 +396,29 @@
     lines.push(`Strategy ${strategy}`);
     lines.push(`Width source ${formatSourceEntry(diagnostics.sources?.measurement?.widthSource, 'width')}`);
     lines.push(`Height source ${formatSourceEntry(diagnostics.sources?.measurement?.heightSource, 'height')}`);
+
+    const inline = diagnostics.inline || null;
+    if (inline) {
+      const rootInline = inline.root || null;
+      if (rootInline) {
+        lines.push(`Root inline ${formatPixelSize(rootInline.width)} × ${formatPixelSize(rootInline.height)}`);
+      }
+      const frameInline = inline.frame || null;
+      if (frameInline) {
+        lines.push(`Frame inline ${formatPixelSize(frameInline.width)} × ${formatPixelSize(frameInline.height)}`);
+      }
+      const dashInline = inline.dash || null;
+      if (dashInline) {
+        lines.push(`Dash inline ${formatPixelSize(dashInline.width)} × ${formatPixelSize(dashInline.height)}`);
+        if (dashInline.transform) {
+          lines.push(`Dash transform ${dashInline.transform}`);
+        }
+        if (Number.isFinite(dashInline.zoom)) {
+          lines.push(`Dash zoom ${formatScaleNumber(dashInline.zoom)}`);
+        }
+      }
+    }
+
     lines.push(diagnostics.warning ? `Warning ${diagnostics.warning}` : 'Warning none');
 
     lines.forEach(text => {
