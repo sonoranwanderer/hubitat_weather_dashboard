@@ -233,6 +233,72 @@ describe('Renderer scaling with host measurements', () => {
     console.warn = originalWarn;
   });
 
+  it('clamps legacy layout base dimensions to the minimum defaults', () => {
+    const originalWarn = console.warn;
+    const warnCalls = [];
+    console.warn = (...args) => warnCalls.push(args);
+
+    const legacyLayout = {
+      baseWidth: 960,
+      baseHeight: 920,
+      desktop: { baseWidth: 960, baseHeight: 920 },
+      tablet: { baseWidth: 940, baseHeight: 900 },
+      mobile: { baseWidth: 920, baseHeight: 880 }
+    };
+
+    hooks.applyLayoutOverrides({ layout: legacyLayout });
+
+    const dims = hooks.layoutState.baseDimensions;
+    const minWidth = hooks.layoutState.baseMinimum.width;
+    const minHeight = hooks.layoutState.baseMinimum.height;
+    expect(dims.desktop.width).toBe(minWidth);
+    expect(dims.desktop.height).toBe(minHeight);
+    expect(dims.tablet.width).toBe(minWidth);
+    expect(dims.tablet.height).toBe(minHeight);
+    expect(dims.mobile.width).toBe(minWidth);
+    expect(dims.mobile.height).toBe(minHeight);
+    expect(Array.isArray(hooks.layoutState.baseClampAdjustments)).toBe(true);
+    expect(hooks.layoutState.baseClampAdjustments.length > 0).toBe(true);
+
+    const warningCall = warnCalls.find(call =>
+      String(call[0]).includes('Layout base dimensions below the supported minimum')
+    );
+    expect(Boolean(warningCall)).toBe(true);
+
+    console.warn = originalWarn;
+  });
+
+  it('does not clamp percent-based layouts when smaller bases are intentional', () => {
+    const originalWarn = console.warn;
+    const warnCalls = [];
+    console.warn = (...args) => warnCalls.push(args);
+
+    currentMeasurement = { width: 600, height: 600 };
+    hooks.resolveMeasuredBaseDimensions({ measurement: currentMeasurement });
+
+    hooks.applyLayoutOverrides({
+      layout: {
+        trackUnit: 'percent',
+        baseWidth: 600,
+        baseHeight: 600,
+        desktop: { baseWidth: 600, baseHeight: 600, columns: '50% 50%' }
+      }
+    });
+
+    const dims = hooks.layoutState.baseDimensions.desktop;
+    expect(dims.width).toBe(600);
+    expect(dims.height).toBe(600);
+    expect(Array.isArray(hooks.layoutState.baseClampAdjustments)).toBe(true);
+    expect(hooks.layoutState.baseClampAdjustments.length).toBe(0);
+
+    const warningCall = warnCalls.find(call =>
+      String(call[0]).includes('Layout base dimensions below the supported minimum')
+    );
+    expect(Boolean(warningCall)).toBe(false);
+
+    console.warn = originalWarn;
+  });
+
   it('preserves configured gaps for percent-based layout overrides', () => {
     const dash = content.querySelector('.wdash');
     const baseWidth = hooks.layoutState.baseDimensions.desktop.width;

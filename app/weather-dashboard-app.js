@@ -378,6 +378,20 @@
     lines.push(`Scale ${formatScaleNumber(diagnostics.scale?.applied)} (raw ${formatScaleNumber(diagnostics.scale?.raw)}, min ${formatScaleNumber(diagnostics.scale?.min)})`);
     lines.push(`Container ${formatPixelSize(diagnostics.container?.width)} × ${formatPixelSize(diagnostics.container?.height)}`);
     lines.push(`Base ${formatPixelSize(diagnostics.base?.width)} × ${formatPixelSize(diagnostics.base?.height)}`);
+    const minimumBase = diagnostics.base?.minimum || null;
+    if (minimumBase && (Number.isFinite(minimumBase.width) || Number.isFinite(minimumBase.height))) {
+      lines.push(`Minimum ${formatPixelSize(minimumBase.width)} × ${formatPixelSize(minimumBase.height)}`);
+    }
+    const clampAdjustments = Array.isArray(diagnostics.base?.adjustments)
+      ? diagnostics.base.adjustments
+      : [];
+    clampAdjustments.forEach(entry => {
+      const breakpoint = entry && entry.breakpoint ? entry.breakpoint : 'base';
+      const dimension = entry && entry.dimension ? entry.dimension : 'dimension';
+      const original = formatPixelSize(entry?.original);
+      const applied = formatPixelSize(entry?.applied);
+      lines.push(`Clamp ${breakpoint} ${dimension}: ${original} → ${applied}`);
+    });
     const strategy = diagnostics.sources?.measurement?.strategy || 'n/a';
     lines.push(`Strategy ${strategy}`);
     lines.push(`Width source ${formatSourceEntry(diagnostics.sources?.measurement?.widthSource, 'width')}`);

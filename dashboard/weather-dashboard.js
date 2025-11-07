@@ -333,7 +333,10 @@
           trackUnit: DEFAULT_TRACK_UNIT,
           signature: null,
           pendingApply: false,
-          lastDiagnostics: null
+          lastDiagnostics: null,
+          lastBaseClampSignature: null,
+          baseMinimum: { width: DEFAULT_BASE_WIDTH, height: DEFAULT_BASE_HEIGHT },
+          baseClampAdjustments: []
         };
       
         const TEMP_COLORS = [
@@ -1078,6 +1081,110 @@
           scaleState.lastWarningKey = null;
         }
       
+        function emitBaseDimensionClampWarning(adjustments, options = {}) {
+          if (!Array.isArray(adjustments) || adjustments.length === 0) {
+            layoutState.lastBaseClampSignature = null;
+            return;
+          }
+      
+          const signature = adjustments
+            .map(entry => `${entry.breakpoint}:${entry.dimension}:${entry.original ?? 'na'}->${entry.applied}`)
+            .join('|');
+      
+          if (layoutState.lastBaseClampSignature === signature) {
+            return;
+          }
+      
+          layoutState.lastBaseClampSignature = signature;
+      
+          const logger = typeof console !== 'undefined' ? console : null;
+          if (!logger || typeof logger.warn !== 'function') {
+            return;
+          }
+      
+          const minWidth = Number.isFinite(options.minWidth) ? Number(options.minWidth) : DEFAULT_BASE_WIDTH;
+          const minHeight = Number.isFinite(options.minHeight) ? Number(options.minHeight) : DEFAULT_BASE_HEIGHT;
+      
+          logger.warn('[WeatherDashboard] Layout base dimensions below the supported minimum; clamped to prevent overlap.', {
+            adjustments,
+            minimum: {
+              width: minWidth,
+              height: minHeight
+            }
+          });
+        }
+      
+        function clearBaseDimensionClampWarning() {
+          layoutState.lastBaseClampSignature = null;
+        }
+      
+        function clampBaseDimensions(dimensions, options = {}) {
+          const minWidth = Number.isFinite(options.minWidth) ? Number(options.minWidth) : null;
+          const minHeight = Number.isFinite(options.minHeight) ? Number(options.minHeight) : null;
+          const trackUnit = options.trackUnit || null;
+          const skipClamp = trackUnit === 'percent' && options.allowPercentBelowMinimum !== false;
+          const minimum = {
+            width: Number.isFinite(minWidth) ? minWidth : null,
+            height: Number.isFinite(minHeight) ? minHeight : null
+          };
+      
+          if (skipClamp || (!Number.isFinite(minWidth) && !Number.isFinite(minHeight))) {
+            const clone = {};
+            for (const key of BREAKPOINTS) {
+              const source = dimensions?.[key] || {};
+              clone[key] = {
+                width: Number(source.width) || null,
+                height: Number(source.height) || null
+              };
+            }
+            return { dimensions: clone, adjustments: [], minimum };
+          }
+      
+          const adjustments = [];
+          const normalized = {};
+          const EPSILON = 0.0001;
+      
+          for (const key of BREAKPOINTS) {
+            const source = dimensions?.[key] || {};
+            let width = Number(source.width);
+            let height = Number(source.height);
+            const originalWidth = Number.isFinite(width) ? width : null;
+            const originalHeight = Number.isFinite(height) ? height : null;
+      
+            if (Number.isFinite(minWidth)) {
+              if (!Number.isFinite(width) || width < minWidth - EPSILON) {
+                adjustments.push({
+                  breakpoint: key,
+                  dimension: 'width',
+                  original: originalWidth,
+                  applied: minWidth
+                });
+                width = minWidth;
+              }
+            } else if (!Number.isFinite(width)) {
+              width = null;
+            }
+      
+            if (Number.isFinite(minHeight)) {
+              if (!Number.isFinite(height) || height < minHeight - EPSILON) {
+                adjustments.push({
+                  breakpoint: key,
+                  dimension: 'height',
+                  original: originalHeight,
+                  applied: minHeight
+                });
+                height = minHeight;
+              }
+            } else if (!Number.isFinite(height)) {
+              height = null;
+            }
+      
+            normalized[key] = { width, height };
+          }
+      
+          return { dimensions: normalized, adjustments, minimum };
+        }
+      
         function sanitizeDiagnosticsMeasurement(measurement) {
           if (!measurement || typeof measurement !== 'object') {
             return null;
@@ -1208,6 +1315,11 @@
           const storedWidth = Number.isFinite(scaleState.containerWidth) ? Number(scaleState.containerWidth) : null;
           const storedHeight = Number.isFinite(scaleState.containerHeight) ? Number(scaleState.containerHeight) : null;
       
+          const minimumBase = layoutState.baseMinimum || {};
+          const clampAdjustments = Array.isArray(layoutState.baseClampAdjustments)
+            ? layoutState.baseClampAdjustments
+            : [];
+      
           return {
             timestamp: Date.now(),
             warning,
@@ -1219,7 +1331,17 @@
             },
             base: {
               width: baseWidth,
-              height: baseHeight
+              height: baseHeight,
+              minimum: {
+                width: Number.isFinite(minimumBase.width) ? Number(minimumBase.width) : null,
+                height: Number.isFinite(minimumBase.height) ? Number(minimumBase.height) : null
+              },
+              adjustments: clampAdjustments.map(entry => ({
+                breakpoint: entry.breakpoint,
+                dimension: entry.dimension,
+                original: Number.isFinite(entry.original) ? entry.original : null,
+                applied: Number.isFinite(entry.applied) ? entry.applied : null
+              }))
             },
             container: {
               width: containerWidth,
@@ -1353,6 +1475,12 @@
           const host = options.hostElement || getDisplayTileHostElement();
           const hostRect = safeGetElementRect(host);
           const percentCollector = options.percentCollector || null;
+          const clampAdjustments = Array.isArray(options.baseClamp)
+            ? options.baseClamp
+            : (Array.isArray(layoutState.baseClampAdjustments) ? layoutState.baseClampAdjustments : []);
+          const baseMinimum = options.baseMinimum
+            || layoutState.baseMinimum
+            || null;
           const perBreakpoint = {};
           const baseSources = {};
           if (options.baseDimensions) {
@@ -1407,6 +1535,15 @@
               height: options.baseHeight ?? null,
               perBreakpoint,
               sources: baseSources,
+              minimum: baseMinimum,
+              adjustments: clampAdjustments.length
+                ? clampAdjustments.map(entry => ({
+                    breakpoint: entry.breakpoint,
+                    dimension: entry.dimension,
+                    original: Number.isFinite(entry.original) ? entry.original : null,
+                    applied: Number.isFinite(entry.applied) ? entry.applied : null
+                  }))
+                : [],
               activeBreakpoint: options.activeBreakpoint || getActiveBreakpoint()
             },
             trackUnit: options.trackUnit || layoutState.trackUnit,
@@ -1713,7 +1850,7 @@
           const mobileWidth = sanitizeDimension(mobileSection?.baseWidth, tabletWidth);
           const mobileHeight = sanitizeDimension(mobileSection?.baseHeight, tabletHeight);
       
-          const baseDimensions = {
+          let baseDimensions = {
             desktop: { width: desktopWidth, height: desktopHeight },
             tablet: { width: tabletWidth, height: tabletHeight },
             mobile: { width: mobileWidth, height: mobileHeight }
@@ -1756,8 +1893,33 @@
             mobile: mobileBaseSource
           };
       
-          const baseWidth = desktopWidth;
-          const baseHeight = desktopHeight;
+          const clampResult = clampBaseDimensions(baseDimensions, {
+            minWidth: DEFAULT_BASE_WIDTH,
+            minHeight: DEFAULT_BASE_HEIGHT,
+            trackUnit
+          });
+      
+          baseDimensions = clampResult.dimensions;
+      
+          layoutState.baseMinimum = clampResult.minimum;
+          layoutState.baseClampAdjustments = clampResult.adjustments.slice();
+      
+          if (clampResult.adjustments.length > 0) {
+            clampResult.adjustments.forEach(adj => {
+              if (baseSourceMap[adj.breakpoint]) {
+                baseSourceMap[adj.breakpoint][adj.dimension] = 'minimum-clamp';
+              }
+            });
+            emitBaseDimensionClampWarning(clampResult.adjustments, {
+              minWidth: clampResult.minimum.width ?? DEFAULT_BASE_WIDTH,
+              minHeight: clampResult.minimum.height ?? DEFAULT_BASE_HEIGHT
+            });
+          } else {
+            clearBaseDimensionClampWarning();
+          }
+      
+          const baseWidth = baseDimensions.desktop.width;
+          const baseHeight = baseDimensions.desktop.height;
       
           let desktopColumns = desktopColumnsRaw;
           let tabletColumns = tabletColumnsRaw;
@@ -1869,6 +2031,10 @@
             resetPercentConstraintWarnings(signature);
           }
       
+          if (!changed && clampResult.adjustments.length > 0) {
+            layoutState.pendingApply = true;
+          }
+      
           if (!changed && !layoutState.pendingApply) return;
       
           const activeBase = getActiveBaseDimensions(baseDimensions);
@@ -1948,7 +2114,9 @@
               mobile: compiled.mobile.rowCount
             },
             percentCollector,
-            activeBreakpoint: getActiveBreakpoint()
+            activeBreakpoint: getActiveBreakpoint(),
+            baseMinimum: clampResult.minimum,
+            baseClamp: clampResult.adjustments
           });
       
           layoutState.lastDiagnostics = diagnosticsContext;
