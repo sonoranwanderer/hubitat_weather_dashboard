@@ -140,7 +140,7 @@
     "layout": {
       "desktop": {
         "baseWidth": 1220,
-        "baseHeight": 910,
+        "baseHeight": 1200,
         "columns": "repeat(2, minmax(0, 1fr))",
         "gap": "12px"
       }

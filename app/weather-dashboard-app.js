@@ -12,8 +12,8 @@
   const DEFAULT_POLL_INTERVAL_MS = 15000;
   const MIN_POLL_INTERVAL_MS = 5000;
   const DEFAULT_MAX_BACKOFF_MS = 60000;
-  const DEFAULT_RENDER_BASE_WIDTH = 1200;
-  const DEFAULT_RENDER_BASE_HEIGHT = 900;
+  const DEFAULT_RENDER_BASE_WIDTH = 1220;
+  const DEFAULT_RENDER_BASE_HEIGHT = 1200;
 
   const state = {
     renderer: null,
@@ -842,13 +842,13 @@
       }
       #${HOST_ID} .wdash-app-status {
         width: 100%;
-        max-width: 1200px;
+        max-width: 1220px;
         margin: 0 auto;
         flex: 0 0 auto;
       }
       #${HOST_ID} .wdash-app-display-tile {
         width: 100%;
-        max-width: 1200px;
+        max-width: 1220px;
         margin: 0 auto;
         display: flex;
         flex-direction: column;
@@ -880,13 +880,13 @@
       }
       #${HOST_ID} .wdash-app-display-tile {
         width: 100%;
-        max-width: 1200px;
+        max-width: 1220px;
         margin: 0 auto;
       }
       #${HOST_ID} .wdash-app-display {
         position: relative;
         width: 100%;
-        max-width: 1200px;
+        max-width: 1220px;
         margin: 0 auto;
         display: flex;
         align-items: stretch;

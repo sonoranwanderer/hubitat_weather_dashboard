@@ -187,10 +187,13 @@ describe('Renderer scaling with host measurements', () => {
   it('recomputes scale for observed container sizes', () => {
     expect(typeof onMeasure).toBe('function');
 
+    const baseWidth = hooks.layoutState.baseDimensions.desktop.width;
+    const baseHeight = hooks.layoutState.baseDimensions.desktop.height;
+
     const scenarios = [
-      { width: 320, height: 480, scale: 320 / 1200, renderWidth: 320, renderHeight: 900 * (320 / 1200) },
-      { width: 768, height: 1024, scale: 768 / 1200, renderWidth: 768, renderHeight: 900 * (768 / 1200) },
-      { width: 1920, height: 1080, scale: 1080 / 900, renderWidth: 1200 * (1080 / 900), renderHeight: 1080 }
+      { width: 320, height: 480 },
+      { width: 768, height: 1024 },
+      { width: 1920, height: 1080 }
     ];
 
     scenarios.forEach(scenario => {
@@ -199,9 +202,15 @@ describe('Renderer scaling with host measurements', () => {
         onMeasure({ width: scenario.width, height: scenario.height });
       }
       const { scale, renderWidth, renderHeight } = readScaleState();
-      expect(Math.abs(scale - scenario.scale) < 1e-6).toBe(true);
-      expect(Math.abs(renderWidth - scenario.renderWidth) < 1e-4).toBe(true);
-      expect(Math.abs(renderHeight - scenario.renderHeight) < 1e-4).toBe(true);
+      const expectedScale = Math.min(
+        scenario.width / baseWidth,
+        scenario.height / baseHeight
+      );
+      const expectedRenderWidth = baseWidth * expectedScale;
+      const expectedRenderHeight = baseHeight * expectedScale;
+      expect(Math.abs(scale - expectedScale) < 1e-6).toBe(true);
+      expect(Math.abs(renderWidth - expectedRenderWidth) < 1e-4).toBe(true);
+      expect(Math.abs(renderHeight - expectedRenderHeight) < 1e-4).toBe(true);
     });
   });
 
@@ -226,7 +235,9 @@ describe('Renderer scaling with host measurements', () => {
 
   it('preserves configured gaps for percent-based layout overrides', () => {
     const dash = content.querySelector('.wdash');
-    const stableMeasurement = { width: 1200, height: 900 };
+    const baseWidth = hooks.layoutState.baseDimensions.desktop.width;
+    const baseHeight = hooks.layoutState.baseDimensions.desktop.height;
+    const stableMeasurement = { width: baseWidth, height: baseHeight };
     currentMeasurement = { ...stableMeasurement };
     hooks.resolveMeasuredBaseDimensions({ measurement: stableMeasurement });
     hooks.applyLayoutOverrides();
@@ -296,11 +307,15 @@ describe('Renderer scaling with host measurements', () => {
       onMeasure({ width: 1920, height: 1080 });
     }
 
+    const baseWidth = hooks.layoutState.baseDimensions.desktop.width;
+    const baseHeight = hooks.layoutState.baseDimensions.desktop.height;
+
     expect(updates.length > 0).toBe(true);
     const last = updates[updates.length - 1];
     expect(last.container.width).toBe(1920);
     expect(last.container.height).toBe(1080);
-    expect(Math.abs(last.scale.applied - (1080 / 900)) < 1e-6).toBe(true);
+    const expectedScale = Math.min(1920 / baseWidth, 1080 / baseHeight);
+    expect(Math.abs(last.scale.applied - expectedScale) < 1e-6).toBe(true);
     expect(last.scale.clamped).toBe(false);
 
     unsubscribe();

@@ -115,8 +115,8 @@
         const INIT_RETRY_LIMIT = 40;
         const INIT_RETRY_DELAY = 250;
         const DATA_REFRESH_INTERVAL = 5000;
-        const DEFAULT_BASE_WIDTH = 1200;
-        const DEFAULT_BASE_HEIGHT = 900;
+        const DEFAULT_BASE_WIDTH = 1220;
+        const DEFAULT_BASE_HEIGHT = 1200;
         const BREAKPOINTS = ['desktop', 'tablet', 'mobile'];
         const LAYOUT_STYLE_ID = 'weather-dashboard-layout-style';
         const DEFAULT_TRACK_UNIT = 'px';
@@ -215,10 +215,10 @@
           columns: 'repeat(2, minmax(0, 1fr))',
           gap: '14px',
           rows: [
-            { columns: ['temp-wind', 'ambient'], height: 450 },
-            { columns: ['air', 'rain'], height: 140 },
-            { columns: ['solar', 'rain'], height: 180 },
-            { columns: ['solar', 'pressure'], height: 110 }
+            { columns: ['temp-wind', 'ambient'], height: 520 },
+            { columns: ['air', 'rain'], height: 210 },
+            { columns: ['solar', 'rain'], height: 220 },
+            { columns: ['solar', 'pressure'], height: 180 }
           ]
         };
       
@@ -7023,7 +7023,7 @@
       
       .wdash-host .tile-title, .wdash-host .tile-primary > .title { display: none !important; }
       .wdash-source-tile { opacity: 0 !important; pointer-events: none !important; }
-      .wdash-root { position: relative; width: 100%; height: 100%; --wdash-base-width: 1200px; --wdash-base-height: 900px; --wdash-scale: 1; --wdash-render-width: var(--wdash-base-width); --wdash-render-height: var(--wdash-base-height); background: rgba(4, 9, 20, 0.85); border-radius: 12px; overflow: hidden; box-sizing: border-box; display: flex; align-items: center; justify-content: center; }
+      .wdash-root { position: relative; width: 100%; height: 100%; --wdash-base-width: ${DEFAULT_BASE_WIDTH}px; --wdash-base-height: ${DEFAULT_BASE_HEIGHT}px; --wdash-scale: 1; --wdash-render-width: var(--wdash-base-width); --wdash-render-height: var(--wdash-base-height); background: rgba(4, 9, 20, 0.85); border-radius: 12px; overflow: hidden; box-sizing: border-box; display: flex; align-items: center; justify-content: center; }
       .wdash-frame { position: relative; width: var(--wdash-render-width); height: var(--wdash-render-height); overflow: hidden; box-sizing: border-box; }
       .wdash-temp-unit-indicator:focus-visible { outline: 2px solid rgba(90,170,255,0.9); outline-offset: 2px; }
         .wdash { width: var(--wdash-base-width); height: var(--wdash-base-height); font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif; color: #f4f6ff; background: linear-gradient(145deg, rgba(27,35,58,0.95), rgba(13,18,32,0.95)); backdrop-filter: blur(4px); border-radius: 12px; --wdash-frame-gap-desktop: 14px; --wdash-frame-gap-tablet: 14px; --wdash-frame-gap-mobile: 14px; --wdash-frame-gap: var(--wdash-frame-gap-desktop); padding: var(--wdash-frame-gap, 18px); box-sizing: border-box; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05); transform-origin: top left; transform: scale(var(--wdash-scale)); }

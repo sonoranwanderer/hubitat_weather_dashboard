@@ -70,7 +70,7 @@ function applyBoxMetrics(element, rect = {}) {
 function createDashboardDom(options = {}) {
   const {
     displayTileId = 'tile-0',
-    displayRect = { width: 1200, height: 900 },
+    displayRect = { width: 1220, height: 1048 },
     dataTiles = []
   } = options;
 
