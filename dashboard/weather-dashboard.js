@@ -116,7 +116,7 @@
         const INIT_RETRY_DELAY = 250;
         const DATA_REFRESH_INTERVAL = 5000;
         const DEFAULT_BASE_WIDTH = 1220;
-        const DEFAULT_BASE_HEIGHT = 1200;
+        const DEFAULT_BASE_HEIGHT = 1230;
         const BREAKPOINTS = ['desktop', 'tablet', 'mobile'];
         const LAYOUT_STYLE_ID = 'weather-dashboard-layout-style';
         const DEFAULT_TRACK_UNIT = 'px';
@@ -230,6 +230,8 @@
           mobile: { ...SHARED_DESKTOP_LAYOUT }
         };
       
+        const DEFAULT_ROW_MINIMUMS = buildLayoutRowMinimums(DEFAULT_LAYOUT);
+      
         const DEFAULT_BASE_DIMENSIONS = {
           desktop: { width: DEFAULT_BASE_WIDTH, height: DEFAULT_BASE_HEIGHT },
           tablet: { width: DEFAULT_BASE_WIDTH, height: DEFAULT_BASE_HEIGHT },
@@ -335,8 +337,11 @@
           pendingApply: false,
           lastDiagnostics: null,
           lastBaseClampSignature: null,
+          lastIntrinsicBaseSignature: null,
           baseMinimum: { width: DEFAULT_BASE_WIDTH, height: DEFAULT_BASE_HEIGHT },
           baseClampAdjustments: [],
+          baseIntrinsicAdjustments: [],
+          rowClampAdjustments: [],
           lastCollisionSignature: null
         };
       
@@ -1122,6 +1127,37 @@
           layoutState.lastBaseClampSignature = null;
         }
       
+        function emitIntrinsicBaseDimensionWarning(adjustments, options = {}) {
+          if (!Array.isArray(adjustments) || adjustments.length === 0) {
+            layoutState.lastIntrinsicBaseSignature = null;
+            return;
+          }
+      
+          const signature = adjustments
+            .map(entry => `${entry.breakpoint}:${entry.dimension}:${entry.original ?? 'na'}->${entry.applied}`)
+            .join('|');
+      
+          if (layoutState.lastIntrinsicBaseSignature === signature) {
+            return;
+          }
+      
+          layoutState.lastIntrinsicBaseSignature = signature;
+      
+          const logger = typeof console !== 'undefined' ? console : null;
+          if (!logger || typeof logger.warn !== 'function') {
+            return;
+          }
+      
+          const minHeight = Number.isFinite(options?.minHeight) ? Number(options.minHeight) : null;
+      
+          logger.warn('[WeatherDashboard] Layout base height increased to accommodate card geometry.', {
+            adjustments,
+            minimum: Number.isFinite(minHeight)
+              ? { height: minHeight }
+              : null
+          });
+        }
+      
         function clampBaseDimensions(dimensions, options = {}) {
           const minWidth = Number.isFinite(options.minWidth) ? Number(options.minWidth) : null;
           const minHeight = Number.isFinite(options.minHeight) ? Number(options.minHeight) : null;
@@ -1187,6 +1223,289 @@
           }
       
           return { dimensions: normalized, adjustments, minimum };
+        }
+      
+        function clampLayoutRows(layoutConfig, options = {}) {
+          if (!layoutConfig || typeof layoutConfig !== 'object') {
+            return { layout: layoutConfig, adjustments: [] };
+          }
+      
+          const trackUnit = options.trackUnit || DEFAULT_TRACK_UNIT;
+          const minimums = options.minimums || DEFAULT_ROW_MINIMUMS;
+          const result = {};
+          const adjustments = [];
+      
+          for (const breakpoint of BREAKPOINTS) {
+            const section = layoutConfig[breakpoint];
+            const { rows: clampedRows, adjustments: sectionAdjustments } = clampLayoutRowsForSection(section, {
+              breakpoint,
+              trackUnit,
+              minimums
+            });
+            if (Array.isArray(section)) {
+              result[breakpoint] = clampedRows;
+            } else if (isPlainObject(section)) {
+              result[breakpoint] = { ...section, rows: clampedRows };
+            } else {
+              result[breakpoint] = clampedRows;
+            }
+            if (Array.isArray(sectionAdjustments) && sectionAdjustments.length) {
+              adjustments.push(...sectionAdjustments);
+            }
+          }
+      
+          return { layout: result, adjustments };
+        }
+      
+        function clampLayoutRowsForSection(section, options = {}) {
+          const rows = Array.isArray(section)
+            ? section
+            : Array.isArray(section?.rows)
+              ? section.rows
+              : [];
+      
+          if (!rows.length) {
+            return { rows: Array.isArray(section) ? rows.slice() : rows, adjustments: [] };
+          }
+      
+          const trackUnit = options.trackUnit || DEFAULT_TRACK_UNIT;
+          const allowPercent = trackUnit === 'percent';
+          const breakpoint = options.breakpoint || 'desktop';
+          const minimums = options.minimums || DEFAULT_ROW_MINIMUMS;
+          const clampedRows = [];
+          const adjustments = [];
+          let rowIndex = 0;
+          const EPSILON = 0.0001;
+      
+          for (const entry of rows) {
+            if (!entry || typeof entry !== 'object') {
+              clampedRows.push(entry);
+              rowIndex += Math.max(1, Number(entry?.repeat) || 1);
+              continue;
+            }
+      
+            const normalized = { ...entry };
+            if (Array.isArray(entry.columns)) {
+              normalized.columns = entry.columns.slice();
+            }
+      
+            const repeat = Math.max(1, Number(entry.repeat) || 1);
+            const columns = Array.isArray(entry.columns)
+              ? entry.columns.map(normalizeAreaToken).filter(Boolean)
+              : [];
+            const signatureTokens = columns.filter(token => token !== '.').sort();
+            const signature = signatureTokens.length ? signatureTokens.join('|') : null;
+      
+            let heightKey = 'height';
+            if (Object.prototype.hasOwnProperty.call(entry, 'height')) {
+              heightKey = 'height';
+            } else if (Object.prototype.hasOwnProperty.call(entry, 'rowHeight')) {
+              heightKey = 'rowHeight';
+            } else if (Object.prototype.hasOwnProperty.call(entry, 'size')) {
+              heightKey = 'size';
+            }
+      
+            const numericHeight = parseDimensionValue(entry[heightKey]);
+            const minHeight = allowPercent
+              ? null
+              : resolveRowMinimumHeight(minimums, breakpoint, signature, rowIndex);
+      
+            if (!allowPercent && Number.isFinite(minHeight) && (!Number.isFinite(numericHeight) || numericHeight < minHeight - EPSILON)) {
+              normalized[heightKey] = minHeight;
+              adjustments.push({
+                breakpoint,
+                row: rowIndex,
+                repeat,
+                signature,
+                original: Number.isFinite(numericHeight) ? numericHeight : null,
+                applied: minHeight,
+                reason: 'row-minimum'
+              });
+            }
+      
+            clampedRows.push(normalized);
+            rowIndex += repeat;
+          }
+      
+          return { rows: clampedRows, adjustments };
+        }
+      
+        function resolveRowMinimumHeight(minimums, breakpoint, signature, rowIndex) {
+          const info = minimums && minimums[breakpoint];
+          if (!info) return null;
+          if (signature && info.bySignature instanceof Map && info.bySignature.has(signature)) {
+            return info.bySignature.get(signature);
+          }
+          if (Array.isArray(info.byIndex)) {
+            const value = info.byIndex[rowIndex];
+            if (Number.isFinite(value)) return value;
+          }
+          return null;
+        }
+      
+        function calculateLayoutIntrinsicHeights(layoutConfig, options = {}) {
+          if (!layoutConfig || typeof layoutConfig !== 'object') {
+            return { desktop: null, tablet: null, mobile: null };
+          }
+      
+          const trackUnit = options.trackUnit || DEFAULT_TRACK_UNIT;
+          if (trackUnit === 'percent') {
+            return { desktop: null, tablet: null, mobile: null };
+          }
+      
+          const gridGaps = options.gridGaps || {};
+          const frameGaps = options.frameGaps || {};
+          const result = {};
+      
+          for (const breakpoint of BREAKPOINTS) {
+            const section = layoutConfig[breakpoint];
+            const rows = Array.isArray(section)
+              ? section
+              : Array.isArray(section?.rows)
+                ? section.rows
+                : [];
+      
+            if (!rows.length) {
+              result[breakpoint] = null;
+              continue;
+            }
+      
+            let totalHeight = 0;
+            let totalRows = 0;
+            let invalid = false;
+      
+            for (const entry of rows) {
+              const repeat = Math.max(1, Number(entry?.repeat) || 1);
+              const numericHeight = parseDimensionValue(
+                Object.prototype.hasOwnProperty.call(entry, 'height')
+                  ? entry.height
+                  : Object.prototype.hasOwnProperty.call(entry, 'rowHeight')
+                    ? entry.rowHeight
+                    : entry?.size
+              );
+              if (!Number.isFinite(numericHeight)) {
+                invalid = true;
+                break;
+              }
+              totalHeight += numericHeight * repeat;
+              totalRows += repeat;
+            }
+      
+            if (invalid) {
+              result[breakpoint] = null;
+              continue;
+            }
+      
+            const rowGap = parseDimensionValue(gridGaps[breakpoint]);
+            const frameGap = parseDimensionValue(frameGaps[breakpoint]);
+            const gapContribution = Number.isFinite(rowGap) ? rowGap * Math.max(0, totalRows - 1) : 0;
+            const frameContribution = Number.isFinite(frameGap) ? frameGap * 2 : 0;
+            result[breakpoint] = totalHeight + gapContribution + frameContribution;
+          }
+      
+          return result;
+        }
+      
+        function adjustBaseDimensionsForIntrinsicHeight(baseDimensions, intrinsicHeights, options = {}) {
+          const baseSourceMap = options.baseSourceMap || {};
+          const adjustments = [];
+          let minimumHeight = Number.isFinite(options.minHeight) ? Number(options.minHeight) : null;
+          const EPSILON = 0.0001;
+      
+          for (const breakpoint of BREAKPOINTS) {
+            const required = Number(intrinsicHeights?.[breakpoint]);
+            if (!Number.isFinite(required) || required <= 0) {
+              continue;
+            }
+      
+            const dims = baseDimensions[breakpoint] || (baseDimensions[breakpoint] = {});
+            const current = Number(dims.height);
+            if (!Number.isFinite(current) || current < required - EPSILON) {
+              adjustments.push({
+                breakpoint,
+                dimension: 'height',
+                original: Number.isFinite(current) ? current : null,
+                applied: required,
+                reason: 'intrinsic-layout'
+              });
+              dims.height = required;
+              if (baseSourceMap[breakpoint]) {
+                baseSourceMap[breakpoint].height = baseSourceMap[breakpoint].height === 'minimum-clamp'
+                  ? 'minimum-clamp'
+                  : 'intrinsic-layout';
+              }
+            }
+      
+            if (!Number.isFinite(minimumHeight) || required > minimumHeight) {
+              minimumHeight = required;
+            }
+          }
+      
+          return {
+            adjustments,
+            minimumHeight
+          };
+        }
+      
+        function buildLayoutRowMinimums(layout) {
+          const minima = {};
+          if (!layout || typeof layout !== 'object') {
+            return minima;
+          }
+      
+          for (const breakpoint of BREAKPOINTS) {
+            const section = layout[breakpoint] || layout.desktop || {};
+            const rows = Array.isArray(section)
+              ? section
+              : Array.isArray(section?.rows)
+                ? section.rows
+                : [];
+      
+            const bySignature = new Map();
+            const byIndex = [];
+            let rowIndex = 0;
+      
+            for (const entry of rows) {
+              if (!entry || typeof entry !== 'object') {
+                rowIndex += Math.max(1, Number(entry?.repeat) || 1);
+                continue;
+              }
+      
+              const repeat = Math.max(1, Number(entry.repeat) || 1);
+              const columns = Array.isArray(entry.columns)
+                ? entry.columns.map(normalizeAreaToken).filter(Boolean)
+                : [];
+              const signatureTokens = columns.filter(token => token !== '.').sort();
+              const signature = signatureTokens.length ? signatureTokens.join('|') : null;
+              const height = parseDimensionValue(
+                Object.prototype.hasOwnProperty.call(entry, 'height')
+                  ? entry.height
+                  : Object.prototype.hasOwnProperty.call(entry, 'rowHeight')
+                    ? entry.rowHeight
+                    : entry?.size
+              );
+      
+              if (Number.isFinite(height)) {
+                if (signature) {
+                  const prev = bySignature.get(signature);
+                  if (!Number.isFinite(prev) || height > prev) {
+                    bySignature.set(signature, height);
+                  }
+                }
+                for (let i = 0; i < repeat; i += 1) {
+                  const idx = rowIndex + i;
+                  const prev = byIndex[idx];
+                  byIndex[idx] = Number.isFinite(prev) ? Math.max(prev, height) : height;
+                }
+              }
+      
+              rowIndex += repeat;
+            }
+      
+            minima[breakpoint] = { bySignature, byIndex };
+          }
+      
+          return minima;
         }
       
         function sanitizeDiagnosticsMeasurement(measurement) {
@@ -1821,6 +2140,12 @@
           const clampAdjustments = Array.isArray(options.baseClamp)
             ? options.baseClamp
             : (Array.isArray(layoutState.baseClampAdjustments) ? layoutState.baseClampAdjustments : []);
+          const intrinsicAdjustments = Array.isArray(options.baseIntrinsic)
+            ? options.baseIntrinsic
+            : (Array.isArray(layoutState.baseIntrinsicAdjustments) ? layoutState.baseIntrinsicAdjustments : []);
+          const rowAdjustments = Array.isArray(options.rowAdjustments)
+            ? options.rowAdjustments
+            : (Array.isArray(layoutState.rowClampAdjustments) ? layoutState.rowClampAdjustments : []);
           const baseMinimum = options.baseMinimum
             || layoutState.baseMinimum
             || null;
@@ -1887,6 +2212,14 @@
                     applied: Number.isFinite(entry.applied) ? entry.applied : null
                   }))
                 : [],
+              intrinsicAdjustments: intrinsicAdjustments.length
+                ? intrinsicAdjustments.map(entry => ({
+                    breakpoint: entry.breakpoint,
+                    dimension: entry.dimension,
+                    original: Number.isFinite(entry.original) ? entry.original : null,
+                    applied: Number.isFinite(entry.applied) ? entry.applied : null
+                  }))
+                : [],
               activeBreakpoint: options.activeBreakpoint || getActiveBreakpoint()
             },
             trackUnit: options.trackUnit || layoutState.trackUnit,
@@ -1899,7 +2232,17 @@
             rows: {
               raw: options.rowsRaw || {},
               applied: options.rowsApplied || {},
-              counts: rowCounts
+              counts: rowCounts,
+              adjustments: rowAdjustments.length
+                ? rowAdjustments.map(entry => ({
+                    breakpoint: entry.breakpoint,
+                    row: Number.isFinite(entry.row) ? entry.row : null,
+                    repeat: Number.isFinite(entry.repeat) ? entry.repeat : null,
+                    signature: entry.signature || null,
+                    original: Number.isFinite(entry.original) ? entry.original : null,
+                    applied: Number.isFinite(entry.applied) ? entry.applied : null
+                  }))
+                : []
             },
             percentTracks: percentCollector
               ? {
@@ -2128,7 +2471,16 @@
             inheritedRows = defaultRows;
             layoutForCompile[key] = defaultRows;
           }
-          const compiled = compileLayoutTemplates(layoutForCompile, { trackUnit });
+          const rowClampResult = clampLayoutRows(layoutForCompile, {
+            minimums: DEFAULT_ROW_MINIMUMS,
+            trackUnit
+          });
+          const layoutForCompileClamped = rowClampResult.layout;
+          layoutState.rowClampAdjustments = Array.isArray(rowClampResult.adjustments)
+            ? rowClampResult.adjustments.slice()
+            : [];
+      
+          const compiled = compileLayoutTemplates(layoutForCompileClamped, { trackUnit });
           const normalizedAreas = {
             desktop: normalizeTemplateAreas(compiled.desktop.areas),
             tablet: normalizeTemplateAreas(compiled.tablet.areas),
@@ -2244,22 +2596,55 @@
       
           baseDimensions = clampResult.dimensions;
       
-          layoutState.baseMinimum = clampResult.minimum;
-          layoutState.baseClampAdjustments = clampResult.adjustments.slice();
+          const baseAdjustments = Array.isArray(clampResult.adjustments)
+            ? clampResult.adjustments.slice()
+            : [];
+          const baseMinimum = {
+            width: clampResult.minimum.width ?? DEFAULT_BASE_WIDTH,
+            height: clampResult.minimum.height ?? DEFAULT_BASE_HEIGHT
+          };
       
-          if (clampResult.adjustments.length > 0) {
-            clampResult.adjustments.forEach(adj => {
+          if (baseAdjustments.length > 0) {
+            baseAdjustments.forEach(adj => {
               if (baseSourceMap[adj.breakpoint]) {
                 baseSourceMap[adj.breakpoint][adj.dimension] = 'minimum-clamp';
               }
             });
-            emitBaseDimensionClampWarning(clampResult.adjustments, {
-              minWidth: clampResult.minimum.width ?? DEFAULT_BASE_WIDTH,
-              minHeight: clampResult.minimum.height ?? DEFAULT_BASE_HEIGHT
+            emitBaseDimensionClampWarning(baseAdjustments, {
+              minWidth: baseMinimum.width,
+              minHeight: baseMinimum.height
             });
           } else {
             clearBaseDimensionClampWarning();
           }
+      
+          const intrinsicHeights = calculateLayoutIntrinsicHeights(layoutForCompileClamped, {
+            gridGaps: gaps,
+            frameGaps: gaps,
+            trackUnit
+          });
+      
+          const intrinsicResult = adjustBaseDimensionsForIntrinsicHeight(baseDimensions, intrinsicHeights, {
+            baseSourceMap,
+            minHeight: baseMinimum.height
+          });
+      
+          if (intrinsicResult.adjustments.length > 0) {
+            emitIntrinsicBaseDimensionWarning(intrinsicResult.adjustments, {
+              minHeight: intrinsicResult.minimumHeight
+            });
+          } else {
+            emitIntrinsicBaseDimensionWarning(null);
+          }
+      
+          const combinedAdjustments = baseAdjustments.concat(intrinsicResult.adjustments);
+          if (Number.isFinite(intrinsicResult.minimumHeight)) {
+            baseMinimum.height = Math.max(baseMinimum.height ?? DEFAULT_BASE_HEIGHT, intrinsicResult.minimumHeight);
+          }
+      
+          layoutState.baseMinimum = baseMinimum;
+          layoutState.baseClampAdjustments = combinedAdjustments;
+          layoutState.baseIntrinsicAdjustments = intrinsicResult.adjustments.slice();
       
           const baseWidth = baseDimensions.desktop.width;
           const baseHeight = baseDimensions.desktop.height;
