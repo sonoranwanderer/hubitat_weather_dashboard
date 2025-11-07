@@ -380,6 +380,21 @@
     lines.push(`Scale ${formatScaleNumber(diagnostics.scale?.applied)} (raw ${formatScaleNumber(diagnostics.scale?.raw)}, min ${formatScaleNumber(diagnostics.scale?.min)})`);
     lines.push(`Container ${formatPixelSize(diagnostics.container?.width)} × ${formatPixelSize(diagnostics.container?.height)}`);
     lines.push(`Base ${formatPixelSize(diagnostics.base?.width)} × ${formatPixelSize(diagnostics.base?.height)}`);
+    const scaleAdjustments = Array.isArray(diagnostics.scale?.adjustments)
+      ? diagnostics.scale.adjustments
+      : [];
+    if (scaleAdjustments.length) {
+      const attemptsLabel = scaleAdjustments.length === 1 ? 'step' : 'steps';
+      lines.push(`Adjustments ${scaleAdjustments.length} ${attemptsLabel}`);
+      scaleAdjustments.forEach((entry, index) => {
+        const fromValue = formatScaleNumber(entry?.from);
+        const toValue = formatScaleNumber(entry?.to);
+        const collisions = Number.isFinite(entry?.collisions) ? entry.collisions : 0;
+        const overflow = Number.isFinite(entry?.overflow) ? entry.overflow : 0;
+        const reason = entry?.reason ? String(entry.reason) : 'layout';
+        lines.push(`  #${index + 1} ${reason} ${fromValue} → ${toValue} (collisions ${collisions}, overflow ${overflow})`);
+      });
+    }
     const minimumBase = diagnostics.base?.minimum || null;
     if (minimumBase && (Number.isFinite(minimumBase.width) || Number.isFinite(minimumBase.height))) {
       lines.push(`Minimum ${formatPixelSize(minimumBase.width)} × ${formatPixelSize(minimumBase.height)}`);

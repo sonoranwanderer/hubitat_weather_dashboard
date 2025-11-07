@@ -541,4 +541,103 @@ describe('Renderer scaling with host measurements', () => {
 
     console.warn = originalWarn;
   });
+
+  it('reduces scale when collisions persist and reports adjustments', () => {
+    expect(typeof onMeasure).toBe('function');
+
+    const baseWidth = hooks.layoutState.baseDimensions.desktop.width;
+    const baseHeight = hooks.layoutState.baseDimensions.desktop.height;
+    const frame = root.querySelector('.wdash-frame');
+    const dash = root.querySelector('.wdash');
+    const grid = dash.querySelector('.wdash-grid');
+
+    const readScale = () => {
+      const value = root.style.getPropertyValue('--wdash-scale');
+      const numeric = Number(value);
+      return Number.isFinite(numeric) ? numeric : 1;
+    };
+
+    frame.getBoundingClientRect = () => {
+      const scaleValue = readScale();
+      const width = baseWidth * scaleValue;
+      const height = baseHeight * scaleValue;
+      return {
+        top: 0,
+        left: 0,
+        x: 0,
+        y: 0,
+        right: width,
+        bottom: height,
+        width,
+        height
+      };
+    };
+    dash.getBoundingClientRect = frame.getBoundingClientRect;
+
+    grid.dataset.empty = 'false';
+    grid.innerHTML = `
+      <section class="wdash-card wdash-card--temp-wind"></section>
+      <section class="wdash-card wdash-card--ambient"></section>
+    `;
+
+    const [tempCard, ambientCard] = grid.querySelectorAll('.wdash-card');
+    const columnWidth = baseWidth / 2;
+    const rowOneHeight = 520;
+    const rowTwoTop = rowOneHeight + 14;
+    const rowTwoHeight = 210;
+
+    tempCard.getBoundingClientRect = () => {
+      const scaleValue = readScale();
+      const width = columnWidth * scaleValue;
+      const height = rowOneHeight * scaleValue;
+      return {
+        top: 0,
+        left: 0,
+        x: 0,
+        y: 0,
+        right: width,
+        bottom: height,
+        width,
+        height
+      };
+    };
+
+    ambientCard.getBoundingClientRect = () => {
+      const scaleValue = readScale();
+      const overlapOffset = scaleValue > 0.53 ? -50 : 0;
+      const top = (rowTwoTop + overlapOffset) * scaleValue;
+      const height = rowTwoHeight * scaleValue;
+      const left = 0;
+      const width = columnWidth * scaleValue;
+      return {
+        top,
+        left,
+        x: left,
+        y: top,
+        right: left + width,
+        bottom: top + height,
+        width,
+        height
+      };
+    };
+
+    const measurement = { width: 660, height: 680 };
+    currentMeasurement = { ...measurement };
+    hooks.resolveMeasuredBaseDimensions({ measurement });
+    if (onMeasure) {
+      onMeasure(measurement);
+    }
+
+    const diagnostics = hooks.captureScaleDiagnostics();
+    expect(diagnostics).not.toBeNull();
+    expect(Math.abs(diagnostics.scale.raw - (measurement.width / baseWidth)) < 1e-3).toBe(true);
+    expect(diagnostics.scale.applied < diagnostics.scale.raw).toBe(true);
+    expect(diagnostics.warning).toBe('layout-adjusted');
+    expect(Array.isArray(diagnostics.scale.adjustments)).toBe(true);
+    expect(diagnostics.scale.adjustments.length > 0).toBe(true);
+    expect(diagnostics.layout.summary.hasCollisions).toBe(false);
+    expect(diagnostics.layout.summary.hasOverflow).toBe(false);
+    const lastAdjustment = diagnostics.scale.adjustments[diagnostics.scale.adjustments.length - 1];
+    expect(Math.abs(lastAdjustment.to - diagnostics.scale.applied) < 1e-6).toBe(true);
+  });
 });

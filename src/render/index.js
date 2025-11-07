@@ -1008,11 +1008,14 @@ function createRenderer(options = {}) {
     const width = Number.isFinite(context.width) ? Math.round(context.width) : 'na';
     const height = Number.isFinite(context.height) ? Math.round(context.height) : 'na';
     const scale = Number.isFinite(context.scale) ? context.scale.toFixed(6) : 'na';
-    const key = `${type}:${width}x${height}:${scale}`;
+    const signature = context.signature || context.adjustments || null;
+    const key = `${type}:${width}x${height}:${scale}:${signature ?? 'none'}`;
     if (scaleState.lastWarningKey === key) return;
     scaleState.lastWarningKey = key;
     if (type === 'too-small') {
       logger.warn('[WeatherDashboard] Container is smaller than the minimum supported layout size; scale clamped.', context);
+    } else if (type === 'layout-adjusted') {
+      logger.warn('[WeatherDashboard] Layout collisions detected; scale reduced to preserve spacing.', context);
     } else {
       logger.warn('[WeatherDashboard] Unable to derive dashboard scale from host measurement.', context);
     }
@@ -1571,6 +1574,7 @@ function createRenderer(options = {}) {
   function buildScaleDiagnosticsContext(context = {}) {
     const warning = context.warning || null;
     const measurement = sanitizeDiagnosticsMeasurement(context.measurement);
+    const adjustments = Array.isArray(context.adjustments) ? context.adjustments : [];
     const appliedScale = Number.isFinite(context.scale) ? context.scale : null;
     const rawScale = Number.isFinite(context.rawScale) ? context.rawScale : null;
     const minScale = Number.isFinite(context.minScale) ? context.minScale : null;
@@ -1596,7 +1600,15 @@ function createRenderer(options = {}) {
         applied: appliedScale,
         raw: rawScale,
         min: minScale,
-        clamped: warning === 'too-small'
+        clamped: warning === 'too-small',
+        adjustments: adjustments.map(entry => ({
+          attempt: Number.isFinite(entry?.attempt) ? entry.attempt : null,
+          from: Number.isFinite(entry?.from) ? entry.from : null,
+          to: Number.isFinite(entry?.to) ? entry.to : null,
+          reason: entry?.reason != null ? String(entry.reason) : null,
+          collisions: Number.isFinite(entry?.collisions) ? entry.collisions : null,
+          overflow: Number.isFinite(entry?.overflow) ? entry.overflow : null
+        }))
       },
       base: {
         width: baseWidth,
@@ -2620,11 +2632,6 @@ function createRenderer(options = {}) {
       clamped = true;
     }
 
-    const renderWidth = baseWidth * scale;
-    const renderHeight = baseHeight * scale;
-    root.style.setProperty('--wdash-scale', `${scale}`);
-    root.style.setProperty('--wdash-render-width', `${renderWidth}px`);
-    root.style.setProperty('--wdash-render-height', `${renderHeight}px`);
     root.style.width = `${width}px`;
     root.style.height = `${height}px`;
     root.style.maxWidth = `${width}px`;
@@ -2633,68 +2640,152 @@ function createRenderer(options = {}) {
     const frame = root.querySelector('.wdash-frame');
     const dash = frame ? frame.querySelector('.wdash') : root.querySelector('.wdash');
 
-    if (frame && frame.style) {
-      frame.style.width = `${renderWidth}px`;
-      frame.style.height = `${renderHeight}px`;
-      frame.style.maxWidth = `${renderWidth}px`;
-      frame.style.maxHeight = `${renderHeight}px`;
-    }
+    const COLLISION_ADJUST_STEP = 0.99;
+    const COLLISION_ADJUST_LIMIT = 6;
+    const collisionAdjustments = [];
 
-    let inlineSnapshot = null;
+    const applyScaleStyles = nextScale => {
+      const renderWidth = baseWidth * nextScale;
+      const renderHeight = baseHeight * nextScale;
 
-    if (dash && dash.style) {
-      dash.style.width = `${baseWidth}px`;
-      dash.style.height = `${baseHeight}px`;
-      dash.style.transformOrigin = 'top left';
-      dash.style.transform = `scale(${scale})`;
-      dash.style.zoom = Number.isFinite(scale) ? `${scale}` : '';
-      inlineSnapshot = {
-        root: {
-          width,
-          height,
-          maxWidth: width,
-          maxHeight: height
-        },
-        frame: {
-          width: renderWidth,
-          height: renderHeight,
-          maxWidth: renderWidth,
-          maxHeight: renderHeight
-        },
-        dash: {
-          width: baseWidth,
-          height: baseHeight,
-          transform: dash.style.transform || null,
-          transformOrigin: dash.style.transformOrigin || null,
-          zoom: Number.isFinite(scale) ? scale : null
+      root.style.setProperty('--wdash-scale', `${nextScale}`);
+      root.style.setProperty('--wdash-render-width', `${renderWidth}px`);
+      root.style.setProperty('--wdash-render-height', `${renderHeight}px`);
+
+      if (frame && frame.style) {
+        frame.style.width = `${renderWidth}px`;
+        frame.style.height = `${renderHeight}px`;
+        frame.style.maxWidth = `${renderWidth}px`;
+        frame.style.maxHeight = `${renderHeight}px`;
+      }
+
+      if (dash && dash.style) {
+        dash.style.width = `${baseWidth}px`;
+        dash.style.height = `${baseHeight}px`;
+        dash.style.transformOrigin = 'top left';
+        dash.style.transform = `scale(${nextScale})`;
+        dash.style.zoom = Number.isFinite(nextScale) ? `${nextScale}` : '';
+        return {
+          renderWidth,
+          renderHeight,
+          inline: {
+            root: {
+              width,
+              height,
+              maxWidth: width,
+              maxHeight: height
+            },
+            frame: {
+              width: renderWidth,
+              height: renderHeight,
+              maxWidth: renderWidth,
+              maxHeight: renderHeight
+            },
+            dash: {
+              width: baseWidth,
+              height: baseHeight,
+              transform: dash.style.transform || null,
+              transformOrigin: dash.style.transformOrigin || null,
+              zoom: Number.isFinite(nextScale) ? nextScale : null
+            }
+          }
+        };
+      }
+
+      return {
+        renderWidth,
+        renderHeight,
+        inline: {
+          root: {
+            width,
+            height,
+            maxWidth: width,
+            maxHeight: height
+          },
+          frame: frame && frame.style
+            ? {
+                width: renderWidth,
+                height: renderHeight,
+                maxWidth: renderWidth,
+                maxHeight: renderHeight
+              }
+            : null,
+          dash: null
         }
       };
-    } else {
-      inlineSnapshot = {
-        root: {
-          width,
-          height,
-          maxWidth: width,
-          maxHeight: height
-        },
-        frame: frame && frame.style ? {
-          width: renderWidth,
-          height: renderHeight,
-          maxWidth: renderWidth,
-          maxHeight: renderHeight
-        } : null,
-        dash: null
-      };
+    };
+
+    let inlineSnapshot = null;
+    let layoutDiagnostics = null;
+    let attempts = 0;
+    let adjustedScale = scale;
+
+    while (true) {
+      const applied = applyScaleStyles(adjustedScale);
+      inlineSnapshot = applied.inline;
+      layoutDiagnostics = collectLayoutCollisionDiagnostics(root, { frame, dash });
+
+      const hasCollisions = Boolean(layoutDiagnostics?.summary?.hasCollisions);
+      const hasOverflow = Boolean(layoutDiagnostics?.summary?.hasOverflow);
+      if (!hasCollisions && !hasOverflow) {
+        break;
+      }
+
+      if (adjustedScale <= MIN_SCALE) {
+        break;
+      }
+
+      if (attempts >= COLLISION_ADJUST_LIMIT) {
+        break;
+      }
+
+      const nextScale = Math.max(MIN_SCALE, adjustedScale * COLLISION_ADJUST_STEP);
+      if (!(nextScale < adjustedScale)) {
+        break;
+      }
+
+      collisionAdjustments.push({
+        attempt: attempts + 1,
+        from: adjustedScale,
+        to: nextScale,
+        reason: 'layout-collision',
+        collisions: Array.isArray(layoutDiagnostics?.collisions)
+          ? layoutDiagnostics.collisions.length
+          : 0,
+        overflow: layoutDiagnostics?.overflow && Array.isArray(layoutDiagnostics.overflow.cards)
+          ? layoutDiagnostics.overflow.cards.length
+          : 0
+      });
+
+      attempts += 1;
+      adjustedScale = nextScale;
     }
 
-    const layoutDiagnostics = collectLayoutCollisionDiagnostics(root, { frame, dash });
+    if (adjustedScale !== scale) {
+      const applied = applyScaleStyles(adjustedScale);
+      inlineSnapshot = applied.inline;
+      layoutDiagnostics = collectLayoutCollisionDiagnostics(root, { frame, dash });
+    }
+
     emitLayoutCollisionWarnings(layoutDiagnostics);
+
+    scale = adjustedScale;
 
     scaleState.containerWidth = width;
     scaleState.containerHeight = height;
     scaleState.lastScale = scale;
 
-    const warningType = clamped && rawScale < scale ? 'too-small' : null;
+    const adjustmentSignature = collisionAdjustments
+      .map(entry => `${entry.from}->${entry.to}`)
+      .join('|');
+
+    let warningType = null;
+    if (clamped && rawScale < scale) {
+      warningType = 'too-small';
+    } else if (collisionAdjustments.length) {
+      warningType = 'layout-adjusted';
+    }
+
     if (warningType === 'too-small') {
       emitScaleConstraintWarning('too-small', {
         width,
@@ -2703,6 +2794,17 @@ function createRenderer(options = {}) {
         baseHeight,
         rawScale,
         scale
+      });
+    } else if (warningType === 'layout-adjusted') {
+      emitScaleConstraintWarning('layout-adjusted', {
+        width,
+        height,
+        baseWidth,
+        baseHeight,
+        rawScale,
+        scale,
+        adjustments: collisionAdjustments.length,
+        signature: adjustmentSignature
       });
     } else {
       clearScaleConstraintWarning();
@@ -2719,7 +2821,8 @@ function createRenderer(options = {}) {
       measurement: measurementOverride,
       warning: warningType,
       inline: inlineSnapshot,
-      layout: layoutDiagnostics
+      layout: layoutDiagnostics,
+      adjustments: collisionAdjustments
     }));
   }
 
