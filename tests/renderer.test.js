@@ -1,111 +1,145 @@
-/**
- * @jest-environment jsdom
- */
-
-const fs = require('fs');
-const path = require('path');
 const { createRenderer } = require('../src/render');
 
+const sampleLayout = {
+  columns: [1, 1],
+  rows: ['auto', 'auto'],
+  gap: '20px',
+  cards: [
+    { id: 'temperature', row: 1, column: 1, colSpan: 2, minHeight: '180px' },
+    { id: 'wind', row: 2, column: 1 },
+    { id: 'rain', row: 2, column: 2 }
+  ]
+};
 
-describe('Weather Dashboard Renderer', () => {
-  let renderer;
-  let testHooks;
+const sampleData = {
+  temperature: {
+    title: 'Outdoor Temperature',
+    metrics: [
+      { label: 'Now', value: '72°F' },
+      { label: 'High', value: '79°F' },
+      { label: 'Low', value: '61°F' }
+    ]
+  },
+  wind: {
+    title: 'Wind',
+    metrics: [
+      { label: 'Speed', value: '12 mph' },
+      { label: 'Gust', value: '22 mph' }
+    ]
+  },
+  rain: {
+    title: 'Rainfall',
+    metrics: [
+      { label: 'Daily', value: '0.23 in' },
+      { label: 'Monthly', value: '1.92 in' }
+    ]
+  }
+};
 
-  beforeEach(() => {
-    document.body.innerHTML = '<div id="tile-0"><div class="tile-primary"></div></div>';
-    global.ResizeObserver = class ResizeObserver {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    };
-    global.window.__WDASH_TEST_MODE__ = true; // Indicate test environment
+describe('createRenderer', () => {
+  it('generates grid variables for a square container', () => {
+    const { variables, markup } = createRenderer({
+      width: 600,
+      height: 600,
+      layout: sampleLayout,
+      data: sampleData
+    });
 
-    // The factory attaches test hooks to the window object
-    createRenderer({ window, document, globalThis: window });
-    testHooks = window.__WDASH_TEST_HOOKS__;
-    renderer = testHooks.render;
+    expect(variables['--wdash-width']).toBe('600px');
+    expect(variables['--wdash-height']).toBe('600px');
+    expect(variables['--wdash-grid-template-columns']).toBe('1fr 1fr');
+    expect(variables['--wdash-grid-template-rows']).toBe('auto auto');
+    expect(markup).toContain('wdash-card--temperature');
+    expect(markup).toContain('Outdoor Temperature');
   });
 
-  afterEach(() => {
-    document.body.innerHTML = '';
+  it('supports portrait containers by maintaining supplied dimensions', () => {
+    const { variables } = createRenderer({
+      width: 480,
+      height: 900,
+      layout: {
+        ...sampleLayout,
+        columns: ['1fr'],
+        rows: ['1fr', '1fr', 'auto']
+      },
+      data: sampleData
+    });
+
+    expect(variables['--wdash-width']).toBe('480px');
+    expect(variables['--wdash-height']).toBe('900px');
+    expect(variables['--wdash-grid-template-columns']).toBe('1fr');
+    expect(variables['--wdash-grid-template-rows']).toBe('1fr 1fr auto');
   });
 
-  it('should render waiting message when payload is null', () => {
-    const grid = document.createElement('div');
-    renderer(null, grid);
-    expect(grid.innerHTML).toContain('Waiting for weather data…');
-    expect(grid.dataset.empty).toBe('true');
-  });
+  it('supports landscape containers with percentage tracks', () => {
+    const { variables } = createRenderer({
+      width: 1280,
+      height: 720,
+      layout: {
+        columns: ['60%', '40%'],
+        rows: [1, 1],
+        cards: [
+          { id: 'temperature', row: 1, column: 1 },
+          { id: 'wind', row: 1, column: 2 },
+          { id: 'rain', row: 2, column: 1, colSpan: 2 }
+        ]
+      },
+      data: sampleData
+    });
 
-  it('should render cards when a valid payload is provided', () => {
-    const grid = document.createElement('div');
-    const fixturePath = path.resolve(__dirname, 'fixtures/full-capabilities.json');
-    const mockPayload = JSON.parse(fs.readFileSync(fixturePath, 'utf8'));
-    renderer(mockPayload, grid);
-    expect(grid.querySelector('.wdash-card--temp-wind')).not.toBeNull();
-    expect(grid.querySelector('.wdash-card--ambient')).not.toBeNull();
-    expect(grid.dataset.empty).toBe('false');
+    expect(variables['--wdash-width']).toBe('1280px');
+    expect(variables['--wdash-height']).toBe('720px');
+    expect(variables['--wdash-grid-template-columns']).toBe('60% 40%');
+    expect(variables['--wdash-grid-template-rows']).toBe('1fr 1fr');
   });
 });
 
-describe('Renderer measurement hooks', () => {
-  beforeEach(() => {
-    document.body.innerHTML = `
-      <div id="tile-0" class="tile">
-        <div class="tile-primary">
-          <div class="wdash-root">
-            <div class="wdash"></div>
-          </div>
-        </div>
-      </div>
-    `;
-    window.__WDASH_TEST_MODE__ = true;
-    const root = document.querySelector('.wdash-root');
-    if (root) {
-      root.getBoundingClientRect = () => ({ width: 500, height: 400, top: 0, left: 0, right: 500, bottom: 400 });
-    }
-  });
-
-  afterEach(() => {
-    document.body.innerHTML = '';
-  });
-
-  it('delegates measurement and observation to injected hooks', () => {
-    const measureCalls = [];
-    const measureMock = input => {
-      measureCalls.push(input);
-      return { width: 640, height: 480 };
-    };
-    const disconnectMock = () => {};
-    const observeCalls = [];
-    const observeMock = input => {
-      observeCalls.push(input);
-      return { disconnect: disconnectMock };
-    };
-
-    createRenderer({
-      window,
-      document,
-      globalThis: window,
-      container: document.getElementById('tile-0'),
-      measure: measureMock,
-      observe: observeMock
+describe('layout parsing edge cases', () => {
+  it('defaults missing spans to one and renders metrics from plain objects', () => {
+    const { markup } = createRenderer({
+      width: 400,
+      height: 400,
+      layout: {
+        columns: [1],
+        rows: [1, 'auto'],
+        cards: [
+          { id: 'summary', row: 1, column: 1 },
+          { id: 'details', row: 2, column: 1 }
+        ]
+      },
+      data: {
+        summary: { value: 'OK', label: 'Status' },
+        details: {
+          heading: 'Conditions',
+          description: 'Clear skies'
+        }
+      }
     });
 
-    const hooks = window.__WDASH_TEST_HOOKS__;
-    const measurement = hooks.resolveMeasuredBaseDimensions({ commit: false });
+    expect(markup).toContain('grid-column:1 / span 1');
+    expect(markup).toContain('grid-row:1 / span 1');
+    expect(markup).toContain('Status');
+    expect(markup).toContain('Clear skies');
+  });
 
-    expect(measureCalls.length).toBe(1);
-    expect(measureCalls[0].type).toBe('base-dimensions');
-    expect(measurement.width).toBe(640);
-    expect(measurement.height).toBe(480);
+  it('accepts fractional track shorthands and percentage gaps', () => {
+    const { variables } = createRenderer({
+      width: 1024,
+      height: 768,
+      layout: {
+        columns: [2, '1fr', '0.5'],
+        rows: ['minmax(120px, auto)', 1],
+        gap: '5%',
+        cards: [
+          { id: 'primary', row: 1, column: 1, colSpan: 2 },
+          { id: 'secondary', row: 1, column: 3 }
+        ]
+      },
+      data: {}
+    });
 
-    const displayTile = document.getElementById('tile-0');
-    const content = displayTile.querySelector('.tile-primary');
-    hooks.setupScaling(displayTile, content);
-
-    expect(observeCalls.length).toBe(1);
-    expect(observeCalls[0].type).toBe('base-dimensions');
-    expect(typeof observeCalls[0].onMeasure).toBe('function');
+    expect(variables['--wdash-grid-template-columns']).toBe('2fr 1fr 0.5fr');
+    expect(variables['--wdash-grid-template-rows']).toBe('minmax(120px, auto) 1fr');
+    expect(variables['--wdash-grid-gap']).toBe('5%');
   });
 });
