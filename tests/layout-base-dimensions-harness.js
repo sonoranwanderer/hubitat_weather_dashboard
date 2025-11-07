@@ -7,16 +7,22 @@ const {
   createElement
 } = require('./support/fake-dom');
 
-function parseTrackPixels(value) {
+function tokenizeTracks(value) {
+  if (typeof value !== 'string') return [];
   return value
     .trim()
-    .split(/\s+/)
-    .filter(Boolean)
-    .map(token => {
-      const match = token.match(/^(-?\d+(?:\.\d+)?)px$/);
-      if (!match) return NaN;
-      return Number(match[1]);
-    });
+    .match(/minmax\([^)]*\)|clamp\([^)]*\)|fit-content\([^)]*\)|repeat\([^)]*\)|[\S]+/g)
+    || [];
+}
+
+function parseTrackPixels(value) {
+  return tokenizeTracks(value).map(token => {
+    const minmaxMatch = token.match(/^minmax\(\s*(-?\d+(?:\.\d+)?)px\s*,/i);
+    if (minmaxMatch) return Number(minmaxMatch[1]);
+    const pxMatch = token.match(/^(-?\d+(?:\.\d+)?)px$/i);
+    if (pxMatch) return Number(pxMatch[1]);
+    return NaN;
+  });
 }
 
 function parseGapValue(value) {

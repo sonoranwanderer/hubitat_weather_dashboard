@@ -8168,7 +8168,7 @@ function createRenderer(options = {}) {
             .filter(col => typeof col === 'string' && col.length)
         : [];
       if (!columns.length) continue;
-      const track = normalizeTrackSize(entry?.height ?? entry?.rowHeight ?? entry?.size, trackUnit);
+      const track = normalizeRowTrackSize(entry?.height ?? entry?.rowHeight ?? entry?.size, trackUnit);
       for (let i = 0; i < repeat; i += 1) {
         areaLines.push(`"${columns.join(' ')}"`);
         rowTracks.push(track);
@@ -8203,6 +8203,25 @@ function createRenderer(options = {}) {
       if (/^\d*\.?\d+(?:px|rem|em|vh|vw|%)$/i.test(trimmed)) return trimmed.toLowerCase();
     }
     return defaultTrack;
+  }
+
+  function normalizeRowTrackSize(value, trackUnit = DEFAULT_TRACK_UNIT) {
+    const normalized = normalizeTrackSize(value, trackUnit);
+    if (typeof normalized !== 'string' || !normalized) {
+      return 'minmax(0, 1fr)';
+    }
+    if (/^minmax\(/i.test(normalized)) return normalized;
+    if (/^\d*\.?\d+fr$/i.test(normalized)) return normalized;
+    if (/^auto$/i.test(normalized)) return normalized;
+    if (/^fit-content\(/i.test(normalized)) return normalized;
+    if (/^clamp\(/i.test(normalized)) return normalized;
+    if (/^calc\(/i.test(normalized)) return normalized;
+    if (/^var\(/i.test(normalized)) return normalized;
+    if (/^-?\d*\.?\d+%$/i.test(normalized)) return normalized;
+    if (/^-?\d*\.?\d+(?:px|rem|em|vh|vw)$/i.test(normalized)) {
+      return `minmax(${normalized}, auto)`;
+    }
+    return normalized;
   }
 
   function sanitizeColumns(value, fallback, trackUnit = DEFAULT_TRACK_UNIT) {
