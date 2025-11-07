@@ -156,7 +156,7 @@ function createRenderer(options = {}) {
     gap: '14px',
     rows: [
       { columns: ['temp-wind', 'ambient'], height: 520 },
-      { columns: ['air', 'rain'], height: 210 },
+      { columns: ['air', 'rain'], height: 240 },
       { columns: ['solar', 'rain'], height: 220 },
       { columns: ['solar', 'pressure'], height: 180 }
     ]

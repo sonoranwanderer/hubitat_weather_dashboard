@@ -584,7 +584,7 @@ describe('Renderer scaling with host measurements', () => {
     const columnWidth = baseWidth / 2;
     const rowOneHeight = 520;
     const rowTwoTop = rowOneHeight + 14;
-    const rowTwoHeight = 210;
+    const rowTwoHeight = 240;
 
     tempCard.getBoundingClientRect = () => {
       const scaleValue = readScale();
