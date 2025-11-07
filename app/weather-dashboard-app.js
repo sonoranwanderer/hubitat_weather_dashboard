@@ -725,20 +725,26 @@
 
   function readRenderDimensions(root) {
     if (!root) return null;
-    let width = null;
-    let height = null;
+
+    let baseWidth = null;
+    let baseHeight = null;
+    let renderWidth = null;
+    let renderHeight = null;
 
     if (typeof global.getComputedStyle === 'function') {
       try {
         const computed = global.getComputedStyle(root);
-        width = parseCssPixels(computed.getPropertyValue('--wdash-render-width'))
-          ?? parseCssPixels(computed.getPropertyValue('--wdash-base-width'));
-        height = parseCssPixels(computed.getPropertyValue('--wdash-render-height'))
-          ?? parseCssPixels(computed.getPropertyValue('--wdash-base-height'));
+        baseWidth = parseCssPixels(computed.getPropertyValue('--wdash-base-width'));
+        baseHeight = parseCssPixels(computed.getPropertyValue('--wdash-base-height'));
+        renderWidth = parseCssPixels(computed.getPropertyValue('--wdash-render-width'));
+        renderHeight = parseCssPixels(computed.getPropertyValue('--wdash-render-height'));
       } catch (err) {
         /* ignore */
       }
     }
+
+    let width = Number.isFinite(baseWidth) && baseWidth > 0 ? baseWidth : renderWidth;
+    let height = Number.isFinite(baseHeight) && baseHeight > 0 ? baseHeight : renderHeight;
 
     if ((!Number.isFinite(width) || width <= 0 || !Number.isFinite(height) || height <= 0) &&
         typeof root.getBoundingClientRect === 'function') {
@@ -747,12 +753,18 @@
         const rectWidth = Number(rect?.width);
         if (Number.isFinite(rectWidth) && rectWidth > 0) {
           width = rectWidth;
+          if (!Number.isFinite(renderWidth)) {
+            renderWidth = rectWidth;
+          }
         }
       }
       if (!Number.isFinite(height) || height <= 0) {
         const rectHeight = Number(rect?.height);
         if (Number.isFinite(rectHeight) && rectHeight > 0) {
           height = rectHeight;
+          if (!Number.isFinite(renderHeight)) {
+            renderHeight = rectHeight;
+          }
         }
       }
     }
@@ -766,12 +778,18 @@
           const dashWidth = Number(dashRect?.width);
           if (Number.isFinite(dashWidth) && dashWidth > 0) {
             width = dashWidth;
+            if (!Number.isFinite(renderWidth)) {
+              renderWidth = dashWidth;
+            }
           }
         }
         if (!Number.isFinite(height) || height <= 0) {
           const dashHeight = Number(dashRect?.height);
           if (Number.isFinite(dashHeight) && dashHeight > 0) {
             height = dashHeight;
+            if (!Number.isFinite(renderHeight)) {
+              renderHeight = dashHeight;
+            }
           }
         }
       }
@@ -781,7 +799,14 @@
       return null;
     }
 
-    return { width, height };
+    return {
+      width,
+      height,
+      baseWidth: Number.isFinite(baseWidth) && baseWidth > 0 ? baseWidth : null,
+      baseHeight: Number.isFinite(baseHeight) && baseHeight > 0 ? baseHeight : null,
+      renderWidth: Number.isFinite(renderWidth) && renderWidth > 0 ? renderWidth : null,
+      renderHeight: Number.isFinite(renderHeight) && renderHeight > 0 ? renderHeight : null
+    };
   }
 
   function clearPreviewDimensions() {
@@ -903,8 +928,15 @@
     const dimensions = readRenderDimensions(root);
     if (!dimensions) return;
 
-    const width = Math.max(1, Math.round(dimensions.width));
-    const height = Math.max(1, Math.round(dimensions.height));
+    const baseWidth = Number.isFinite(dimensions.baseWidth) && dimensions.baseWidth > 0
+      ? dimensions.baseWidth
+      : dimensions.width;
+    const baseHeight = Number.isFinite(dimensions.baseHeight) && dimensions.baseHeight > 0
+      ? dimensions.baseHeight
+      : dimensions.height;
+
+    const width = Math.max(1, Math.round(baseWidth));
+    const height = Math.max(1, Math.round(baseHeight));
 
     if (previewResizeState.lastWidth === width && previewResizeState.lastHeight === height) {
       return;
@@ -916,16 +948,21 @@
     const widthPx = `${width}px`;
     const heightPx = `${height}px`;
 
+    if (host) {
+      host.style.setProperty('--wdash-preview-width', widthPx);
+      host.style.setProperty('--wdash-preview-height', heightPx);
+    }
+
     if (displayTile) {
       displayTile.style.maxWidth = widthPx;
-      displayTile.style.minWidth = '0';
-      displayTile.style.removeProperty('height');
-      displayTile.style.removeProperty('minHeight');
+      displayTile.style.minWidth = widthPx;
+      displayTile.style.height = heightPx;
+      displayTile.style.minHeight = heightPx;
     }
     if (displayPrimary) {
       displayPrimary.style.maxWidth = widthPx;
-      displayPrimary.style.removeProperty('height');
-      displayPrimary.style.removeProperty('minHeight');
+      displayPrimary.style.height = heightPx;
+      displayPrimary.style.minHeight = heightPx;
     }
     if (status) {
       status.style.maxWidth = widthPx;

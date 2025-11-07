@@ -825,6 +825,7 @@
             setupAirQualityRotation(payload);
             setupInteractiveComponents(grid);
             setupHubClock(payload);
+            applyScale();
             // observe ambient container for size changes to keep ring geometry synchronized
             const ambientContainer = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-ambient');
             if (ambientContainer && typeof ResizeObserver !== 'undefined') {
