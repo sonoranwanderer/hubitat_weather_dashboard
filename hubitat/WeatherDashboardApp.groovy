@@ -58,13 +58,15 @@ def landingPage() {
             if (embedUrl) {
                 String encodedSrc = htmlAttributeEncode(embedUrl)
                 String iframeId = 'weather-dashboard-preview-frame'
-                paragraph "<iframe id=\"${iframeId}\" src=\"${encodedSrc}\" style=\"width: 100%; max-width: 1240px; height: 930px; border: 0; display: block; margin: 0 auto; border-radius: 18px; box-shadow: 0 18px 36px rgba(0,0,0,0.35);\" sandbox=\"allow-same-origin allow-scripts allow-forms allow-popups\"></iframe>"
+                paragraph "<iframe id=\"${iframeId}\" src=\"${encodedSrc}\" style=\"width: 100%; max-width: 1240px; height: 1230px; border: 0; display: block; margin: 0 auto; border-radius: 18px; box-shadow: 0 18px 36px rgba(0,0,0,0.35);\" sandbox=\"allow-same-origin allow-scripts allow-forms allow-popups\"></iframe>"
                 paragraph '''<script type="text/javascript">
 (function () {
   var FRAME_ID = 'weather-dashboard-preview-frame';
+  var BASE_WIDTH = 1220;
+  var BASE_HEIGHT = 1230;
   var MIN_HEIGHT = 600;
   var MAX_HEIGHT = 1500;
-  var DEFAULT_HEIGHT = 930;
+  var DEFAULT_HEIGHT = 1230;
   var lastApplied = 0;
 
   function clampHeight(value) {
@@ -80,7 +82,7 @@ def landingPage() {
     if (!frame) return null;
     var width = frame.clientWidth || frame.offsetWidth;
     if (!isFinite(width) || width <= 0) return null;
-    var height = Math.round(width * 3 / 4);
+    var height = Math.round(width * BASE_HEIGHT / BASE_WIDTH);
     if (height < MIN_HEIGHT) height = MIN_HEIGHT;
     if (height > MAX_HEIGHT) height = MAX_HEIGHT;
     return height;

@@ -13,7 +13,7 @@
   const MIN_POLL_INTERVAL_MS = 5000;
   const DEFAULT_MAX_BACKOFF_MS = 60000;
   const DEFAULT_RENDER_BASE_WIDTH = 1220;
-  const DEFAULT_RENDER_BASE_HEIGHT = 1200;
+  const DEFAULT_RENDER_BASE_HEIGHT = 1230;
 
   const state = {
     renderer: null,
