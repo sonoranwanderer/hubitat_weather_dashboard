@@ -58,15 +58,15 @@ def landingPage() {
             if (embedUrl) {
                 String encodedSrc = htmlAttributeEncode(embedUrl)
                 String iframeId = 'weather-dashboard-preview-frame'
-                paragraph "<iframe id=\"${iframeId}\" src=\"${encodedSrc}\" style=\"width: 100%; max-width: 1240px; height: 1230px; border: 0; display: block; margin: 0 auto; border-radius: 18px; box-shadow: 0 18px 36px rgba(0,0,0,0.35);\" sandbox=\"allow-same-origin allow-scripts allow-forms allow-popups\"></iframe>"
+                paragraph "<iframe id=\"${iframeId}\" src=\"${encodedSrc}\" style=\"width: 100%; max-width: 1240px; height: 1240px; border: 0; display: block; margin: 0 auto; border-radius: 18px; box-shadow: 0 18px 36px rgba(0,0,0,0.35);\" sandbox=\"allow-same-origin allow-scripts allow-forms allow-popups\"></iframe>"
                 paragraph '''<script type="text/javascript">
 (function () {
   var FRAME_ID = 'weather-dashboard-preview-frame';
   var BASE_WIDTH = 1220;
-  var BASE_HEIGHT = 1230;
+  var BASE_HEIGHT = 1240;
   var MIN_HEIGHT = 600;
   var MAX_HEIGHT = 1500;
-  var DEFAULT_HEIGHT = 1230;
+  var DEFAULT_HEIGHT = 1240;
   var lastApplied = 0;
 
   function clampHeight(value) {

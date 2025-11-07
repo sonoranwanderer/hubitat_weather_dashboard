@@ -656,6 +656,9 @@ describe('Renderer scaling with host measurements', () => {
 
     const frameGap = parsePx(dash.style.getPropertyValue('--wdash-frame-gap-desktop')) || 14;
     const gap = parsePx(dash.style.getPropertyValue('--wdash-grid-gap-desktop')) || 14;
+    const baselineIntrinsic = baselineRows.reduce((sum, value) => sum + value, 0)
+      + gap * Math.max(0, baselineRows.length - 1)
+      + frameGap * 2;
     const contentWidth = baseWidth - frameGap * 2;
     const columnWidth = (contentWidth - gap) / 2;
     const columnLeft = frameGap;
@@ -799,7 +802,8 @@ describe('Renderer scaling with host measurements', () => {
 
     const updatedBaseHeight = hooks.layoutState.baseDimensions.desktop.height;
     const totalGrowth = (expectedRow1Height - baselineRows[1]) + (expectedRow2Height - baselineRows[2]);
-    expect(Math.abs(updatedBaseHeight - (baseHeight + totalGrowth)) < 1e-6).toBe(true);
+    const expectedBaseHeight = baselineIntrinsic + totalGrowth;
+    expect(Math.abs(updatedBaseHeight - expectedBaseHeight) < 1e-6).toBe(true);
 
     const { scale } = readScaleState();
     const expectedScale = Math.min(
@@ -942,7 +946,11 @@ describe('Renderer scaling with host measurements', () => {
       expect(Math.abs(dynamicRows[1] - (baselineRows[1] + extraHeight)) < 1e-6).toBe(true);
 
       const updatedBaseHeight = hooks.layoutState.baseDimensions.desktop.height;
-      expect(Math.abs(updatedBaseHeight - (baseHeight + extraHeight)) < 1e-6).toBe(true);
+      const expectedBaseHeight = baselineRows.reduce((sum, value) => sum + value, 0)
+        + gap * Math.max(0, baselineRows.length - 1)
+        + frameGap * 2
+        + extraHeight;
+      expect(Math.abs(updatedBaseHeight - expectedBaseHeight) < 1e-6).toBe(true);
 
       const diagnostics = hooks.captureScaleDiagnostics();
       expect(Math.abs((diagnostics.rows?.intrinsic?.desktop?.[1] || 0) - (baselineRows[1] + extraHeight)) < 1e-6).toBe(true);

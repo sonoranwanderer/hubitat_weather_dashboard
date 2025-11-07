@@ -116,7 +116,7 @@
         const INIT_RETRY_DELAY = 250;
         const DATA_REFRESH_INTERVAL = 5000;
         const DEFAULT_BASE_WIDTH = 1220;
-        const DEFAULT_BASE_HEIGHT = 1230;
+        const DEFAULT_BASE_HEIGHT = 1240;
         const BREAKPOINTS = ['desktop', 'tablet', 'mobile'];
         const LAYOUT_STYLE_ID = 'weather-dashboard-layout-style';
         const DEFAULT_TRACK_UNIT = 'px';
