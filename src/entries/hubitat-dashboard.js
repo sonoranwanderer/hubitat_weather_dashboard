@@ -1,4 +1,8 @@
-const { createRenderer, createLegacyWeatherDashboardRenderer } = require('../render/index.js');
+const {
+  createRenderer,
+  createLegacyWeatherDashboardRenderer,
+  baseStyles
+} = require('../render/index.js');
 
 (function bootstrapWeatherDashboard(global) {
   if (!global) return null;
@@ -32,9 +36,26 @@ const { createRenderer, createLegacyWeatherDashboardRenderer } = require('../ren
   );
 
   if (typeof factory === 'function') {
+    const weatherDashboardModule = global.weatherDashboard || {};
+
+    if (factory === createRenderer) {
+      const rendererModule = {
+        createRenderer: factory,
+        baseStyles
+      };
+      global.weatherDashboard = Object.assign(weatherDashboardModule, rendererModule, {
+        __rendererFactory: factory
+      });
+      if (typeof module !== 'undefined' && module.exports) {
+        module.exports = rendererModule;
+      }
+      return rendererModule;
+    }
+
     const renderer = factory({ window: global, document: global.document, globalThis: global });
-    global.weatherDashboard = global.weatherDashboard || {};
-    global.weatherDashboard.__rendererFactory = factory;
+    global.weatherDashboard = Object.assign(weatherDashboardModule, {
+      __rendererFactory: factory
+    });
     if (typeof module !== 'undefined' && module.exports) {
       module.exports = renderer;
     }
