@@ -336,7 +336,8 @@
           lastDiagnostics: null,
           lastBaseClampSignature: null,
           baseMinimum: { width: DEFAULT_BASE_WIDTH, height: DEFAULT_BASE_HEIGHT },
-          baseClampAdjustments: []
+          baseClampAdjustments: [],
+          lastCollisionSignature: null
         };
       
         const TEMP_COLORS = [
@@ -1265,7 +1266,8 @@
             base: diag.base ? { ...diag.base } : null,
             container: diag.container ? { ...diag.container } : null,
             sources: cloneSources(diag.sources),
-            inline: cloneInlineDiagnostics(diag.inline)
+            inline: cloneInlineDiagnostics(diag.inline),
+            layout: cloneLayoutDiagnostics(diag.layout)
           };
         }
       
@@ -1324,6 +1326,305 @@
             root: cloneInlineDiagnosticsEntry(inline.root),
             frame: cloneInlineDiagnosticsEntry(inline.frame),
             dash: cloneInlineDiagnosticsEntry(inline.dash)
+          };
+        }
+      
+        function normalizeRectForDiagnostics(rect) {
+          if (!rect || typeof rect !== 'object') return null;
+          const keys = ['top', 'right', 'bottom', 'left', 'width', 'height'];
+          const normalized = {};
+          let hasValue = false;
+          for (const key of keys) {
+            const raw = rect[key];
+            const numeric = Number(raw);
+            if (Number.isFinite(numeric)) {
+              normalized[key] = numeric;
+              hasValue = true;
+            } else {
+              normalized[key] = null;
+            }
+          }
+          return hasValue ? normalized : null;
+        }
+      
+        function describeCardForDiagnostics(card) {
+          if (!card || typeof card !== 'object') return 'card';
+          if (card.dataset) {
+            const datasetKey = card.dataset.card || card.dataset.cardKey;
+            if (datasetKey) {
+              return String(datasetKey);
+            }
+          }
+          if (typeof card.className === 'string' && card.className) {
+            const match = card.className.match(/wdash-card--([a-z0-9-]+)/i);
+            if (match && match[1]) {
+              return match[1];
+            }
+          }
+          if (typeof card.getAttribute === 'function') {
+            const attr = card.getAttribute('data-card');
+            if (attr) {
+              return String(attr);
+            }
+            const area = card.getAttribute('data-grid-area');
+            if (area) {
+              return String(area);
+            }
+            const aria = card.getAttribute('aria-label');
+            if (aria) {
+              return String(aria);
+            }
+          }
+          if (card.id) {
+            return `#${card.id}`;
+          }
+          const tag = card.tagName ? card.tagName.toLowerCase() : 'card';
+          return tag;
+        }
+      
+        function getCardGridArea(card) {
+          if (!card || typeof card !== 'object') return null;
+          if (card.style && typeof card.style.gridArea === 'string' && card.style.gridArea.trim()) {
+            return card.style.gridArea.trim();
+          }
+          if (typeof card.getAttribute === 'function') {
+            const explicit = card.getAttribute('data-grid-area');
+            if (explicit) {
+              return String(explicit);
+            }
+          }
+          if (typeof window !== 'undefined' && typeof window.getComputedStyle === 'function') {
+            try {
+              const computed = window.getComputedStyle(card);
+              if (computed) {
+                const area = computed.gridArea;
+                if (area && area !== 'auto / auto / auto / auto') {
+                  return area;
+                }
+              }
+            } catch (err) {
+              /* ignore */
+            }
+          }
+          return null;
+        }
+      
+        function collectLayoutCollisionDiagnostics(root, context = {}) {
+          if (!root) return null;
+          const frame = context.frame || root.querySelector('.wdash-frame');
+          const dash = context.dash || (frame ? frame.querySelector('.wdash') : root.querySelector('.wdash'));
+          if (!dash) return null;
+      
+          const frameRect = frame ? safeGetElementRect(frame) : null;
+          const dashRect = safeGetElementRect(dash);
+          const boundaryRect = frameRect || dashRect;
+          const tolerance = 0.5;
+      
+          const cardNodes = Array.from(dash.querySelectorAll('.wdash-card'));
+          const cardEntries = [];
+          for (const card of cardNodes) {
+            const rect = safeGetElementRect(card);
+            if (!rect) continue;
+            cardEntries.push({
+              key: describeCardForDiagnostics(card),
+              area: getCardGridArea(card),
+              rect
+            });
+          }
+      
+          const collisions = [];
+          for (let i = 0; i < cardEntries.length; i += 1) {
+            for (let j = i + 1; j < cardEntries.length; j += 1) {
+              const a = cardEntries[i];
+              const b = cardEntries[j];
+              if (!a.rect || !b.rect) continue;
+              const overlapLeft = Math.max(a.rect.left, b.rect.left);
+              const overlapRight = Math.min(a.rect.right, b.rect.right);
+              const overlapTop = Math.max(a.rect.top, b.rect.top);
+              const overlapBottom = Math.min(a.rect.bottom, b.rect.bottom);
+              const overlapWidth = overlapRight - overlapLeft;
+              const overlapHeight = overlapBottom - overlapTop;
+              if (overlapWidth > tolerance && overlapHeight > tolerance) {
+                collisions.push({
+                  cards: [a.key, b.key],
+                  overlap: {
+                    top: overlapTop,
+                    right: overlapRight,
+                    bottom: overlapBottom,
+                    left: overlapLeft,
+                    width: overlapWidth,
+                    height: overlapHeight
+                  },
+                  area: overlapWidth * overlapHeight
+                });
+              }
+            }
+          }
+      
+          const overflowCards = [];
+          if (boundaryRect) {
+            for (const entry of cardEntries) {
+              const edges = { top: null, right: null, bottom: null, left: null };
+              const topOverflow = boundaryRect.top - entry.rect.top;
+              if (topOverflow > tolerance) edges.top = topOverflow;
+              const leftOverflow = boundaryRect.left - entry.rect.left;
+              if (leftOverflow > tolerance) edges.left = leftOverflow;
+              const bottomOverflow = entry.rect.bottom - boundaryRect.bottom;
+              if (bottomOverflow > tolerance) edges.bottom = bottomOverflow;
+              const rightOverflow = entry.rect.right - boundaryRect.right;
+              if (rightOverflow > tolerance) edges.right = rightOverflow;
+              if (edges.top || edges.right || edges.bottom || edges.left) {
+                overflowCards.push({
+                  key: entry.key,
+                  area: entry.area,
+                  edges
+                });
+              }
+            }
+          }
+      
+          return {
+            summary: {
+              hasCollisions: collisions.length > 0,
+              hasOverflow: overflowCards.length > 0
+            },
+            frame: normalizeRectForDiagnostics(frameRect),
+            dash: normalizeRectForDiagnostics(dashRect),
+            cards: cardEntries.map(entry => ({
+              key: entry.key,
+              area: entry.area,
+              rect: normalizeRectForDiagnostics(entry.rect)
+            })),
+            collisions: collisions.map(entry => ({
+              cards: entry.cards.slice(),
+              overlap: normalizeRectForDiagnostics(entry.overlap),
+              area: Number.isFinite(entry.area) ? entry.area : null
+            })),
+            overflow: overflowCards.length
+              ? {
+                  boundary: frame ? 'frame' : 'dash',
+                  cards: overflowCards.map(card => ({
+                    key: card.key,
+                    area: card.area,
+                    edges: {
+                      top: Number.isFinite(card.edges.top) ? card.edges.top : null,
+                      right: Number.isFinite(card.edges.right) ? card.edges.right : null,
+                      bottom: Number.isFinite(card.edges.bottom) ? card.edges.bottom : null,
+                      left: Number.isFinite(card.edges.left) ? card.edges.left : null
+                    }
+                  }))
+                }
+              : null
+          };
+        }
+      
+        function emitLayoutCollisionWarnings(layoutDiagnostics) {
+          if (!layoutDiagnostics || typeof layoutDiagnostics !== 'object') {
+            layoutState.lastCollisionSignature = null;
+            return;
+          }
+          const collisions = Array.isArray(layoutDiagnostics.collisions) ? layoutDiagnostics.collisions : [];
+          const overflow = layoutDiagnostics.overflow && Array.isArray(layoutDiagnostics.overflow.cards)
+            ? layoutDiagnostics.overflow.cards
+            : [];
+          if (!collisions.length && !overflow.length) {
+            layoutState.lastCollisionSignature = null;
+            return;
+          }
+          const signatureParts = [];
+          collisions.forEach(entry => {
+            if (!entry) return;
+            const participants = Array.isArray(entry.cards) ? entry.cards.slice().sort().join('&') : 'unknown';
+            const width = Number.isFinite(entry.overlap?.width) ? Math.round(entry.overlap.width) : 'na';
+            const height = Number.isFinite(entry.overlap?.height) ? Math.round(entry.overlap.height) : 'na';
+            signatureParts.push(`collision:${participants}:${width}x${height}`);
+          });
+          overflow.forEach(card => {
+            if (!card) return;
+            const edgeSig = ['top', 'right', 'bottom', 'left']
+              .map(edge => {
+                const value = card.edges ? card.edges[edge] : null;
+                return Number.isFinite(value) ? `${edge}:${Math.round(value)}` : null;
+              })
+              .filter(Boolean)
+              .join(',');
+            signatureParts.push(`overflow:${card.key}:${edgeSig}`);
+          });
+          const signature = signatureParts.sort().join('|');
+          if (layoutState.lastCollisionSignature === signature) {
+            return;
+          }
+          layoutState.lastCollisionSignature = signature;
+          const logger = typeof console !== 'undefined' ? console : null;
+          if (!logger || typeof logger.warn !== 'function') return;
+          if (collisions.length) {
+            logger.warn('[WeatherDashboard] Detected overlapping dashboard cards.', { collisions });
+          }
+          if (overflow.length) {
+            logger.warn('[WeatherDashboard] Dashboard content exceeds the available frame.', {
+              overflow,
+              boundary: layoutDiagnostics.overflow?.boundary || null
+            });
+          }
+        }
+      
+        function cloneLayoutDiagnostics(layout) {
+          if (!layout || typeof layout !== 'object') return null;
+          const cloneRect = rect => {
+            if (!rect || typeof rect !== 'object') return null;
+            const clone = {};
+            ['top', 'right', 'bottom', 'left', 'width', 'height'].forEach(key => {
+              const value = Number(rect[key]);
+              clone[key] = Number.isFinite(value) ? value : null;
+            });
+            return clone;
+          };
+          const cloneEdges = edges => {
+            if (!edges || typeof edges !== 'object') return null;
+            const clone = {};
+            ['top', 'right', 'bottom', 'left'].forEach(edge => {
+              const value = Number(edges[edge]);
+              clone[edge] = Number.isFinite(value) ? value : null;
+            });
+            return clone;
+          };
+          return {
+            summary: layout.summary
+              ? {
+                  hasCollisions: Boolean(layout.summary.hasCollisions),
+                  hasOverflow: Boolean(layout.summary.hasOverflow)
+                }
+              : { hasCollisions: false, hasOverflow: false },
+            frame: cloneRect(layout.frame),
+            dash: cloneRect(layout.dash),
+            cards: Array.isArray(layout.cards)
+              ? layout.cards.map(card => ({
+                  key: card?.key != null ? String(card.key) : null,
+                  area: card?.area != null ? String(card.area) : null,
+                  rect: cloneRect(card?.rect)
+                }))
+              : [],
+            collisions: Array.isArray(layout.collisions)
+              ? layout.collisions.map(entry => ({
+                  cards: Array.isArray(entry?.cards)
+                    ? entry.cards.map(card => (card != null ? String(card) : null))
+                    : [],
+                  overlap: cloneRect(entry?.overlap),
+                  area: Number.isFinite(entry?.area) ? Number(entry.area) : null
+                }))
+              : [],
+            overflow: layout.overflow && typeof layout.overflow === 'object'
+              ? {
+                  boundary: layout.overflow.boundary != null ? String(layout.overflow.boundary) : null,
+                  cards: Array.isArray(layout.overflow.cards)
+                    ? layout.overflow.cards.map(card => ({
+                        key: card?.key != null ? String(card.key) : null,
+                        area: card?.area != null ? String(card.area) : null,
+                        edges: cloneEdges(card?.edges)
+                      }))
+                    : []
+                }
+              : null
           };
         }
       
@@ -1386,7 +1687,8 @@
                 height: storedHeight
               }
             },
-            inline: cloneInlineDiagnostics(context.inline)
+            inline: cloneInlineDiagnostics(context.inline),
+            layout: cloneLayoutDiagnostics(context.layout)
           };
         }
       
@@ -2335,6 +2637,7 @@
           }
       
           if (!Number.isFinite(width) || !Number.isFinite(height)) {
+            emitLayoutCollisionWarnings(null);
             notifyScaleDiagnostics(buildScaleDiagnosticsContext({
               width: Number.isFinite(width) ? width : null,
               height: Number.isFinite(height) ? height : null,
@@ -2444,6 +2747,9 @@
             };
           }
       
+          const layoutDiagnostics = collectLayoutCollisionDiagnostics(root, { frame, dash });
+          emitLayoutCollisionWarnings(layoutDiagnostics);
+      
           scaleState.containerWidth = width;
           scaleState.containerHeight = height;
           scaleState.lastScale = scale;
@@ -2472,7 +2778,8 @@
             minScale: MIN_SCALE,
             measurement: measurementOverride,
             warning: warningType,
-            inline: inlineSnapshot
+            inline: inlineSnapshot,
+            layout: layoutDiagnostics
           }));
         }
       

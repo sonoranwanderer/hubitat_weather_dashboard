@@ -372,7 +372,9 @@
       return;
     }
 
-    overlay.dataset.warning = diagnostics.warning ? 'true' : 'false';
+    const layout = diagnostics.layout || null;
+    const layoutIssues = Boolean(layout?.summary?.hasCollisions || layout?.summary?.hasOverflow);
+    overlay.dataset.warning = diagnostics.warning || layoutIssues ? 'true' : 'false';
 
     const lines = [];
     lines.push(`Scale ${formatScaleNumber(diagnostics.scale?.applied)} (raw ${formatScaleNumber(diagnostics.scale?.raw)}, min ${formatScaleNumber(diagnostics.scale?.min)})`);
@@ -419,7 +421,56 @@
       }
     }
 
-    lines.push(diagnostics.warning ? `Warning ${diagnostics.warning}` : 'Warning none');
+    if (layout) {
+      const cardCount = Array.isArray(layout.cards) ? layout.cards.length : 0;
+      lines.push(`Cards measured ${cardCount}`);
+      const collisions = Array.isArray(layout.collisions) ? layout.collisions : [];
+      if (collisions.length) {
+        collisions.forEach(entry => {
+          if (!entry) return;
+          const participants = Array.isArray(entry.cards) && entry.cards.length
+            ? entry.cards.filter(Boolean).join(' ↔ ')
+            : 'cards';
+          const overlap = entry.overlap || {};
+          const overlapWidth = formatPixelSize(overlap.width);
+          const overlapHeight = formatPixelSize(overlap.height);
+          lines.push(`Collision ${participants} (${overlapWidth} × ${overlapHeight})`);
+        });
+      } else {
+        lines.push('Collisions none');
+      }
+      const overflowCards = layout.overflow && Array.isArray(layout.overflow.cards)
+        ? layout.overflow.cards
+        : [];
+      if (overflowCards.length) {
+        const boundary = layout.overflow?.boundary || 'frame';
+        overflowCards.forEach(entry => {
+          if (!entry) return;
+          const edges = [];
+          const edgeValues = entry.edges || {};
+          ['top', 'right', 'bottom', 'left'].forEach(edge => {
+            if (Number.isFinite(edgeValues[edge])) {
+              edges.push(`${edge} ${formatPixelSize(edgeValues[edge])}`);
+            }
+          });
+          const edgeLabel = edges.length ? edges.join(', ') : 'n/a';
+          const keyLabel = entry.key || entry.area || 'card';
+          lines.push(`Overflow ${keyLabel} @ ${boundary} (${edgeLabel})`);
+        });
+      } else {
+        lines.push('Overflow none');
+      }
+    } else {
+      lines.push('Layout diagnostics unavailable');
+    }
+
+    if (diagnostics.warning) {
+      lines.push(`Warning ${diagnostics.warning}`);
+    } else if (layoutIssues) {
+      lines.push('Warning layout-issues');
+    } else {
+      lines.push('Warning none');
+    }
 
     lines.forEach(text => {
       if (!text) return;

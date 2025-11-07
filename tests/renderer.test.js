@@ -5,6 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 const { createRenderer } = require('../src/render');
+const { applyBoxMetrics } = require('./support/dashboard-test-utils');
 
 
 describe('Weather Dashboard Renderer', () => {
@@ -463,5 +464,81 @@ describe('Renderer scaling with host measurements', () => {
       onMeasure({ width: 640, height: 640 });
     }
     expect(updates.length).toBe(previousCount);
+  });
+
+  it('reports layout collisions and overflow in scale diagnostics', () => {
+    expect(typeof onMeasure).toBe('function');
+
+    const baseWidth = hooks.layoutState.baseDimensions.desktop.width;
+    const baseHeight = hooks.layoutState.baseDimensions.desktop.height;
+
+    currentMeasurement = { width: baseWidth, height: baseHeight };
+    if (onMeasure) {
+      onMeasure({ width: baseWidth, height: baseHeight });
+    }
+
+    applyBoxMetrics(root, { top: 0, left: 0, width: baseWidth, height: baseHeight });
+    const frame = root.querySelector('.wdash-frame');
+    const dash = root.querySelector('.wdash');
+    applyBoxMetrics(frame, { top: 0, left: 0, width: baseWidth, height: baseHeight });
+    applyBoxMetrics(dash, { top: 0, left: 0, width: baseWidth, height: baseHeight });
+
+    const grid = dash.querySelector('.wdash-grid');
+    grid.dataset.empty = 'false';
+    grid.innerHTML = `
+      <section class="wdash-card wdash-card--temp-wind"></section>
+      <section class="wdash-card wdash-card--ambient"></section>
+      <section class="wdash-card wdash-card--rain"></section>
+    `;
+
+    const cards = Array.from(grid.querySelectorAll('.wdash-card'));
+    const tempCard = cards[0];
+    const ambientCard = cards[1];
+    const rainCard = cards[2];
+
+    applyBoxMetrics(tempCard, { top: 0, left: 0, width: baseWidth / 2, height: 520 });
+    applyBoxMetrics(ambientCard, { top: 0, left: baseWidth / 2, width: baseWidth / 2, height: 520 });
+    applyBoxMetrics(rainCard, { top: 520, left: 0, width: baseWidth / 2, height: 220 });
+
+    if (onMeasure) {
+      onMeasure({ width: baseWidth, height: baseHeight });
+    }
+
+    const baseline = hooks.captureScaleDiagnostics();
+    expect(baseline.layout).not.toBeNull();
+    expect(baseline.layout.summary.hasCollisions).toBe(false);
+    expect(baseline.layout.summary.hasOverflow).toBe(false);
+
+    const originalWarn = console.warn;
+    const warnCalls = [];
+    console.warn = (...args) => warnCalls.push(args);
+
+    applyBoxMetrics(rainCard, { top: 480, left: 0, width: baseWidth / 2, height: 260 });
+    if (onMeasure) {
+      onMeasure({ width: baseWidth, height: baseHeight });
+    }
+
+    const collisionDiag = hooks.captureScaleDiagnostics();
+    expect(collisionDiag.layout.summary.hasCollisions).toBe(true);
+    expect(Array.isArray(collisionDiag.layout.collisions)).toBe(true);
+    const collisionParticipants = collisionDiag.layout.collisions
+      .reduce((acc, entry) => acc.concat(entry.cards || []), []);
+    expect(collisionParticipants.includes('temp-wind')).toBe(true);
+    expect(collisionParticipants.includes('rain')).toBe(true);
+
+    applyBoxMetrics(ambientCard, { top: 0, left: baseWidth - 40, width: baseWidth / 2, height: 520 });
+    if (onMeasure) {
+      onMeasure({ width: baseWidth, height: baseHeight });
+    }
+
+    const overflowDiag = hooks.captureScaleDiagnostics();
+    expect(overflowDiag.layout.summary.hasOverflow).toBe(true);
+    const overflowKeys = overflowDiag.layout.overflow.cards.map(entry => entry.key || entry.area);
+    expect(overflowKeys.includes('ambient')).toBe(true);
+
+    expect(warnCalls.some(call => String(call[0]).includes('overlapping dashboard cards'))).toBe(true);
+    expect(warnCalls.some(call => String(call[0]).includes('content exceeds the available frame'))).toBe(true);
+
+    console.warn = originalWarn;
   });
 });
