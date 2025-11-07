@@ -1981,10 +1981,10 @@
             cardEntries.push({
               key: describeCardForDiagnostics(card),
               area: getCardGridArea(card),
-              rect
+              rect,
+              element: card
             });
           }
-      
           const collisions = [];
           for (let i = 0; i < cardEntries.length; i += 1) {
             for (let j = i + 1; j < cardEntries.length; j += 1) {
@@ -2046,7 +2046,8 @@
             cards: cardEntries.map(entry => ({
               key: entry.key,
               area: entry.area,
-              rect: normalizeRectForDiagnostics(entry.rect)
+              rect: normalizeRectForDiagnostics(entry.rect),
+              element: entry.element
             })),
             collisions: collisions.map(entry => ({
               cards: entry.cards.slice(),
@@ -2094,6 +2095,55 @@
           if (!spanMap || spanMap.size === 0) {
             return false;
           }
+          const isElement = value => {
+            if (!value || typeof value !== 'object') return false;
+            if (value.nodeType === 1) return true;
+            if (typeof value.querySelector === 'function' || typeof value.querySelectorAll === 'function') {
+              return true;
+            }
+            return false;
+          };
+          const rootEl = isElement(options.root) ? options.root : null;
+          const dashEl = isElement(options.dash)
+            ? options.dash
+            : rootEl && typeof rootEl.querySelector === 'function'
+              ? rootEl.querySelector('.wdash')
+              : typeof document !== 'undefined' && typeof document.querySelector === 'function'
+                ? document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash')
+                : null;
+          const findCardElement = cardKey => {
+            if (!cardKey) return null;
+            const selector = '.wdash-card--' + cardKey;
+            if (dashEl && typeof dashEl.querySelector === 'function') {
+              const withinDash = dashEl.querySelector(selector);
+              if (isElement(withinDash)) return withinDash;
+            }
+            if (rootEl && typeof rootEl.querySelector === 'function') {
+              const withinRoot = rootEl.querySelector(selector);
+              if (isElement(withinRoot)) return withinRoot;
+            }
+            if (typeof document !== 'undefined' && typeof document.querySelector === 'function') {
+              const fromDocument = document.querySelector('#' + DISPLAY_TILE_ID + ' ' + selector);
+              if (isElement(fromDocument)) return fromDocument;
+            }
+            const matchByDataset = scope => {
+              if (!scope || typeof scope.querySelectorAll !== 'function') return null;
+              const candidates = scope.querySelectorAll('.wdash-card');
+              for (const candidate of candidates) {
+                if (!isElement(candidate)) continue;
+                const dataKey = candidate.dataset ? (candidate.dataset.card || candidate.dataset.cardKey) : null;
+                if (!dataKey) continue;
+                const normalized = normalizeAreaToken(String(dataKey));
+                if (normalized === cardKey) {
+                  return candidate;
+                }
+              }
+              return null;
+            };
+            const datasetMatch = matchByDataset(dashEl) || matchByDataset(rootEl);
+            if (datasetMatch) return datasetMatch;
+            return null;
+          };
           const cards = Array.isArray(layoutDiagnostics.cards) ? layoutDiagnostics.cards : [];
           if (!cards.length) {
             return false;
@@ -2108,10 +2158,26 @@
             if (!card || !card.rect) return;
             const rawHeight = Number(card.rect.height);
             if (!Number.isFinite(rawHeight) || rawHeight <= 0) return;
-            const intrinsicHeight = rawHeight / scaleValue;
-            if (!Number.isFinite(intrinsicHeight) || intrinsicHeight <= 0) return;
+            let intrinsicHeight = rawHeight / scaleValue;
+            if (!Number.isFinite(intrinsicHeight) || intrinsicHeight <= 0) intrinsicHeight = null;
             const key = card.key != null ? normalizeAreaToken(String(card.key)) : null;
             if (!key) return;
+            const element = isElement(card.element) ? card.element : findCardElement(key);
+            if (element) {
+              const scrollHeight = sanitizePositiveNumber(element.scrollHeight);
+              if (Number.isFinite(scrollHeight) && scrollHeight > (intrinsicHeight ?? 0)) {
+                intrinsicHeight = scrollHeight;
+              }
+              const clientHeight = sanitizePositiveNumber(element.clientHeight);
+              if (Number.isFinite(clientHeight) && clientHeight > (intrinsicHeight ?? 0)) {
+                intrinsicHeight = clientHeight;
+              }
+              const offsetHeight = sanitizePositiveNumber(element.offsetHeight);
+              if (Number.isFinite(offsetHeight) && offsetHeight > (intrinsicHeight ?? 0)) {
+                intrinsicHeight = offsetHeight;
+              }
+            }
+            if (!Number.isFinite(intrinsicHeight) || intrinsicHeight <= 0) return;
             const span = spanMap.get(key);
             if (!span || !Number.isInteger(span.start) || !Number.isInteger(span.end)) return;
             const start = Math.max(0, span.start);
@@ -2309,6 +2375,7 @@
           const warning = context.warning || null;
           const measurement = sanitizeDiagnosticsMeasurement(context.measurement);
           const adjustments = Array.isArray(context.adjustments) ? context.adjustments : [];
+          const layout = cloneLayoutDiagnostics(context.layout);
           const appliedScale = Number.isFinite(context.scale) ? context.scale : null;
           const rawScale = Number.isFinite(context.rawScale) ? context.rawScale : null;
           const minScale = Number.isFinite(context.minScale) ? context.minScale : null;
@@ -3569,7 +3636,12 @@
             inlineSnapshot = applied.inline;
             layoutDiagnostics = collectLayoutCollisionDiagnostics(root, { frame, dash });
       
-            if (maybeRecordIntrinsicRowHeights(layoutDiagnostics, { scale: adjustedScale })) {
+            if (maybeRecordIntrinsicRowHeights(layoutDiagnostics, {
+              scale: adjustedScale,
+              root,
+              dash,
+              frame
+            })) {
               return;
             }
       

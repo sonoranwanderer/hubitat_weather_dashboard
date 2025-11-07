@@ -826,4 +826,134 @@ describe('Renderer scaling with host measurements', () => {
       expect(Math.abs((rowTwoAdjustment.applied || 0) - expectedRow2Height) < 1e-6).toBe(true);
     }
   });
+
+  it('uses card scroll height overflow to grow layout rows', () => {
+    expect(typeof onMeasure).toBe('function');
+
+    const dash = content.querySelector('.wdash');
+    const frame = root.querySelector('.wdash-frame');
+    const grid = dash.querySelector('.wdash-grid');
+
+    const baseWidth = hooks.layoutState.baseDimensions.desktop.width;
+    const baseHeight = hooks.layoutState.baseDimensions.desktop.height;
+    const baselineRows = hooks.layoutState.rowHeights.desktop.slice();
+
+    applyBoxMetrics(root, { top: 0, left: 0, width: baseWidth, height: baseHeight });
+    applyBoxMetrics(frame, { top: 0, left: 0, width: baseWidth, height: baseHeight });
+    applyBoxMetrics(dash, { top: 0, left: 0, width: baseWidth, height: baseHeight });
+
+    const frameGap = parsePx(dash.style.getPropertyValue('--wdash-frame-gap-desktop')) || 14;
+    const gap = parsePx(dash.style.getPropertyValue('--wdash-grid-gap-desktop')) || 14;
+    const contentWidth = baseWidth - frameGap * 2;
+    const columnWidth = (contentWidth - gap) / 2;
+    const columnLeft = frameGap;
+    const columnRightLeft = frameGap + columnWidth + gap;
+
+    const rowTops = [
+      frameGap,
+      frameGap + baselineRows[0] + gap,
+      frameGap + baselineRows[0] + gap + baselineRows[1] + gap,
+      frameGap + baselineRows[0] + gap + baselineRows[1] + gap + baselineRows[2] + gap
+    ];
+
+    grid.dataset.empty = 'false';
+    grid.innerHTML = `
+      <section class="wdash-card wdash-card--temp-wind"></section>
+      <section class="wdash-card wdash-card--ambient"></section>
+      <section class="wdash-card wdash-card--air"></section>
+      <section class="wdash-card wdash-card--rain"></section>
+      <section class="wdash-card wdash-card--solar"></section>
+      <section class="wdash-card wdash-card--pressure"></section>
+    `;
+
+    const stableMeasurement = { width: baseWidth, height: baseHeight };
+    currentMeasurement = { ...stableMeasurement };
+    hooks.resolveMeasuredBaseDimensions({ measurement: stableMeasurement });
+    hooks.applyLayoutOverrides();
+
+    const cards = Array.from(grid.querySelectorAll('.wdash-card'));
+    const tempCard = cards.find(card => card.classList.contains('wdash-card--temp-wind'));
+    const ambientCard = cards.find(card => card.classList.contains('wdash-card--ambient'));
+    const airCard = cards.find(card => card.classList.contains('wdash-card--air'));
+    const rainCard = cards.find(card => card.classList.contains('wdash-card--rain'));
+    const solarCard = cards.find(card => card.classList.contains('wdash-card--solar'));
+    const pressureCard = cards.find(card => card.classList.contains('wdash-card--pressure'));
+
+    applyBoxMetrics(tempCard, { top: rowTops[0], left: columnLeft, width: columnWidth, height: baselineRows[0] });
+    applyBoxMetrics(ambientCard, { top: rowTops[0], left: columnRightLeft, width: columnWidth, height: baselineRows[0] });
+    applyBoxMetrics(airCard, { top: rowTops[1], left: columnLeft, width: columnWidth, height: baselineRows[1] });
+    applyBoxMetrics(rainCard, {
+      top: rowTops[1],
+      left: columnRightLeft,
+      width: columnWidth,
+      height: baselineRows[1] + baselineRows[2] + gap
+    });
+    applyBoxMetrics(solarCard, {
+      top: rowTops[2],
+      left: columnLeft,
+      width: columnWidth,
+      height: baselineRows[2] + baselineRows[3] + gap
+    });
+    applyBoxMetrics(pressureCard, {
+      top: rowTops[3],
+      left: columnRightLeft,
+      width: columnWidth,
+      height: baselineRows[3]
+    });
+
+    const extraHeight = 120;
+    const elementProto = (window.Element && window.Element.prototype)
+      || (window.HTMLElement && window.HTMLElement.prototype)
+      || null;
+    const scrollTarget = elementProto || airCard;
+    const originalScrollDescriptor = scrollTarget
+      ? Object.getOwnPropertyDescriptor(scrollTarget, 'scrollHeight')
+      : null;
+    if (scrollTarget) {
+      Object.defineProperty(scrollTarget, 'scrollHeight', {
+        configurable: true,
+        get() {
+          if (this && this.classList && this.classList.contains('wdash-card--air')) {
+            return baselineRows[1] + extraHeight;
+          }
+          if (originalScrollDescriptor) {
+            if (typeof originalScrollDescriptor.get === 'function') {
+              return originalScrollDescriptor.get.call(this);
+            }
+            return originalScrollDescriptor.value ?? 0;
+          }
+          return 0;
+        }
+      });
+    }
+
+    try {
+      if (onMeasure) {
+        onMeasure(stableMeasurement);
+      }
+
+      const updatedRows = hooks.layoutState.rowHeights.desktop;
+      if (!Number.isFinite(updatedRows[1])) {
+        throw new Error(`Row metrics unavailable: ${JSON.stringify(updatedRows)}`);
+      }
+      expect(Math.abs(updatedRows[1] - (baselineRows[1] + extraHeight)) < 1e-6).toBe(true);
+
+      const dynamicRows = hooks.layoutState.dynamicRowHeights.desktop;
+      expect(Math.abs(dynamicRows[1] - (baselineRows[1] + extraHeight)) < 1e-6).toBe(true);
+
+      const updatedBaseHeight = hooks.layoutState.baseDimensions.desktop.height;
+      expect(Math.abs(updatedBaseHeight - (baseHeight + extraHeight)) < 1e-6).toBe(true);
+
+      const diagnostics = hooks.captureScaleDiagnostics();
+      expect(Math.abs((diagnostics.rows?.intrinsic?.desktop?.[1] || 0) - (baselineRows[1] + extraHeight)) < 1e-6).toBe(true);
+    } finally {
+      if (scrollTarget) {
+        if (originalScrollDescriptor) {
+          Object.defineProperty(scrollTarget, 'scrollHeight', originalScrollDescriptor);
+        } else {
+          delete scrollTarget.scrollHeight;
+        }
+      }
+    }
+  });
 });
