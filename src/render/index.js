@@ -2294,6 +2294,21 @@ function createRenderer(options = {}) {
     root.style.setProperty('--wdash-render-width', `${renderWidth}px`);
     root.style.setProperty('--wdash-render-height', `${renderHeight}px`);
 
+    const frame = root.querySelector('.wdash-frame');
+    const dash = frame ? frame.querySelector('.wdash') : root.querySelector('.wdash');
+
+    if (frame && frame.style) {
+      frame.style.width = `${renderWidth}px`;
+      frame.style.height = `${renderHeight}px`;
+    }
+
+    if (dash && dash.style) {
+      dash.style.width = `${baseWidth}px`;
+      dash.style.height = `${baseHeight}px`;
+      dash.style.transformOrigin = 'top left';
+      dash.style.transform = `scale(${scale})`;
+    }
+
     scaleState.containerWidth = width;
     scaleState.containerHeight = height;
     scaleState.lastScale = scale;

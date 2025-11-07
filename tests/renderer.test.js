@@ -120,13 +120,21 @@ describe('Renderer scaling with host measurements', () => {
   let content;
   let root;
 
+  function parsePx(value) {
+    if (typeof value !== 'string') return NaN;
+    const match = value.trim().match(/^(-?\d+(?:\.\d+)?)px$/);
+    return match ? Number(match[1]) : NaN;
+  }
+
   beforeEach(() => {
     document.body.innerHTML = `
       <div id="tile-0" class="tile">
         <div class="tile-primary">
           <div class="wdash-root">
-            <div class="wdash">
-              <div class="wdash-grid" data-empty="true"></div>
+            <div class="wdash-frame">
+              <div class="wdash">
+                <div class="wdash-grid" data-empty="true"></div>
+              </div>
             </div>
           </div>
         </div>
@@ -177,10 +185,18 @@ describe('Renderer scaling with host measurements', () => {
   });
 
   function readScaleState() {
+    const frame = root.querySelector('.wdash-frame');
+    const dash = root.querySelector('.wdash');
     return {
       scale: parseFloat(root.style.getPropertyValue('--wdash-scale')),
       renderWidth: parseFloat(root.style.getPropertyValue('--wdash-render-width')),
-      renderHeight: parseFloat(root.style.getPropertyValue('--wdash-render-height'))
+      renderHeight: parseFloat(root.style.getPropertyValue('--wdash-render-height')),
+      frameWidth: parsePx(frame?.style?.width || ''),
+      frameHeight: parsePx(frame?.style?.height || ''),
+      dashWidth: parsePx(dash?.style?.width || ''),
+      dashHeight: parsePx(dash?.style?.height || ''),
+      dashTransform: dash?.style?.transform || '',
+      dashTransformOrigin: dash?.style?.transformOrigin || ''
     };
   }
 
@@ -201,7 +217,17 @@ describe('Renderer scaling with host measurements', () => {
       if (onMeasure) {
         onMeasure({ width: scenario.width, height: scenario.height });
       }
-      const { scale, renderWidth, renderHeight } = readScaleState();
+      const {
+        scale,
+        renderWidth,
+        renderHeight,
+        frameWidth,
+        frameHeight,
+        dashWidth,
+        dashHeight,
+        dashTransform,
+        dashTransformOrigin
+      } = readScaleState();
       const expectedScale = Math.min(
         scenario.width / baseWidth,
         scenario.height / baseHeight
@@ -211,6 +237,14 @@ describe('Renderer scaling with host measurements', () => {
       expect(Math.abs(scale - expectedScale) < 1e-6).toBe(true);
       expect(Math.abs(renderWidth - expectedRenderWidth) < 1e-4).toBe(true);
       expect(Math.abs(renderHeight - expectedRenderHeight) < 1e-4).toBe(true);
+      expect(Math.abs(frameWidth - expectedRenderWidth) < 1e-4).toBe(true);
+      expect(Math.abs(frameHeight - expectedRenderHeight) < 1e-4).toBe(true);
+      expect(Math.abs(dashWidth - baseWidth) < 1e-4).toBe(true);
+      expect(Math.abs(dashHeight - baseHeight) < 1e-4).toBe(true);
+      expect(dashTransform.startsWith('scale(')).toBe(true);
+      const transformValue = Number(dashTransform.slice(6, -1));
+      expect(Math.abs(transformValue - expectedScale) < 1e-6).toBe(true);
+      expect(dashTransformOrigin).toBe('top left');
     });
   });
 
