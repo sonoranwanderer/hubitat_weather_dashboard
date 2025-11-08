@@ -9,6 +9,36 @@
         baseStyles
       } = require('../render/index.js');
       
+      function createGuardLogger(global) {
+        if (!global || typeof global !== 'object') {
+          return function noopLog() {};
+        }
+      
+        const consoleRef = global.console || null;
+        if (!consoleRef) {
+          return function noopLog() {};
+        }
+      
+        const seen = new Set();
+      
+        return function logGuardEvent(event, details) {
+          if (!event) return;
+          const label = `[WeatherDashboard] ${event}`;
+          if (seen.has(label)) return;
+          seen.add(label);
+      
+          try {
+            const logMethod =
+              consoleRef.debug || consoleRef.info || consoleRef.log || consoleRef.warn;
+            if (typeof logMethod === 'function') {
+              logMethod.call(consoleRef, label, details || undefined);
+            }
+          } catch (err) {
+            // ignore logging failures
+          }
+        };
+      }
+      
       function isDashboardValueErrorMessage(message) {
         if (!message) return false;
         const text = String(message);
@@ -33,6 +63,7 @@
         if (!global || typeof global !== 'object') return;
         if (global.__WDASH_TEST_MODE__ === true) return;
       
+        const logGuardEvent = createGuardLogger(global);
         const noopHistory = function noopAddToDashboardHistory() { return undefined; };
       
         const applyNoopHistory = () => {
@@ -43,6 +74,8 @@
             return;
           }
       
+          let applied = false;
+      
           try {
             Object.defineProperty(global, 'addToDashboardHistory', {
               configurable: true,
@@ -50,16 +83,25 @@
               writable: true,
               value: noopHistory
             });
+            applied = global.addToDashboardHistory === noopHistory;
           } catch (err) {
             try {
               global.addToDashboardHistory = noopHistory;
+              applied = global.addToDashboardHistory === noopHistory;
             } catch (assignErr) {
-              // ignore assignment failures
+              logGuardEvent('History guard assignment failed', {
+                message: assignErr && assignErr.message,
+                code: assignErr && assignErr.code
+              });
             }
           }
       
-          if (global.addToDashboardHistory === noopHistory) {
+          if (applied) {
             global.__wdashHistorySuppressed = true;
+            logGuardEvent('History guard applied', {
+              hasSocketGuard: Boolean(global.__wdashSocketGuard),
+              hasOnErrorGuard: Boolean(global.__wdashOnErrorGuard)
+            });
           }
         };
       
@@ -69,6 +111,7 @@
           global.__wdashHistoryInterval = global.setInterval(() => {
             applyNoopHistory();
           }, 1000);
+          logGuardEvent('History guard interval registered');
         }
       
         const shouldSuppressError = eventOrMessage => {
@@ -92,6 +135,10 @@
                 event.stopImmediatePropagation();
               }
               applyNoopHistory();
+              logGuardEvent('Suppressed socket error event', {
+                message: event.message,
+                filename: event.filename
+              });
               if (global.console && typeof global.console.warn === 'function') {
                 global.console.warn('[WeatherDashboard] Ignored dashboard socket value update error', {
                   message: event.message,
@@ -108,6 +155,10 @@
           global.onerror = function weatherDashboardOnError(message, source, lineno, colno, error) {
             if (shouldSuppressError({ message, filename: source, error })) {
               applyNoopHistory();
+              logGuardEvent('Suppressed global onerror event', {
+                message,
+                source
+              });
               return true;
             }
             if (existingOnError) {
@@ -116,6 +167,7 @@
             return false;
           };
           global.__wdashOnErrorGuard = true;
+          logGuardEvent('Global onerror guard registered');
         }
       }
       
