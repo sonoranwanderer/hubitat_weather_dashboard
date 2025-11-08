@@ -60,6 +60,9 @@ function suppressDashboardHistoryErrors(global) {
 
   const logGuardEvent = createGuardLogger(global);
   const noopHistory = function noopAddToDashboardHistory() { return undefined; };
+  const guardState = {
+    lastAssignedHistory: null
+  };
 
   const applyNoopHistory = () => {
     if (!global || typeof global !== 'object') return;
@@ -75,8 +78,15 @@ function suppressDashboardHistoryErrors(global) {
       Object.defineProperty(global, 'addToDashboardHistory', {
         configurable: true,
         enumerable: false,
-        writable: true,
-        value: noopHistory
+        get() {
+          return noopHistory;
+        },
+        set(nextValue) {
+          guardState.lastAssignedHistory = nextValue;
+          logGuardEvent('History guard blocked reassignment', {
+            assignedType: typeof nextValue
+          });
+        }
       });
       applied = global.addToDashboardHistory === noopHistory;
     } catch (err) {
@@ -93,10 +103,14 @@ function suppressDashboardHistoryErrors(global) {
 
     if (applied) {
       global.__wdashHistorySuppressed = true;
-      logGuardEvent('History guard applied', {
+      const details = {
         hasSocketGuard: Boolean(global.__wdashSocketGuard),
         hasOnErrorGuard: Boolean(global.__wdashOnErrorGuard)
-      });
+      };
+      if (guardState.lastAssignedHistory) {
+        details.blockedType = typeof guardState.lastAssignedHistory;
+      }
+      logGuardEvent('History guard applied', details);
     }
   };
 
