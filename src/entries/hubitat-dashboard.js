@@ -37,6 +37,17 @@ function patchDashboardGlitches(global) {
   if (!global || typeof global !== 'object') return;
   if (global.__WDASH_TEST_MODE__ === true) return;
 
+  try {
+    if (
+      global.__wdashPrelude &&
+      typeof global.__wdashPrelude.patchDashboardGlitches === 'function'
+    ) {
+      global.__wdashPrelude.patchDashboardGlitches();
+    }
+  } catch (err) {
+    // Ignore prelude re-entry failures; the runtime guard will continue below.
+  }
+
   const ensureValueArray = () => {
     if (typeof global.value !== 'undefined' && global.value !== null) {
       return;
