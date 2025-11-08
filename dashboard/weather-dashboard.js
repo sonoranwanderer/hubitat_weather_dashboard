@@ -35,28 +35,21 @@
       
         const noopHistory = function noopAddToDashboardHistory() { return undefined; };
       
-        const installNoopHistory = () => {
-          if (global.__wdashHistoryInstalling) return;
-          global.__wdashHistoryInstalling = true;
+        const applyNoopHistory = () => {
+          if (!global || typeof global !== 'object') return;
       
-          const descriptor = {
-            configurable: true,
-            get() {
-              return noopHistory;
-            },
-            set(value) {
-              if (value === noopHistory) return;
-              if (typeof global.setTimeout === 'function') {
-                global.setTimeout(() => {
-                  global.__wdashHistorySuppressed = false;
-                  installNoopHistory();
-                }, 0);
-              }
-            }
-          };
+          if (global.addToDashboardHistory === noopHistory) {
+            global.__wdashHistorySuppressed = true;
+            return;
+          }
       
           try {
-            Object.defineProperty(global, 'addToDashboardHistory', descriptor);
+            Object.defineProperty(global, 'addToDashboardHistory', {
+              configurable: true,
+              enumerable: false,
+              writable: true,
+              value: noopHistory
+            });
           } catch (err) {
             try {
               global.addToDashboardHistory = noopHistory;
@@ -65,12 +58,18 @@
             }
           }
       
-          global.__wdashHistoryInstalling = false;
-          global.__wdashHistorySuppressed = true;
-          global.__wdashHistoryPatched = true;
+          if (global.addToDashboardHistory === noopHistory) {
+            global.__wdashHistorySuppressed = true;
+          }
         };
       
-        installNoopHistory();
+        applyNoopHistory();
+      
+        if (!global.__wdashHistoryInterval && typeof global.setInterval === 'function') {
+          global.__wdashHistoryInterval = global.setInterval(() => {
+            applyNoopHistory();
+          }, 1000);
+        }
       
         const shouldSuppressError = eventOrMessage => {
           if (!eventOrMessage) return false;
@@ -92,7 +91,7 @@
               if (typeof event.stopImmediatePropagation === 'function') {
                 event.stopImmediatePropagation();
               }
-              installNoopHistory();
+              applyNoopHistory();
               if (global.console && typeof global.console.warn === 'function') {
                 global.console.warn('[WeatherDashboard] Ignored dashboard socket value update error', {
                   message: event.message,
@@ -108,7 +107,7 @@
           const existingOnError = typeof global.onerror === 'function' ? global.onerror : null;
           global.onerror = function weatherDashboardOnError(message, source, lineno, colno, error) {
             if (shouldSuppressError({ message, filename: source, error })) {
-              installNoopHistory();
+              applyNoopHistory();
               return true;
             }
             if (existingOnError) {
