@@ -71,8 +71,6 @@
         const ensureDashboardValueShim = reason => {
           if (!global || typeof global !== 'object') return;
       
-          if (global.__wdashValueShimApplied) return;
-      
           const descriptor = Object.getOwnPropertyDescriptor(global, 'value');
           if (descriptor && descriptor.get && !descriptor.set && descriptor.configurable === false) {
             return;
@@ -80,42 +78,110 @@
       
           let applied = false;
       
-          try {
-            if (typeof global.value === 'undefined') {
+          const assignValueObject = () => {
+            const needsObject = typeof global.value === 'undefined' || global.value === null;
+            if (!needsObject && typeof global.value === 'object') {
+              return true;
+            }
+      
+            try {
               global.value = {};
+              return true;
+            } catch (assignErr) {
+              try {
+                Object.defineProperty(global, 'value', {
+                  configurable: true,
+                  enumerable: false,
+                  writable: true,
+                  value: {}
+                });
+                return true;
+              } catch (defineErr) {
+                logGuardEvent('Value shim application failed', {
+                  reason,
+                  message: defineErr && defineErr.message
+                });
+              }
             }
-            applied = true;
-          } catch (assignErr) {
-            try {
-              Object.defineProperty(global, 'value', {
-                configurable: true,
-                enumerable: false,
-                writable: true,
-                value: {}
-              });
-              applied = true;
-            } catch (defineErr) {
-              logGuardEvent('Value shim application failed', {
-                reason,
-                message: defineErr && defineErr.message
-              });
-            }
-          }
+            return false;
+          };
       
-          if (applied && typeof global.eval === 'function') {
-            try {
-              global.eval('var value = (typeof value !== "undefined" ? value : {});');
-            } catch (evalErr) {
-              logGuardEvent('Value shim eval failed', {
-                reason,
-                message: evalErr && evalErr.message
-              });
-            }
-          }
+          applied = assignValueObject();
       
-          if (applied) {
-            global.__wdashValueShimApplied = true;
-            logGuardEvent('Value shim applied', { reason });
+          const syncGlobalValueAlias = () => {
+            if (typeof global.value === 'undefined') {
+              // nothing to alias yet
+              return false;
+            }
+      
+            const aliasSource = global.value;
+      
+            const ensureAliasViaEval = () => {
+              if (typeof global.eval !== 'function') return false;
+              try {
+                global.eval(
+                  'if (typeof value === "undefined") {\n' +
+                    '  var value = (typeof self !== "undefined" && self.value !== undefined) ? self.value : (typeof window !== "undefined" ? window.value : undefined);\n' +
+                    '  if (typeof value === "undefined" && typeof window !== "undefined") {\n' +
+                    '    value = window.value;\n' +
+                    '  }\n' +
+                    '  if (typeof value === "undefined") {\n' +
+                    '    value = {};\n' +
+                    '    if (typeof self !== "undefined") self.value = value;\n' +
+                    '    if (typeof window !== "undefined") window.value = value;\n' +
+                    '  }\n' +
+                    '} else {\n' +
+                    '  if (typeof self !== "undefined" && typeof self.value === "undefined") self.value = value;\n' +
+                    '  if (typeof window !== "undefined" && typeof window.value === "undefined") window.value = value;\n' +
+                    '}'
+                );
+                return true;
+              } catch (evalErr) {
+                logGuardEvent('Value shim eval failed', {
+                  reason,
+                  message: evalErr && evalErr.message
+                });
+                return false;
+              }
+            };
+      
+            const ensureAliasViaFunction = () => {
+              if (typeof global.Function !== 'function') return false;
+              try {
+                global.Function(
+                  'if (typeof value === "undefined") {\n' +
+                    '  var value = (typeof self !== "undefined" && self.value !== undefined) ? self.value : (typeof window !== "undefined" ? window.value : undefined);\n' +
+                    '  if (typeof value === "undefined") {\n' +
+                    '    value = {};\n' +
+                    '    if (typeof self !== "undefined") self.value = value;\n' +
+                    '    if (typeof window !== "undefined") window.value = value;\n' +
+                    '  }\n' +
+                    '} else {\n' +
+                    '  if (typeof self !== "undefined" && typeof self.value === "undefined") self.value = value;\n' +
+                    '  if (typeof window !== "undefined" && typeof window.value === "undefined") window.value = value;\n' +
+                    '}'
+                ).call(global);
+                return true;
+              } catch (fnErr) {
+                logGuardEvent('Value shim function failed', {
+                  reason,
+                  message: fnErr && fnErr.message
+                });
+                return false;
+              }
+            };
+      
+            return ensureAliasViaEval() || ensureAliasViaFunction() || aliasSource === global.value;
+          };
+      
+          const aliasApplied = syncGlobalValueAlias();
+      
+          if (applied || aliasApplied) {
+            global.__wdashValueShimApplied = Date.now();
+            logGuardEvent('Value shim applied', {
+              reason,
+              typeofValue: typeof global.value
+            });
           }
         };
       
