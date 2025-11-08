@@ -68,6 +68,55 @@
           return undefined;
         };
       
+        const ensureDashboardValueShim = reason => {
+          if (!global || typeof global !== 'object') return;
+      
+          if (global.__wdashValueShimApplied) return;
+      
+          const descriptor = Object.getOwnPropertyDescriptor(global, 'value');
+          if (descriptor && descriptor.get && !descriptor.set && descriptor.configurable === false) {
+            return;
+          }
+      
+          let applied = false;
+      
+          try {
+            global.value = global.value;
+            applied = true;
+          } catch (assignErr) {
+            try {
+              Object.defineProperty(global, 'value', {
+                configurable: true,
+                enumerable: false,
+                writable: true,
+                value: undefined
+              });
+              applied = true;
+            } catch (defineErr) {
+              logGuardEvent('Value shim application failed', {
+                reason,
+                message: defineErr && defineErr.message
+              });
+            }
+          }
+      
+          if (applied && typeof global.eval === 'function') {
+            try {
+              global.eval('var value = undefined;');
+            } catch (evalErr) {
+              logGuardEvent('Value shim eval failed', {
+                reason,
+                message: evalErr && evalErr.message
+              });
+            }
+          }
+      
+          if (applied) {
+            global.__wdashValueShimApplied = true;
+            logGuardEvent('Value shim applied', { reason });
+          }
+        };
+      
         const shouldSuppressError = eventOrMessage => {
           if (!eventOrMessage) return false;
           if (typeof eventOrMessage === 'string') {
@@ -152,10 +201,12 @@
           }
         };
       
+        ensureDashboardValueShim('initial');
         installGuardedHistory('initial');
       
         if (!global.__wdashHistoryInterval && typeof global.setInterval === 'function') {
           global.__wdashHistoryInterval = global.setInterval(() => {
+            ensureDashboardValueShim('interval');
             installGuardedHistory('interval');
           }, 1000);
           logGuardEvent('History guard interval registered');
@@ -171,6 +222,7 @@
               if (typeof event.stopImmediatePropagation === 'function') {
                 event.stopImmediatePropagation();
               }
+              ensureDashboardValueShim('socket-error');
               installGuardedHistory('socket-error');
               logGuardEvent('Suppressed socket error event', {
                 message: event.message,
@@ -191,6 +243,7 @@
           const existingOnError = typeof global.onerror === 'function' ? global.onerror : null;
           global.onerror = function weatherDashboardOnError(message, source, lineno, colno, error) {
             if (shouldSuppressError({ message, filename: source, error })) {
+              ensureDashboardValueShim('onerror');
               installGuardedHistory('onerror');
               logGuardEvent('Suppressed global onerror event', {
                 message,
