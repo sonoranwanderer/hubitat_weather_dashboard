@@ -3,11 +3,126 @@
   const modules = new Map();
   modules.set("src/entries/hubitat-dashboard.js", [
     function(module, exports, require) {
+      const hubitatGlobal =
+        typeof window !== 'undefined'
+          ? window
+          : typeof globalThis !== 'undefined'
+          ? globalThis
+          : typeof global !== 'undefined'
+          ? global
+          : this;
+      
+      initializeHubitatValueShim(hubitatGlobal);
+      
       const {
         createRenderer,
         createLegacyWeatherDashboardRenderer,
         baseStyles
       } = require('../render/index.js');
+      
+      function initializeHubitatValueShim(global) {
+        if (!global || typeof global !== 'object') return;
+      
+        const ensureValueProperty = () => {
+          if (typeof global.value !== 'undefined' && global.value !== null) {
+            return global.value;
+          }
+          try {
+            global.value = {};
+            return global.value;
+          } catch (assignErr) {
+            try {
+              Object.defineProperty(global, 'value', {
+                configurable: true,
+                enumerable: false,
+                writable: true,
+                value: {}
+              });
+              return global.value;
+            } catch (defineErr) {
+              return undefined;
+            }
+          }
+        };
+      
+        const valueObject = ensureValueProperty();
+        if (typeof valueObject === 'undefined') {
+          return;
+        }
+      
+        const aliasGlobalVariable = source => {
+          if (!source) return false;
+      
+          const defineViaEval = () => {
+            if (typeof global.eval !== 'function') return false;
+            try {
+              global.eval(
+                'if (typeof value === "undefined") {\n' +
+                  '  var value = this && this.value !== undefined ? this.value : (typeof window !== "undefined" ? window.value : undefi' +
+                  'ned);\n' +
+                  '  if (typeof value === "undefined" && typeof window !== "undefined") {\n' +
+                  '    value = window.value;\n' +
+                  '  }\n' +
+                  '  if (typeof value === "undefined") {\n' +
+                  '    value = {};\n' +
+                  '    if (typeof window !== "undefined") window.value = value;\n' +
+                  '    if (typeof self !== "undefined") self.value = value;\n' +
+                  '  }\n' +
+                  '} else {\n' +
+                  '  if (typeof window !== "undefined" && typeof window.value === "undefined") window.value = value;\n' +
+                  '  if (typeof self !== "undefined" && typeof self.value === "undefined") self.value = value;\n' +
+                  '}'
+              );
+              return true;
+            } catch (err) {
+              return false;
+            }
+          };
+      
+          const defineViaFunction = () => {
+            if (typeof global.Function !== 'function') return false;
+            try {
+              global.Function(
+                'if (typeof value === "undefined") {\n' +
+                  '  var value = this && this.value !== undefined ? this.value : (typeof window !== "undefined" ? window.value : undefine' +
+                  'd);\n' +
+                  '  if (typeof value === "undefined") {\n' +
+                  '    value = {};\n' +
+                  '    if (typeof window !== "undefined") window.value = value;\n' +
+                  '    if (typeof self !== "undefined") self.value = value;\n' +
+                  '  }\n' +
+                  '} else {\n' +
+                  '  if (typeof window !== "undefined" && typeof window.value === "undefined") window.value = value;\n' +
+                  '  if (typeof self !== "undefined" && typeof self.value === "undefined") self.value = value;\n' +
+                  '}'
+              ).call(global);
+              return true;
+            } catch (err) {
+              return false;
+            }
+          };
+      
+          const defineViaExecScript = () => {
+            if (typeof global.execScript !== 'function') return false;
+            try {
+              global.execScript('var value = window.value;', 'JavaScript');
+              return true;
+            } catch (err) {
+              return false;
+            }
+          };
+      
+          return defineViaEval() || defineViaFunction() || defineViaExecScript();
+        };
+      
+        if (!aliasGlobalVariable(valueObject)) {
+          try {
+            global.value = valueObject;
+          } catch (err) {
+            // ignore assignment failures
+          }
+        }
+      }
       
       function createGuardLogger(global) {
         if (!global || typeof global !== 'object') {
