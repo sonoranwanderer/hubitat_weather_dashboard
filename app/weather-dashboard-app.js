@@ -17,6 +17,8 @@
 
   const state = {
     renderer: null,
+    rendererFactory: null,
+    rendererStylesApplied: false,
     config: null,
     configErrors: [],
     validationWarnings: [],
@@ -30,7 +32,28 @@
     lastSuccessAt: null,
     endpointUrl: null,
     status: { level: 'info', message: 'Initializing…', details: [] },
-    statusMinHeight: 0
+    statusMinHeight: 0,
+    latestPayload: null
+  };
+
+  const DEFAULT_LAYOUT = {
+    columns: ['1fr', '1fr'],
+    rows: ['auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'],
+    gap: '18px',
+    cards: [
+      { id: 'outdoor', title: 'Outdoor Conditions', row: 1, column: 1, rowSpan: 1, colSpan: 2 },
+      { id: 'indoor', title: 'Indoor Conditions', row: 2, column: 1, rowSpan: 1 },
+      { id: 'wind', title: 'Wind', row: 2, column: 2, rowSpan: 1 },
+      { id: 'rain', title: 'Rainfall', row: 3, column: 1, rowSpan: 1 },
+      { id: 'pressure', title: 'Pressure', row: 3, column: 2, rowSpan: 1 },
+      { id: 'solar', title: 'Solar & Sun', row: 4, column: 1, rowSpan: 1 },
+      { id: 'lightning', title: 'Lightning', row: 4, column: 2, rowSpan: 1 },
+      { id: 'outdoorAirQuality', title: 'Outdoor Air Quality', row: 5, column: 1, rowSpan: 1 },
+      { id: 'indoorAirQuality', title: 'Indoor Air Quality', row: 5, column: 2, rowSpan: 1 },
+      { id: 'ambientSensors', title: 'Ambient Sensors', row: 6, column: 1, rowSpan: 1, colSpan: 2 },
+      { id: 'outlook24h', title: '24 Hour Outlook', row: 7, column: 1, rowSpan: 1, colSpan: 2 },
+      { id: 'metadata', title: 'Station Metadata', row: 8, column: 1, rowSpan: 1, colSpan: 2 }
+    ]
   };
 
   let shellElements = null;
@@ -1371,14 +1394,364 @@
       ]);
       return null;
     }
+    state.rendererFactory = factory;
+
+    const weatherModule = global.weatherDashboard || {};
+    if (weatherModule && typeof weatherModule === 'object' && weatherModule.createRenderer === factory) {
+      state.renderer = createPureRendererAdapter(factory);
+      return state.renderer;
+    }
     try {
       const renderer = factory({ window: global, document: global.document, globalThis: global });
       state.renderer = renderer || (global.weatherDashboard && global.weatherDashboard.__renderer__) || null;
       return state.renderer;
     } catch (err) {
+      if (isPureRendererInitializationError(err)) {
+        state.renderer = createPureRendererAdapter(factory);
+        return state.renderer;
+      }
       updateStatus('error', 'Failed to initialize renderer', [err.message || String(err)]);
       return null;
     }
+  }
+
+  function isPureRendererInitializationError(err) {
+    if (!err) return false;
+    const message = err && err.message ? String(err.message) : '';
+    return (
+      message.indexOf('createRenderer requires a finite width') !== -1 ||
+      message.indexOf('createRenderer requires a finite height') !== -1
+    );
+  }
+
+  function createPureRendererAdapter(factory) {
+    return {
+      safeRenderFromData(payload) {
+        const source = payload && typeof payload === 'object' ? payload : state.latestPayload;
+        if (!source) {
+          throw new Error('No dashboard payload available to render.');
+        }
+        renderPureDashboard(factory, source);
+      }
+    };
+  }
+
+  function renderPureDashboard(factory, payload) {
+    const shell = ensureAppShell();
+    if (!shell || !shell.displayPrimary) {
+      throw new Error('Dashboard shell unavailable.');
+    }
+
+    const layoutDefinition = extractLayoutFromPayload(payload);
+    const dimensions = resolveRendererDimensions(payload, layoutDefinition);
+    const data = buildRendererData(payload);
+
+    const result = factory({
+      width: dimensions.width,
+      height: dimensions.height,
+      layout: layoutDefinition,
+      data
+    }) || {};
+
+    const { markup, variables, styles } = result;
+
+    if (styles && !state.rendererStylesApplied) {
+      ensureRendererBaseStyles(styles);
+      state.rendererStylesApplied = true;
+    }
+
+    const host = shell.displayPrimary;
+    host.innerHTML = typeof markup === 'string' ? markup : '';
+
+    const root = host.querySelector('.wdash-root');
+    if (!root) {
+      throw new Error('Renderer output missing .wdash-root element.');
+    }
+
+    if (variables && typeof variables === 'object') {
+      Object.entries(variables).forEach(([name, value]) => {
+        try {
+          root.style.setProperty(name, value);
+        } catch (err) {
+          /* ignore invalid custom property assignments */
+        }
+      });
+    }
+
+    requestPreviewSizeSync();
+    scheduleHostResizeSync();
+  }
+
+  function ensureRendererBaseStyles(styles) {
+    const doc = global.document;
+    if (!doc) return;
+    let style = doc.getElementById('weather-dashboard-renderer-style');
+    if (!style) {
+      style = doc.createElement('style');
+      style.id = 'weather-dashboard-renderer-style';
+      const parent = doc.head || doc.body || doc.documentElement;
+      if (parent) {
+        parent.appendChild(style);
+      }
+    }
+    if (style) {
+      style.textContent = String(styles || '');
+    }
+  }
+
+  function extractLayoutFromPayload(payload) {
+    const metadataLayout = payload && payload.metadata && typeof payload.metadata === 'object'
+      ? payload.metadata.layout
+      : null;
+    const candidate = selectLayoutCandidate(metadataLayout);
+    return prepareLayoutDefinition(candidate);
+  }
+
+  function selectLayoutCandidate(layout) {
+    if (!layout || typeof layout !== 'object') {
+      return null;
+    }
+    if (Array.isArray(layout.cards)) {
+      return layout;
+    }
+    if (layout.desktop && typeof layout.desktop === 'object') {
+      const desktop = layout.desktop;
+      if (Array.isArray(desktop.cards)) {
+        return desktop;
+      }
+    }
+    return null;
+  }
+
+  function prepareLayoutDefinition(candidate) {
+    const layout = candidate && typeof candidate === 'object' ? { ...candidate } : {};
+    const defaultById = new Map(DEFAULT_LAYOUT.cards.map(card => [card.id, card]));
+
+    layout.columns = layout.columns || DEFAULT_LAYOUT.columns;
+    layout.rows = layout.rows || DEFAULT_LAYOUT.rows;
+    layout.gap = layout.gap || DEFAULT_LAYOUT.gap;
+    if (layout.autoRows == null && DEFAULT_LAYOUT.autoRows != null) {
+      layout.autoRows = DEFAULT_LAYOUT.autoRows;
+    }
+    if (layout.autoColumns == null && DEFAULT_LAYOUT.autoColumns != null) {
+      layout.autoColumns = DEFAULT_LAYOUT.autoColumns;
+    }
+
+    const cards = Array.isArray(layout.cards) && layout.cards.length
+      ? layout.cards.map(card => ({ ...card }))
+      : DEFAULT_LAYOUT.cards.map(card => ({ ...card }));
+
+    layout.cards = cards.map(card => {
+      const normalized = { ...card };
+      const fallback = defaultById.get(normalized.id);
+      if (fallback) {
+        if (normalized.row == null) normalized.row = fallback.row;
+        if (normalized.column == null) normalized.column = fallback.column;
+        if (normalized.rowSpan == null) normalized.rowSpan = fallback.rowSpan;
+        if (normalized.colSpan == null) normalized.colSpan = fallback.colSpan;
+        if (!normalized.title && fallback.title) normalized.title = fallback.title;
+      }
+      if (normalized.rowSpan == null) normalized.rowSpan = 1;
+      if (normalized.colSpan == null) normalized.colSpan = 1;
+      return normalized;
+    });
+
+    return layout;
+  }
+
+  function resolveRendererDimensions(payload, layout) {
+    const layoutBaseWidth = coercePositiveDimension(layout && layout.baseWidth);
+    const layoutBaseHeight = coercePositiveDimension(layout && layout.baseHeight);
+
+    const metadataLayout = payload && payload.metadata && payload.metadata.layout
+      ? payload.metadata.layout
+      : {};
+
+    const metadataBaseWidth = coercePositiveDimension(metadataLayout && metadataLayout.baseWidth);
+    const metadataBaseHeight = coercePositiveDimension(metadataLayout && metadataLayout.baseHeight);
+
+    const width = layoutBaseWidth
+      ?? metadataBaseWidth
+      ?? DEFAULT_RENDER_BASE_WIDTH;
+    const height = layoutBaseHeight
+      ?? metadataBaseHeight
+      ?? DEFAULT_RENDER_BASE_HEIGHT;
+
+    return {
+      width,
+      height
+    };
+  }
+
+  function buildRendererData(payload) {
+    if (!payload || typeof payload !== 'object') {
+      return {};
+    }
+
+    const data = {};
+
+    data.outdoor = buildMetricsCard(payload.outdoor);
+    data.indoor = buildMetricsCard(payload.indoor);
+    data.wind = buildMetricsCard(payload.wind);
+    data.rain = buildMetricsCard(payload.rain);
+    data.pressure = buildMetricsCard(payload.pressure);
+    data.solar = buildMetricsCard(payload.solar);
+    data.lightning = buildMetricsCard(payload.lightning);
+    data.outdoorAirQuality = buildMetricsCard(payload.outdoorAirQuality);
+    data.indoorAirQuality = buildMetricsCard(payload.indoorAirQuality);
+    data.ambientSensors = buildAmbientSensorsCard(payload.ambientSensors, payload.ambientHumidityUnit);
+    data.outlook24h = buildMetricsCard(payload.outlook24h);
+    data.metadata = buildMetadataCard(payload.metadata);
+
+    return data;
+  }
+
+  function buildMetricsCard(source) {
+    if (!source || typeof source !== 'object') {
+      return null;
+    }
+    if (Array.isArray(source)) {
+      if (source.length === 0) {
+        return null;
+      }
+      const metrics = source.map((entry, index) => {
+        if (entry && typeof entry === 'object') {
+          if (entry.label != null && entry.value != null) {
+            return {
+              label: String(entry.label),
+              value: formatValue(entry.value)
+            };
+          }
+          const label = entry.name != null ? String(entry.name) : `Item ${index + 1}`;
+          return {
+            label,
+            value: formatValue(entry.value != null ? entry.value : entry)
+          };
+        }
+        return {
+          label: `Item ${index + 1}`,
+          value: formatValue(entry)
+        };
+      });
+      return { metrics };
+    }
+
+    const metrics = convertObjectToMetrics(source);
+    if (!metrics.length) {
+      return null;
+    }
+    return { metrics };
+  }
+
+  function buildAmbientSensorsCard(sensors, humidityUnit) {
+    if (!Array.isArray(sensors) || sensors.length === 0) {
+      return null;
+    }
+    const items = sensors.map((sensor, index) => {
+      const label = sensor && sensor.name
+        ? String(sensor.name)
+        : `Sensor ${sensor && sensor.ordinal != null ? sensor.ordinal : index + 1}`;
+      const parts = [];
+      if (sensor && sensor.temperature != null) {
+        parts.push(`${formatValue(sensor.temperature)}°`);
+      }
+      if (sensor && sensor.humidity != null) {
+        const humidityValue = `${formatValue(sensor.humidity)}${humidityUnit ? `% ${humidityUnit}` : '%'}`;
+        parts.push(humidityValue);
+      }
+      if (sensor && sensor.battery != null) {
+        parts.push(`${formatValue(sensor.battery)}% battery`);
+      }
+      return {
+        label,
+        value: parts.length ? parts.join(' • ') : formatValue(sensor)
+      };
+    });
+    return { metrics: items };
+  }
+
+  function buildMetadataCard(metadata) {
+    if (!metadata || typeof metadata !== 'object') {
+      return null;
+    }
+    const summary = { ...metadata };
+    if (summary.layout) {
+      delete summary.layout;
+    }
+    const metrics = convertObjectToMetrics(summary);
+    if (!metrics.length) {
+      return null;
+    }
+    return { metrics };
+  }
+
+  function convertObjectToMetrics(source) {
+    const metrics = [];
+    if (!source || typeof source !== 'object') {
+      return metrics;
+    }
+    Object.entries(source).forEach(([key, value]) => {
+      if (value == null) {
+        return;
+      }
+      if (typeof value === 'object') {
+        if (Array.isArray(value)) {
+          if (value.length === 0) return;
+          metrics.push({
+            label: formatLabel(key),
+            value: value.map(item => formatValue(item)).join(', ')
+          });
+        } else {
+          metrics.push({
+            label: formatLabel(key),
+            value: formatValue(value)
+          });
+        }
+        return;
+      }
+      metrics.push({
+        label: formatLabel(key),
+        value: formatValue(value)
+      });
+    });
+    return metrics;
+  }
+
+  function formatLabel(key) {
+    return String(key)
+      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+      .replace(/[_\-]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .replace(/\b\w/g, match => match.toUpperCase());
+  }
+
+  function formatValue(value) {
+    if (value == null) return '';
+    if (typeof value === 'number') {
+      if (!Number.isFinite(value)) {
+        return '';
+      }
+      if (Number.isInteger(value)) {
+        return String(value);
+      }
+      const abs = Math.abs(value);
+      if (abs >= 100) {
+        return String(Math.round(value));
+      }
+      return value.toFixed(1);
+    }
+    if (typeof value === 'boolean') {
+      return value ? 'Yes' : 'No';
+    }
+    if (typeof value === 'object') {
+      try {
+        return JSON.stringify(value);
+      } catch (err) {
+        return String(value);
+      }
+    }
+    return String(value);
   }
 
   function stopPolling() {
@@ -1409,18 +1782,19 @@
     return Math.min(Math.max(base, Math.round(proposed)), Math.max(base, state.maxBackoffMs || DEFAULT_MAX_BACKOFF_MS));
   }
 
-  function applyPayloadText(text) {
+  function applyPayloadText(text, payload) {
     if (!dataTileContent) ensureAppShell();
     if (!dataTileContent) {
       scheduleHostResizeSync();
       return { rendered: false, reason: 'no-shell', details: ['Dashboard shell failed to initialize.'] };
     }
+    state.latestPayload = payload && typeof payload === 'object' ? payload : null;
     dataTileContent.textContent = text != null ? String(text) : '';
     const renderer = bootstrapRenderer();
     const api = renderer || (global.weatherDashboard && global.weatherDashboard.__renderer__);
     if (api && typeof api.safeRenderFromData === 'function') {
       try {
-        api.safeRenderFromData();
+        api.safeRenderFromData(state.latestPayload);
         requestPreviewSizeSync();
         scheduleHostResizeSync();
         return { rendered: true };
@@ -1469,7 +1843,7 @@
     state.lastSuccessAt = Date.now();
     const parsed = parseJson(text);
     const normalized = normalizePayloadResponse(parsed, text);
-    const renderResult = applyPayloadText(normalized.text);
+    const renderResult = applyPayloadText(normalized.text, normalized.payload);
 
     const timestamp = formatTimestamp(state.lastSuccessAt);
     const refreshDetail = `Next refresh in ${formatDuration(state.pollIntervalMs)}.`;
