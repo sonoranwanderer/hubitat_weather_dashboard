@@ -59,15 +59,55 @@ function suppressDashboardHistoryErrors(global) {
   if (global.__WDASH_TEST_MODE__ === true) return;
 
   const logGuardEvent = createGuardLogger(global);
-  const noopHistory = function noopAddToDashboardHistory() { return undefined; };
   const guardState = {
-    lastAssignedHistory: null
+    lastAssignedHistory:
+      typeof global.addToDashboardHistory === 'function'
+        ? global.addToDashboardHistory
+        : null,
+    safeHistory: null
   };
 
-  const applyNoopHistory = () => {
+  const shouldSuppressError = eventOrMessage => {
+    if (!eventOrMessage) return false;
+    if (typeof eventOrMessage === 'string') {
+      return isDashboardValueErrorMessage(eventOrMessage);
+    }
+    const message = String(eventOrMessage.message || '');
+    const filename = eventOrMessage.filename || eventOrMessage.source || '';
+    return isDashboardValueErrorMessage(message) && isDashboardValueErrorSource(filename);
+  };
+
+  const safeHistory = function guardedAddToDashboardHistory() {
+    const historyFn = guardState.lastAssignedHistory;
+    if (typeof historyFn !== 'function') {
+      return undefined;
+    }
+
+    try {
+      return historyFn.apply(this, arguments);
+    } catch (err) {
+      if (shouldSuppressError(err)) {
+        guardState.lastAssignedHistory = null;
+        logGuardEvent('Suppressed history invocation error', {
+          message: err && err.message
+        });
+        return undefined;
+      }
+      throw err;
+    }
+  };
+
+  guardState.safeHistory = safeHistory;
+
+  const applyGuardedHistory = () => {
     if (!global || typeof global !== 'object') return;
 
-    if (global.addToDashboardHistory === noopHistory) {
+    const currentHistory = global.addToDashboardHistory;
+    if (typeof currentHistory === 'function' && currentHistory !== guardState.safeHistory) {
+      guardState.lastAssignedHistory = currentHistory;
+    }
+
+    if (global.addToDashboardHistory === guardState.safeHistory) {
       global.__wdashHistorySuppressed = true;
       return;
     }
@@ -79,20 +119,23 @@ function suppressDashboardHistoryErrors(global) {
         configurable: true,
         enumerable: false,
         get() {
-          return noopHistory;
+          return guardState.safeHistory;
         },
         set(nextValue) {
-          guardState.lastAssignedHistory = nextValue;
-          logGuardEvent('History guard blocked reassignment', {
+          if (nextValue === guardState.safeHistory) {
+            return;
+          }
+          guardState.lastAssignedHistory = typeof nextValue === 'function' ? nextValue : null;
+          logGuardEvent('History guard recorded reassignment', {
             assignedType: typeof nextValue
           });
         }
       });
-      applied = global.addToDashboardHistory === noopHistory;
+      applied = global.addToDashboardHistory === guardState.safeHistory;
     } catch (err) {
       try {
-        global.addToDashboardHistory = noopHistory;
-        applied = global.addToDashboardHistory === noopHistory;
+        global.addToDashboardHistory = guardState.safeHistory;
+        applied = global.addToDashboardHistory === guardState.safeHistory;
       } catch (assignErr) {
         logGuardEvent('History guard assignment failed', {
           message: assignErr && assignErr.message,
@@ -107,31 +150,18 @@ function suppressDashboardHistoryErrors(global) {
         hasSocketGuard: Boolean(global.__wdashSocketGuard),
         hasOnErrorGuard: Boolean(global.__wdashOnErrorGuard)
       };
-      if (guardState.lastAssignedHistory) {
-        details.blockedType = typeof guardState.lastAssignedHistory;
-      }
       logGuardEvent('History guard applied', details);
     }
   };
 
-  applyNoopHistory();
+  applyGuardedHistory();
 
   if (!global.__wdashHistoryInterval && typeof global.setInterval === 'function') {
     global.__wdashHistoryInterval = global.setInterval(() => {
-      applyNoopHistory();
+      applyGuardedHistory();
     }, 1000);
     logGuardEvent('History guard interval registered');
   }
-
-  const shouldSuppressError = eventOrMessage => {
-    if (!eventOrMessage) return false;
-    if (typeof eventOrMessage === 'string') {
-      return isDashboardValueErrorMessage(eventOrMessage);
-    }
-    const message = String(eventOrMessage.message || '');
-    const filename = eventOrMessage.filename || eventOrMessage.source || '';
-    return isDashboardValueErrorMessage(message) && isDashboardValueErrorSource(filename);
-  };
 
   if (!global.__wdashSocketGuard && typeof global.addEventListener === 'function') {
     global.addEventListener('error', event => {
@@ -143,7 +173,7 @@ function suppressDashboardHistoryErrors(global) {
         if (typeof event.stopImmediatePropagation === 'function') {
           event.stopImmediatePropagation();
         }
-        applyNoopHistory();
+        applyGuardedHistory();
         logGuardEvent('Suppressed socket error event', {
           message: event.message,
           filename: event.filename
@@ -163,7 +193,7 @@ function suppressDashboardHistoryErrors(global) {
     const existingOnError = typeof global.onerror === 'function' ? global.onerror : null;
     global.onerror = function weatherDashboardOnError(message, source, lineno, colno, error) {
       if (shouldSuppressError({ message, filename: source, error })) {
-        applyNoopHistory();
+        applyGuardedHistory();
         logGuardEvent('Suppressed global onerror event', {
           message,
           source
