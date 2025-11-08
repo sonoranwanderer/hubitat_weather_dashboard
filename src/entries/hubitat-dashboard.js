@@ -113,6 +113,30 @@ function suppressDashboardHistoryErrors(global) {
       }
     }
 
+    if (typeof global.eval === 'function') {
+      try {
+        const sentinel = '__wdashNoopHistory__';
+        const needsCleanup = global[sentinel] !== noopHistory;
+        if (needsCleanup) {
+          global[sentinel] = noopHistory;
+        }
+        global.eval(`try { addToDashboardHistory = this.${sentinel}; } catch (err) {}`);
+        applied = applied || global.addToDashboardHistory === noopHistory;
+        if (needsCleanup) {
+          try {
+            delete global[sentinel];
+          } catch (cleanupErr) {
+            global[sentinel] = undefined;
+          }
+        }
+      } catch (evalErr) {
+        logGuardEvent('History guard eval reassignment failed', {
+          message: evalErr && evalErr.message,
+          code: evalErr && evalErr.code
+        });
+      }
+    }
+
     if (applied) {
       global.__wdashHistorySuppressed = true;
       logGuardEvent('History guard applied', {
