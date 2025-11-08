@@ -72,13 +72,20 @@
       
         installNoopHistory();
       
+        const shouldSuppressError = eventOrMessage => {
+          if (!eventOrMessage) return false;
+          if (typeof eventOrMessage === 'string') {
+            return isDashboardValueErrorMessage(eventOrMessage);
+          }
+          const message = String(eventOrMessage.message || '');
+          const filename = eventOrMessage.filename || eventOrMessage.source || '';
+          return isDashboardValueErrorMessage(message) && isDashboardValueErrorSource(filename);
+        };
+      
         if (!global.__wdashSocketGuard && typeof global.addEventListener === 'function') {
           global.addEventListener('error', event => {
             if (!event) return;
-            const message = String(event.message || '');
-            const filename = event.filename || '';
-            const isDashboardValueError = isDashboardValueErrorMessage(message) && isDashboardValueErrorSource(filename);
-            if (isDashboardValueError) {
+            if (shouldSuppressError(event)) {
               if (typeof event.preventDefault === 'function') {
                 event.preventDefault();
               }
@@ -95,6 +102,21 @@
             }
           }, true);
           global.__wdashSocketGuard = true;
+        }
+      
+        if (!global.__wdashOnErrorGuard) {
+          const existingOnError = typeof global.onerror === 'function' ? global.onerror : null;
+          global.onerror = function weatherDashboardOnError(message, source, lineno, colno, error) {
+            if (shouldSuppressError({ message, filename: source, error })) {
+              installNoopHistory();
+              return true;
+            }
+            if (existingOnError) {
+              return existingOnError.apply(this, arguments);
+            }
+            return false;
+          };
+          global.__wdashOnErrorGuard = true;
         }
       }
       
