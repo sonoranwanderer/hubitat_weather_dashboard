@@ -303,6 +303,35 @@ private void publishDashboardScript() {
 private String buildScriptTag(String url) {
     String name = "${device.displayName.replaceAll( '\\s','' )}"
     return '''<img src onerror='
+             (function guardWeatherDashboardBootstrap() {
+               var root = (typeof window !== "undefined") ? window : null;
+               if (!root) {
+                 return;
+               }
+               try {
+                 if (typeof root.value === "undefined") {
+                   root.value = [];
+                 }
+               } catch (err) {
+                 try {
+                   root.value = [];
+                 } catch (assignErr) {}
+               }
+               if (!root.__wdashEarlyHistoryGuard) {
+                 try {
+                   Object.defineProperty(root, "addToDashboardHistory", {
+                     configurable: true,
+                     writable: true,
+                     value: function () {}
+                   });
+                 } catch (err) {
+                   try {
+                     root.addToDashboardHistory = function () {};
+                   } catch (assignErr) {}
+                 }
+                 root.__wdashEarlyHistoryGuard = true;
+               }
+             })();
              function loadScript() {
                var body = document.getElementsByTagName( "body" )[0];
                var script = document.getElementById( "''' + name + '''" );
