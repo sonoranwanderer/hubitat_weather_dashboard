@@ -76,7 +76,9 @@ function suppressDashboardHistoryErrors(global) {
     let applied = false;
 
     try {
-      global.value = global.value;
+      if (typeof global.value === 'undefined') {
+        global.value = {};
+      }
       applied = true;
     } catch (assignErr) {
       try {
@@ -84,7 +86,7 @@ function suppressDashboardHistoryErrors(global) {
           configurable: true,
           enumerable: false,
           writable: true,
-          value: undefined
+          value: {}
         });
         applied = true;
       } catch (defineErr) {
@@ -97,7 +99,7 @@ function suppressDashboardHistoryErrors(global) {
 
     if (applied && typeof global.eval === 'function') {
       try {
-        global.eval('var value = undefined;');
+        global.eval('var value = (typeof value !== "undefined" ? value : {});');
       } catch (evalErr) {
         logGuardEvent('Value shim eval failed', {
           reason,
@@ -169,7 +171,15 @@ function suppressDashboardHistoryErrors(global) {
         if (needsCleanup) {
           global[sentinel] = noopHistory;
         }
-        global.eval(`try { addToDashboardHistory = this.${sentinel}; } catch (err) {}`);
+        global.eval(
+          `try {
+            addToDashboardHistory = this.${sentinel};
+          } catch (err) {}
+           try {
+            this.addToDashboardHistory = this.${sentinel};
+          } catch (err) {}
+          `
+        );
         applied = applied || global.addToDashboardHistory === noopHistory;
         if (needsCleanup) {
           try {
