@@ -21,7 +21,7 @@ graph TD
   Entry --> Renderer[createRenderer factory]
   Renderer --> LayoutUtils[layout.js utilities]
   LayoutUtils -->|normalize & render| Markup[Dashboard markup]
-  Renderer -->|return| Result{{{ markup, variables, styles }}}
+  Renderer -->|return| Result{{Markup + variables + styles}}
   Result --> Host
   Renderer --> Styles[baseStyles CSS]
   Styles --> Host
