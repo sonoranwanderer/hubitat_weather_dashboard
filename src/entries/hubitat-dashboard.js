@@ -12,6 +12,7 @@ const {
   createLegacyWeatherDashboardRenderer,
   baseStyles
 } = require('../render/index.js');
+const { bootstrapHubitatRendererBridge } = require('../bootstrap/hubitat-bridge');
 
 function isDashboardValueErrorMessage(message) {
   if (!message) return false;
@@ -175,6 +176,17 @@ function patchDashboardGlitches(global) {
       });
       if (typeof module !== 'undefined' && module.exports) {
         module.exports = rendererModule;
+      }
+      try {
+        bootstrapHubitatRendererBridge({
+          global,
+          factory,
+          baseStyles
+        });
+      } catch (err) {
+        if (global.console && typeof global.console.warn === 'function') {
+          global.console.warn('[WeatherDashboard] Hubitat bridge failed to initialize', err);
+        }
       }
       return rendererModule;
     }
