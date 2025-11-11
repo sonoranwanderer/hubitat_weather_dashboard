@@ -126,5 +126,8 @@ describe('Hubitat renderer bridge', () => {
     expect(root.textContent).toContain('Outdoor');
     expect(root.style.getPropertyValue('--wdash-width')).toBe('800px');
     expect(root.style.getPropertyValue('--wdash-height')).toBe('480px');
+    expect(window.document.getElementById('tile-1').classList.contains('wdash-source-tile')).toBe(true);
+    expect(window.document.getElementById('tile-2').classList.contains('wdash-source-tile')).toBe(true);
+    expect(window.document.getElementById('tile-0').classList.contains('wdash-source-tile')).toBe(false);
   });
 });

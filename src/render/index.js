@@ -11,6 +11,11 @@ const baseStyles = `
   color-scheme: dark;
 }
 
+.wdash-source-tile {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
 .wdash-root {
   display: flex;
   flex-direction: column;
