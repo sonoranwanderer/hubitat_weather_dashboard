@@ -16,6 +16,10 @@ const baseStyles = `
   pointer-events: none !important;
 }
 
+.wdash-host-tile .tile-title {
+  display: none !important;
+}
+
 .wdash-root {
   display: flex;
   flex-direction: column;

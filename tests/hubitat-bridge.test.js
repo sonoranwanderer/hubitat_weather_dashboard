@@ -36,6 +36,9 @@ function createHubitatDom() {
   const displayTile = document.createElement('div');
   displayTile.setAttribute('id', 'tile-0');
   displayTile.classList.add('tile');
+  const displayTitle = document.createElement('div');
+  displayTitle.classList.add('tile-title');
+  displayTile.appendChild(displayTitle);
   const displayPrimary = document.createElement('div');
   displayPrimary.classList.add('tile-primary');
   displayPrimary.getBoundingClientRect = () => ({ width: 800, height: 480 });
@@ -45,6 +48,9 @@ function createHubitatDom() {
   const dataTileOne = document.createElement('div');
   dataTileOne.setAttribute('id', 'tile-1');
   dataTileOne.classList.add('tile');
+  const dataTitleOne = document.createElement('div');
+  dataTitleOne.classList.add('tile-title');
+  dataTileOne.appendChild(dataTitleOne);
   const dataPrimaryOne = document.createElement('div');
   dataPrimaryOne.classList.add('tile-primary');
   dataTileOne.appendChild(dataPrimaryOne);
@@ -53,6 +59,9 @@ function createHubitatDom() {
   const dataTileTwo = document.createElement('div');
   dataTileTwo.setAttribute('id', 'tile-2');
   dataTileTwo.classList.add('tile');
+  const dataTitleTwo = document.createElement('div');
+  dataTitleTwo.classList.add('tile-title');
+  dataTileTwo.appendChild(dataTitleTwo);
   const dataPrimaryTwo = document.createElement('div');
   dataPrimaryTwo.classList.add('tile-primary');
   dataTileTwo.appendChild(dataPrimaryTwo);
@@ -129,5 +138,8 @@ describe('Hubitat renderer bridge', () => {
     expect(window.document.getElementById('tile-1').classList.contains('wdash-source-tile')).toBe(true);
     expect(window.document.getElementById('tile-2').classList.contains('wdash-source-tile')).toBe(true);
     expect(window.document.getElementById('tile-0').classList.contains('wdash-source-tile')).toBe(false);
+    expect(window.document.getElementById('tile-0').classList.contains('wdash-host-tile')).toBe(true);
+    expect(window.document.getElementById('tile-1').classList.contains('wdash-host-tile')).toBe(false);
+    expect(window.document.getElementById('tile-2').classList.contains('wdash-host-tile')).toBe(false);
   });
 });

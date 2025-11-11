@@ -117,6 +117,10 @@
         pointer-events: none !important;
       }
       
+      .wdash-host-tile .tile-title {
+        display: none !important;
+      }
+      
       .wdash-root {
         display: flex;
         flex-direction: column;
@@ -706,6 +710,14 @@
         return doc.getElementById('tile-0');
       }
       
+      function markDisplayTile(global) {
+        const tile = findDisplayTile(global);
+        if (!tile || !tile.classList || typeof tile.classList.add !== 'function') {
+          return;
+        }
+        tile.classList.add('wdash-host-tile');
+      }
+      
       function findTileContentElement(tile) {
         if (!tile || typeof tile.querySelector !== 'function') {
           return null;
@@ -889,6 +901,7 @@
         function ensureHost() {
           const host = findDisplayTileHost(global, adapter);
           if (!host) return null;
+          markDisplayTile(global);
           if (state.host === host) return host;
           state.host = host;
           attachResizeObserver(host);
