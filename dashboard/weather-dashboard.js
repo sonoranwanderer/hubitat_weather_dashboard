@@ -290,21 +290,25 @@
       function normalizeLayoutDefinition(input = {}) {
         const layout = typeof input === 'object' && input !== null ? input : {};
       
+        const trackUnit = normalizeTrackUnit(layout.trackUnit);
+      
         const templateColumns = createTrackTemplate(layout.columns, {
           fallback: '1fr',
-          axis: 'columns'
+          axis: 'columns',
+          trackUnit
         });
         const templateRows = createTrackTemplate(layout.rows, {
           fallback: 'auto',
-          axis: 'rows'
+          axis: 'rows',
+          trackUnit
         });
       
         const autoRows = layout.autoRows != null
-          ? normalizeTrack(layout.autoRows, { axis: 'rows', allowAuto: true })
+          ? normalizeTrack(layout.autoRows, { axis: 'rows', allowAuto: true, trackUnit })
           : 'minmax(min-content, auto)';
       
         const autoColumns = layout.autoColumns != null
-          ? normalizeTrack(layout.autoColumns, { axis: 'columns', allowAuto: true })
+          ? normalizeTrack(layout.autoColumns, { axis: 'columns', allowAuto: true, trackUnit })
           : 'minmax(0, 1fr)';
       
         const gap = normalizeGap(layout.gap);
@@ -324,7 +328,7 @@
       }
       
       function createTrackTemplate(tracks, options = {}) {
-        const { fallback = 'auto', axis = 'rows' } = options;
+        const { fallback = 'auto', axis = 'rows', trackUnit = 'fraction' } = options;
       
         if (typeof tracks === 'string' && tracks.trim().length > 0) {
           return tracks.trim();
@@ -332,26 +336,27 @@
       
         if (Array.isArray(tracks) && tracks.length > 0) {
           return tracks
-            .map(track => normalizeTrack(track, { axis, allowAuto: true }))
+            .map(track => normalizeTrack(track, { axis, allowAuto: true, trackUnit }))
             .join(' ');
         }
       
         if (tracks != null) {
-          return normalizeTrack(tracks, { axis, allowAuto: true });
+          return normalizeTrack(tracks, { axis, allowAuto: true, trackUnit });
         }
       
         return fallback;
       }
       
       function normalizeTrack(value, options = {}) {
-        const { axis = 'rows', allowAuto = false } = options;
+        const { axis = 'rows', allowAuto = false, trackUnit = 'fraction' } = options;
       
         if (value == null || value === '') {
           return allowAuto ? 'auto' : '1fr';
         }
       
         if (typeof value === 'number') {
-          return Number.isFinite(value) ? `${value}fr` : (allowAuto ? 'auto' : '1fr');
+          if (!Number.isFinite(value)) return allowAuto ? 'auto' : '1fr';
+          return trackUnit === 'percent' ? `${value}%` : `${value}fr`;
         }
       
         const stringValue = String(value).trim();
@@ -360,7 +365,7 @@
         }
       
         if (/^\d+(?:\.\d+)?$/.test(stringValue)) {
-          return `${stringValue}fr`;
+          return trackUnit === 'percent' ? `${stringValue}%` : `${stringValue}fr`;
         }
       
         if (stringValue === 'auto' && allowAuto) {
@@ -384,6 +389,12 @@
         }
       
         throw new Error(`Unsupported track definition "${stringValue}" for ${axis}`);
+      }
+      
+      function normalizeTrackUnit(value) {
+        const token = typeof value === 'string' ? value.trim().toLowerCase() : '';
+        if (token === 'percent' || token === 'percentage') return 'percent';
+        return 'fraction';
       }
       
       function normalizeGap(value) {
@@ -1215,6 +1226,103 @@
         return { metrics };
       }
       
+      function normalizeTrackUnit(value) {
+        const token = typeof value === 'string' ? value.trim().toLowerCase() : '';
+        if (token === 'percent' || token === 'percentage') return 'percent';
+        return 'fraction';
+      }
+      
+      function deriveRowColumns(rows) {
+        if (!Array.isArray(rows) || rows.length === 0) {
+          return 0;
+        }
+        return rows.reduce((max, row) => {
+          if (!row || typeof row !== 'object' || Array.isArray(row)) return max;
+          const count = Array.isArray(row.columns) ? row.columns.length : 0;
+          return Math.max(max, count);
+        }, 0);
+      }
+      
+      function createTrackFromNumeric(value, trackUnit) {
+        const numeric = typeof value === 'string' ? Number(value) : value;
+        if (!Number.isFinite(numeric)) return null;
+        const normalized = Math.max(0, Number(numeric));
+        if (normalized === 0) return '0';
+        return trackUnit === 'percent' ? `${normalized}%` : `${normalized}fr`;
+      }
+      
+      function normalizeCardPlacement(entry, rowIndex, columnIndex) {
+        if (!entry) return null;
+        if (typeof entry === 'string' || typeof entry === 'number') {
+          const id = String(entry).trim();
+          if (!id) return null;
+          return { id, row: rowIndex, column: columnIndex, rowSpan: 1, colSpan: 1 };
+        }
+        if (typeof entry !== 'object' || Array.isArray(entry)) {
+          return null;
+        }
+        const id = entry.id != null ? String(entry.id).trim() : '';
+        if (!id) return null;
+        const placement = {
+          id,
+          row: rowIndex,
+          column: columnIndex,
+          rowSpan: Number.isInteger(entry.rowSpan) && entry.rowSpan > 0 ? entry.rowSpan : 1,
+          colSpan: Number.isInteger(entry.colSpan) && entry.colSpan > 0 ? entry.colSpan : 1
+        };
+        if (entry.title != null) placement.title = String(entry.title);
+        if (entry.className != null) placement.class = String(entry.className);
+        if (entry.class != null) placement.class = String(entry.class);
+        if (entry.style && typeof entry.style === 'object') {
+          placement.style = { ...entry.style };
+        }
+        return placement;
+      }
+      
+      function convertRowColumnLayout(layout) {
+        if (!layout || typeof layout !== 'object') return null;
+        const rows = Array.isArray(layout.rows) ? layout.rows.filter(row => row && typeof row === 'object' && !Array.isArray(row)) : [];
+        if (!rows.length) return null;
+      
+        const trackUnit = normalizeTrackUnit(layout.trackUnit);
+        const explicitColumns = layout.columns;
+        const derivedColumnCount = deriveRowColumns(rows) || 1;
+      
+        let columns;
+        if (explicitColumns != null) {
+          columns = explicitColumns;
+        } else {
+          const token = createTrackFromNumeric(100 / derivedColumnCount, 'percent');
+          columns = Array.from({ length: derivedColumnCount }, () => (trackUnit === 'percent' ? token : '1fr'));
+        }
+      
+        const rowTracks = rows.map(row => {
+          const height = Number.isFinite(row.height) ? row.height : Number.isFinite(row.size) ? row.size : null;
+          if (height == null) return 'auto';
+          const token = createTrackFromNumeric(height, trackUnit);
+          return token || 'auto';
+        });
+      
+        const cards = [];
+        rows.forEach((row, rowIndex) => {
+          const columnsArray = Array.isArray(row.columns) ? row.columns : [];
+          columnsArray.forEach((entry, columnIndex) => {
+            const card = normalizeCardPlacement(entry, rowIndex + 1, columnIndex + 1);
+            if (card) {
+              cards.push(card);
+            }
+          });
+        });
+      
+        return {
+          trackUnit,
+          columns,
+          rows: rowTracks,
+          gap: layout.gap || layout.gridGap || layout.gutter,
+          cards
+        };
+      }
+      
       function buildRendererData(payload) {
         if (!payload || typeof payload !== 'object') {
           return {};
@@ -1292,6 +1400,14 @@
         const metadataLayout = payload && payload.metadata && typeof payload.metadata === 'object'
           ? payload.metadata.layout
           : null;
+        const rowColumnLayout = convertRowColumnLayout(
+          metadataLayout && metadataLayout.desktop && Array.isArray(metadataLayout.desktop.rows)
+            ? { ...metadataLayout, ...metadataLayout.desktop }
+            : metadataLayout
+        );
+        if (rowColumnLayout) {
+          return prepareLayoutDefinition(rowColumnLayout);
+        }
         const candidate = selectLayoutCandidate(metadataLayout);
         return prepareLayoutDefinition(candidate);
       }

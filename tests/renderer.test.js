@@ -92,6 +92,27 @@ describe('createRenderer', () => {
     expect(variables['--wdash-grid-template-columns']).toBe('60% 40%');
     expect(variables['--wdash-grid-template-rows']).toBe('1fr 1fr');
   });
+
+  it('interprets numeric tracks as percentages when requested', () => {
+    const { variables } = createRenderer({
+      width: 900,
+      height: 600,
+      layout: {
+        trackUnit: 'percent',
+        columns: [70, 30],
+        rows: [55, 45],
+        cards: [
+          { id: 'temperature', row: 1, column: 1 },
+          { id: 'wind', row: 1, column: 2 },
+          { id: 'rain', row: 2, column: 1, colSpan: 2 }
+        ]
+      },
+      data: sampleData
+    });
+
+    expect(variables['--wdash-grid-template-columns']).toBe('70% 30%');
+    expect(variables['--wdash-grid-template-rows']).toBe('55% 45%');
+  });
 });
 
 describe('layout parsing edge cases', () => {
@@ -141,5 +162,32 @@ describe('layout parsing edge cases', () => {
     expect(variables['--wdash-grid-template-columns']).toBe('2fr 1fr 0.5fr');
     expect(variables['--wdash-grid-template-rows']).toBe('minmax(120px, auto) 1fr');
     expect(variables['--wdash-grid-gap']).toBe('5%');
+  });
+
+  it('converts row-based layout overrides into grid templates', () => {
+    const payloadLayout = {
+      trackUnit: 'percent',
+      gap: '12px',
+      rows: [
+        { height: 40, columns: ['temperature', 'wind'] },
+        { height: 60, columns: [{ id: 'rain', colSpan: 2 }] }
+      ]
+    };
+
+    const { extractLayoutFromPayload } = require('../src/bootstrap/renderer-host');
+    const layout = extractLayoutFromPayload({ metadata: { layout: payloadLayout } });
+
+    const { variables, markup } = createRenderer({
+      width: 1000,
+      height: 800,
+      layout,
+      data: sampleData
+    });
+
+    expect(variables['--wdash-grid-template-columns']).toBe('50% 50%');
+    expect(variables['--wdash-grid-template-rows']).toBe('40% 60%');
+    expect(variables['--wdash-grid-gap']).toBe('12px');
+    expect(markup).toContain('wdash-card--rain');
+    expect(markup).toContain('grid-column:1 / span 2');
   });
 });

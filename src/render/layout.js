@@ -3,21 +3,25 @@
 function normalizeLayoutDefinition(input = {}) {
   const layout = typeof input === 'object' && input !== null ? input : {};
 
+  const trackUnit = normalizeTrackUnit(layout.trackUnit);
+
   const templateColumns = createTrackTemplate(layout.columns, {
     fallback: '1fr',
-    axis: 'columns'
+    axis: 'columns',
+    trackUnit
   });
   const templateRows = createTrackTemplate(layout.rows, {
     fallback: 'auto',
-    axis: 'rows'
+    axis: 'rows',
+    trackUnit
   });
 
   const autoRows = layout.autoRows != null
-    ? normalizeTrack(layout.autoRows, { axis: 'rows', allowAuto: true })
+    ? normalizeTrack(layout.autoRows, { axis: 'rows', allowAuto: true, trackUnit })
     : 'minmax(min-content, auto)';
 
   const autoColumns = layout.autoColumns != null
-    ? normalizeTrack(layout.autoColumns, { axis: 'columns', allowAuto: true })
+    ? normalizeTrack(layout.autoColumns, { axis: 'columns', allowAuto: true, trackUnit })
     : 'minmax(0, 1fr)';
 
   const gap = normalizeGap(layout.gap);
@@ -37,7 +41,7 @@ function normalizeLayoutDefinition(input = {}) {
 }
 
 function createTrackTemplate(tracks, options = {}) {
-  const { fallback = 'auto', axis = 'rows' } = options;
+  const { fallback = 'auto', axis = 'rows', trackUnit = 'fraction' } = options;
 
   if (typeof tracks === 'string' && tracks.trim().length > 0) {
     return tracks.trim();
@@ -45,26 +49,27 @@ function createTrackTemplate(tracks, options = {}) {
 
   if (Array.isArray(tracks) && tracks.length > 0) {
     return tracks
-      .map(track => normalizeTrack(track, { axis, allowAuto: true }))
+      .map(track => normalizeTrack(track, { axis, allowAuto: true, trackUnit }))
       .join(' ');
   }
 
   if (tracks != null) {
-    return normalizeTrack(tracks, { axis, allowAuto: true });
+    return normalizeTrack(tracks, { axis, allowAuto: true, trackUnit });
   }
 
   return fallback;
 }
 
 function normalizeTrack(value, options = {}) {
-  const { axis = 'rows', allowAuto = false } = options;
+  const { axis = 'rows', allowAuto = false, trackUnit = 'fraction' } = options;
 
   if (value == null || value === '') {
     return allowAuto ? 'auto' : '1fr';
   }
 
   if (typeof value === 'number') {
-    return Number.isFinite(value) ? `${value}fr` : (allowAuto ? 'auto' : '1fr');
+    if (!Number.isFinite(value)) return allowAuto ? 'auto' : '1fr';
+    return trackUnit === 'percent' ? `${value}%` : `${value}fr`;
   }
 
   const stringValue = String(value).trim();
@@ -73,7 +78,7 @@ function normalizeTrack(value, options = {}) {
   }
 
   if (/^\d+(?:\.\d+)?$/.test(stringValue)) {
-    return `${stringValue}fr`;
+    return trackUnit === 'percent' ? `${stringValue}%` : `${stringValue}fr`;
   }
 
   if (stringValue === 'auto' && allowAuto) {
@@ -97,6 +102,12 @@ function normalizeTrack(value, options = {}) {
   }
 
   throw new Error(`Unsupported track definition "${stringValue}" for ${axis}`);
+}
+
+function normalizeTrackUnit(value) {
+  const token = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  if (token === 'percent' || token === 'percentage') return 'percent';
+  return 'fraction';
 }
 
 function normalizeGap(value) {
