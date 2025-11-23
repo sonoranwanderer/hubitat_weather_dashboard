@@ -190,4 +190,43 @@ describe('layout parsing edge cases', () => {
     expect(markup).toContain('wdash-card--rain');
     expect(markup).toContain('grid-column:1 / span 2');
   });
+
+  it('merges repeated cards across rows and columns into spans', () => {
+    const payloadLayout = {
+      rows: [
+        { columns: ['temperature', 'temperature', 'wind'] },
+        { columns: ['temperature', 'temperature', 'wind'] },
+        { columns: ['temperature', 'temperature', 'wind'] }
+      ]
+    };
+
+    const { extractLayoutFromPayload } = require('../src/bootstrap/renderer-host');
+    const layout = extractLayoutFromPayload({ metadata: { layout: payloadLayout } });
+
+    const { markup } = createRenderer({
+      width: 900,
+      height: 900,
+      layout,
+      data: sampleData
+    });
+
+    const tempCard = layout.cards.find(card => card.id === 'temperature');
+    const windCard = layout.cards.find(card => card.id === 'wind');
+
+    expect(tempCard.row).toBe(1);
+    expect(tempCard.column).toBe(1);
+    expect(tempCard.colSpan).toBe(2);
+    expect(tempCard.rowSpan).toBe(3);
+
+    expect(windCard.row).toBe(1);
+    expect(windCard.column).toBe(3);
+    expect(windCard.colSpan).toBe(1);
+    expect(windCard.rowSpan).toBe(3);
+
+    expect(markup).toContain('wdash-card--temperature');
+    expect(markup).toContain('grid-column:1 / span 2');
+    expect(markup).toContain('grid-row:1 / span 3');
+    expect(markup).toContain('wdash-card--wind');
+    expect(markup).toContain('grid-column:3 / span 1');
+  });
 });

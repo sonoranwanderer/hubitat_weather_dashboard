@@ -259,16 +259,93 @@ function convertRowColumnLayout(layout) {
     return token || 'auto';
   });
 
-  const cards = [];
+  const rowCount = rows.length;
+  const columnCount = Math.max(derivedColumnCount, 1);
+
+  const grid = Array.from({ length: rowCount }, () => Array(columnCount).fill(null));
+
   rows.forEach((row, rowIndex) => {
     const columnsArray = Array.isArray(row.columns) ? row.columns : [];
-    columnsArray.forEach((entry, columnIndex) => {
-      const card = normalizeCardPlacement(entry, rowIndex + 1, columnIndex + 1);
-      if (card) {
-        cards.push(card);
+    let columnIndex = 0;
+    columnsArray.forEach(entry => {
+      while (columnIndex < columnCount && grid[rowIndex][columnIndex]) {
+        columnIndex += 1;
       }
+      if (columnIndex >= columnCount) {
+        return;
+      }
+
+      const card = normalizeCardPlacement(entry, rowIndex + 1, columnIndex + 1);
+      if (!card) {
+        columnIndex += 1;
+        return;
+      }
+
+      const spanColumns = Math.max(1, Math.min(card.colSpan || 1, columnCount - columnIndex));
+      const spanRows = Math.max(1, Math.min(card.rowSpan || 1, rowCount - rowIndex));
+
+      for (let r = 0; r < spanRows; r += 1) {
+        for (let c = 0; c < spanColumns; c += 1) {
+          const targetRow = rowIndex + r;
+          const targetColumn = columnIndex + c;
+          if (targetRow < rowCount && targetColumn < columnCount && !grid[targetRow][targetColumn]) {
+            grid[targetRow][targetColumn] = card;
+          }
+        }
+      }
+
+      columnIndex += spanColumns;
     });
   });
+
+  const processed = Array.from({ length: rowCount }, () => Array(columnCount).fill(false));
+  const cards = [];
+
+  for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
+    for (let columnIndex = 0; columnIndex < columnCount; columnIndex += 1) {
+      if (processed[rowIndex][columnIndex]) continue;
+      const cell = grid[rowIndex][columnIndex];
+      if (!cell) continue;
+
+      let colSpan = 0;
+      while (
+        columnIndex + colSpan < columnCount &&
+        grid[rowIndex][columnIndex + colSpan] &&
+        grid[rowIndex][columnIndex + colSpan].id === cell.id
+      ) {
+        colSpan += 1;
+      }
+
+      let rowSpan = 1;
+      let canExpand = true;
+      while (rowIndex + rowSpan < rowCount && canExpand) {
+        for (let c = 0; c < colSpan; c += 1) {
+          const nextCell = grid[rowIndex + rowSpan][columnIndex + c];
+          if (!nextCell || nextCell.id !== cell.id) {
+            canExpand = false;
+            break;
+          }
+        }
+        if (canExpand) {
+          rowSpan += 1;
+        }
+      }
+
+      for (let r = 0; r < rowSpan; r += 1) {
+        for (let c = 0; c < colSpan; c += 1) {
+          processed[rowIndex + r][columnIndex + c] = true;
+        }
+      }
+
+      cards.push({
+        ...cell,
+        row: rowIndex + 1,
+        column: columnIndex + 1,
+        rowSpan,
+        colSpan
+      });
+    }
+  }
 
   return {
     trackUnit,
