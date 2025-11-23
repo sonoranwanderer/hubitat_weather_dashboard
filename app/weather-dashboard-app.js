@@ -1499,10 +1499,192 @@
     }
   }
 
+  function createTrackFromNumeric(value, unit) {
+    if (!Number.isFinite(value)) return null;
+    if (unit === 'percent') {
+      return `${value}%`;
+    }
+    if (unit === 'fr') {
+      return `${value}fr`;
+    }
+    if (unit === 'px') {
+      return `${value}px`;
+    }
+    return null;
+  }
+
+  function normalizeCardPlacement(entry, fallbackRow, fallbackColumn) {
+    if (!entry || typeof entry !== 'object') return null;
+    const id = entry.id || entry.card || entry.name;
+    if (!id) return null;
+    const card = {
+      id: String(id)
+    };
+    if (entry.title) card.title = String(entry.title);
+    if (Number.isFinite(entry.row)) card.row = entry.row;
+    if (Number.isFinite(entry.column)) card.column = entry.column;
+    if (Number.isFinite(entry.rowSpan)) card.rowSpan = entry.rowSpan;
+    if (Number.isFinite(entry.colSpan)) card.colSpan = entry.colSpan;
+    if (entry.class) card.class = String(entry.class);
+    if (entry.minWidth) card.minWidth = String(entry.minWidth);
+    if (entry.minHeight) card.minHeight = String(entry.minHeight);
+    if (entry.maxWidth) card.maxWidth = String(entry.maxWidth);
+    if (entry.maxHeight) card.maxHeight = String(entry.maxHeight);
+    if (entry.align) card.align = String(entry.align);
+    if (entry.justify) card.justify = String(entry.justify);
+    if (entry.position) card.position = String(entry.position);
+    if (card.row == null && fallbackRow != null) card.row = fallbackRow;
+    if (card.column == null && fallbackColumn != null) card.column = fallbackColumn;
+    return card;
+  }
+
+  function convertRowColumnLayout(layout) {
+    if (!layout || typeof layout !== 'object') return null;
+    const rows = Array.isArray(layout.rows) ? layout.rows : [];
+    const trackUnit = layout.trackUnit === 'percent' ? 'percent' : 'fr';
+
+    let columns = Array.isArray(layout.columns) && layout.columns.length
+      ? layout.columns.slice()
+      : null;
+
+    const derivedColumnCount = columns && columns.length
+      ? columns.length
+      : rows.reduce((max, row) => Math.max(max, Array.isArray(row.columns) ? row.columns.length : 0), 0);
+
+    if (columns && columns.length) {
+      columns = columns.map(entry => {
+        if (typeof entry === 'string') return entry;
+        if (Number.isFinite(entry)) {
+          const token = createTrackFromNumeric(entry, trackUnit);
+          return token || '1fr';
+        }
+        if (entry && Number.isFinite(entry.width)) {
+          const token = createTrackFromNumeric(entry.width, entry.unit || trackUnit);
+          return token || '1fr';
+        }
+        return '1fr';
+      });
+    } else {
+      const token = createTrackFromNumeric(100 / derivedColumnCount, 'percent');
+      columns = Array.from({ length: derivedColumnCount }, () => (trackUnit === 'percent' ? token : '1fr'));
+    }
+
+    const rowTracks = rows.map(row => {
+      const height = Number.isFinite(row.height) ? row.height : Number.isFinite(row.size) ? row.size : null;
+      if (height == null) return 'auto';
+      const token = createTrackFromNumeric(height, trackUnit);
+      return token || 'auto';
+    });
+
+    const rowCount = rows.length;
+    const columnCount = Math.max(derivedColumnCount, 1);
+
+    const grid = Array.from({ length: rowCount }, () => Array(columnCount).fill(null));
+
+    rows.forEach((row, rowIndex) => {
+      const columnsArray = Array.isArray(row.columns) ? row.columns : [];
+      let columnIndex = 0;
+      columnsArray.forEach(entry => {
+        while (columnIndex < columnCount && grid[rowIndex][columnIndex]) {
+          columnIndex += 1;
+        }
+        if (columnIndex >= columnCount) {
+          return;
+        }
+
+        const card = normalizeCardPlacement(entry, rowIndex + 1, columnIndex + 1);
+        if (!card) {
+          columnIndex += 1;
+          return;
+        }
+
+        const spanColumns = Math.max(1, Math.min(card.colSpan || 1, columnCount - columnIndex));
+        const spanRows = Math.max(1, Math.min(card.rowSpan || 1, rowCount - rowIndex));
+
+        for (let r = 0; r < spanRows; r += 1) {
+          for (let c = 0; c < spanColumns; c += 1) {
+            const targetRow = rowIndex + r;
+            const targetColumn = columnIndex + c;
+            if (targetRow < rowCount && targetColumn < columnCount && !grid[targetRow][targetColumn]) {
+              grid[targetRow][targetColumn] = card;
+            }
+          }
+        }
+
+        columnIndex += spanColumns;
+      });
+    });
+
+    const processed = Array.from({ length: rowCount }, () => Array(columnCount).fill(false));
+    const cards = [];
+
+    for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
+      for (let columnIndex = 0; columnIndex < columnCount; columnIndex += 1) {
+        if (processed[rowIndex][columnIndex]) continue;
+        const cell = grid[rowIndex][columnIndex];
+        if (!cell) continue;
+
+        let colSpan = 0;
+        while (
+          columnIndex + colSpan < columnCount &&
+          grid[rowIndex][columnIndex + colSpan] &&
+          grid[rowIndex][columnIndex + colSpan].id === cell.id
+        ) {
+          colSpan += 1;
+        }
+
+        let rowSpan = 1;
+        let canExpand = true;
+        while (rowIndex + rowSpan < rowCount && canExpand) {
+          for (let c = 0; c < colSpan; c += 1) {
+            const nextCell = grid[rowIndex + rowSpan][columnIndex + c];
+            if (!nextCell || nextCell.id !== cell.id) {
+              canExpand = false;
+              break;
+            }
+          }
+          if (canExpand) {
+            rowSpan += 1;
+          }
+        }
+
+        for (let r = 0; r < rowSpan; r += 1) {
+          for (let c = 0; c < colSpan; c += 1) {
+            processed[rowIndex + r][columnIndex + c] = true;
+          }
+        }
+
+        cards.push({
+          ...cell,
+          row: rowIndex + 1,
+          column: columnIndex + 1,
+          rowSpan,
+          colSpan
+        });
+      }
+    }
+
+    return {
+      trackUnit,
+      columns,
+      rows: rowTracks,
+      gap: layout.gap || layout.gridGap || layout.gutter,
+      cards
+    };
+  }
+
   function extractLayoutFromPayload(payload) {
     const metadataLayout = payload && payload.metadata && typeof payload.metadata === 'object'
       ? payload.metadata.layout
       : null;
+    const rowColumnLayout = convertRowColumnLayout(
+      metadataLayout && metadataLayout.desktop && Array.isArray(metadataLayout.desktop.rows)
+        ? { ...metadataLayout, ...metadataLayout.desktop }
+        : metadataLayout
+    );
+    if (rowColumnLayout) {
+      return prepareLayoutDefinition(rowColumnLayout);
+    }
     const candidate = selectLayoutCandidate(metadataLayout);
     return prepareLayoutDefinition(candidate);
   }
