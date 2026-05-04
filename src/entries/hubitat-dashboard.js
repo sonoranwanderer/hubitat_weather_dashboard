@@ -32,9 +32,12 @@ const { createRenderer, createLegacyWeatherDashboardRenderer } = require('../ren
   );
 
   if (typeof factory === 'function') {
-    const renderer = factory({ window: global, document: global.document, globalThis: global });
     global.weatherDashboard = global.weatherDashboard || {};
     global.weatherDashboard.__rendererFactory = factory;
+    if (!global.document || typeof global.document.getElementById !== 'function' || !global.document.getElementById('tile-0')) {
+      return null;
+    }
+    const renderer = factory({ window: global, document: global.document, globalThis: global });
     if (typeof module !== 'undefined' && module.exports) {
       module.exports = renderer;
     }

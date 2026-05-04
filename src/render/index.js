@@ -24,7 +24,10 @@ function createRenderer(options = {}) {
   const injectedObserve = typeof options.observe === 'function' ? options.observe : null;
   const injectedDataSource = options.dataSource ?? null;
   const injectedLayoutOverride = options.layoutOverride ?? null;
-
+  const configuredMaxScale = Number(options.maxScale);
+  const rendererMaxScale = Number.isFinite(configuredMaxScale) && configuredMaxScale > 0
+    ? configuredMaxScale
+    : 1;
   const moduleApi = (() => {
     const window = envWindow;
     const document = envDocument;
@@ -1797,7 +1800,7 @@ function createRenderer(options = {}) {
     root.style.setProperty('--wdash-base-width', `${baseWidth}px`);
     root.style.setProperty('--wdash-base-height', `${baseHeight}px`);
     const rawScale = Math.min(width / baseWidth, height / baseHeight);
-    const scale = Math.max(0.1, Math.min(rawScale, 1));
+    const scale = Math.max(0.1, Math.min(rawScale, rendererMaxScale));
     const renderWidth = baseWidth * scale;
     const renderHeight = baseHeight * scale;
     root.style.setProperty('--wdash-scale', `${scale}`);
@@ -4959,10 +4962,32 @@ function createRenderer(options = {}) {
     const measured = typeof host.getBoundingClientRect === 'function'
       ? host.getBoundingClientRect()
       : null;
-    const width = measured?.width ?? host.clientWidth ?? 0;
-    const height = measured?.height ?? host.clientHeight ?? 0;
+    const root = typeof host.closest === 'function'
+      ? host.closest('.wdash-root')
+      : null;
+    const computed = root && typeof getComputedStyle === 'function'
+      ? getComputedStyle(root)
+      : null;
+    const scaleText = root
+      ? (computed?.getPropertyValue?.('--wdash-scale') || root.style?.getPropertyValue?.('--wdash-scale'))
+      : '';
+    const activeScale = Number.parseFloat(scaleText);
+    const scale = Number.isFinite(activeScale) && activeScale > 0 ? activeScale : 1;
+    let width = measured && Number.isFinite(measured.width) && measured.width > 0
+      ? measured.width / scale
+      : 0;
+    let height = measured && Number.isFinite(measured.height) && measured.height > 0
+      ? measured.height / scale
+      : 0;
+    if (!width) {
+      const clientWidth = Number(host.clientWidth);
+      width = Number.isFinite(clientWidth) && clientWidth > 0 ? clientWidth : 0;
+    }
+    if (!height) {
+      const clientHeight = Number(host.clientHeight);
+      height = Number.isFinite(clientHeight) && clientHeight > 0 ? clientHeight : 0;
+    }
     const hostSize = Math.min(width, height);
-
     if (!Number.isFinite(hostSize) || hostSize <= 0) {
       if (gauge.style) {
         gauge.style.removeProperty('width');
@@ -6619,7 +6644,7 @@ function createRenderer(options = {}) {
 .wdash-grid[data-empty="true"] { display: flex; align-items: center; justify-content: center; }
 .wdash-grid > * { min-height: 0; }
 .wdash-empty { width: 100%; text-align: center; font-size: 1.1rem; opacity: 0.7; }
-.wdash-card { background: linear-gradient(145deg, rgba(27,35,58,0.92), rgba(13,18,32,0.92)); border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 10px; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05); height: 100%; min-height: 0; }
+.wdash-card { background: linear-gradient(145deg, rgba(27,35,58,0.92), rgba(13,18,32,0.92)); border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 10px; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05); height: 100%; min-height: 0; box-sizing: border-box; }
 .wdash-card-header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.72rem; color: #8ea0c8; }
 .wdash-card-header-main { display: flex; flex-direction: column; gap: 2px; flex: 1 1 auto; min-width: 0; }
 .wdash-card-header-leading { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
@@ -7719,6 +7744,7 @@ function createRenderer(options = {}) {
       stopAmbientRotationTimer,
       stopAirQualityRotationTimer,
       clearAirQualityRotation,
+      applyTempWindGaugeSize,
       updateAirQualityCard,
       getAirQualityRotationState: () => ({
         timer: airQualityRotation.timer,

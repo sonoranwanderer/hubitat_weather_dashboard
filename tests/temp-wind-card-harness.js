@@ -233,10 +233,30 @@ function assertEqual(actual, expected, message) {
   buildTempWindStructure(document);
 
   const hooks = window.__WDASH_TEST_HOOKS__;
-  const { updateTempWindCard, tempWindState } = hooks;
+  const { updateTempWindCard, tempWindState, applyTempWindGaugeSize } = hooks;
   if (typeof updateTempWindCard !== 'function') {
     throw new Error('updateTempWindCard hook missing');
   }
+  if (typeof applyTempWindGaugeSize !== 'function') {
+    throw new Error('applyTempWindGaugeSize hook missing');
+  }
+
+  const scaledRoot = createElement(document, 'div', ['wdash-root']);
+  scaledRoot.style.setProperty('--wdash-scale', '1.26');
+  const scaledHost = createElement(document, 'div', ['wdash-temp']);
+  const scaledGauge = createElement(document, 'div', ['wdash-gauge']);
+  scaledHost.appendChild(scaledGauge);
+  scaledHost.querySelector = selector => (
+    selector === '.wdash-gauge, .wdash-wind-compass' ? scaledGauge : null
+  );
+  scaledRoot.appendChild(scaledHost);
+  document.body.appendChild(scaledRoot);
+  scaledHost.setBoundingClientRect({ width: 340.83, height: 447.3 });
+  Object.defineProperty(scaledHost, 'clientWidth', { configurable: true, value: 0 });
+  Object.defineProperty(scaledHost, 'clientHeight', { configurable: true, value: 0 });
+  applyTempWindGaugeSize(scaledHost);
+  assertEqual(scaledGauge.style.width, '270.5px', 'scaled gauge width should be normalized to dashboard CSS pixels');
+  assertEqual(scaledGauge.style.height, '270.5px', 'scaled gauge height should be normalized to dashboard CSS pixels');
 
   const dataA = {
     outdoor: {
@@ -463,4 +483,3 @@ function assertEqual(actual, expected, message) {
 
   console.log('Temp-wind card harness passed');
 })();
-
