@@ -14,6 +14,7 @@
   const DEFAULT_MAX_BACKOFF_MS = 60000;
   const DEFAULT_RENDER_BASE_WIDTH = 1200;
   const DEFAULT_RENDER_BASE_HEIGHT = 900;
+  const HTML_APP_MAX_SCALE = 2;
 
   const state = {
     renderer: null,
@@ -221,17 +222,77 @@
     if (displayTile) {
       displayTile.style.removeProperty('maxWidth');
       displayTile.style.removeProperty('minWidth');
+      displayTile.style.removeProperty('width');
       displayTile.style.removeProperty('height');
       displayTile.style.removeProperty('minHeight');
+      displayTile.style.removeProperty('flex-basis');
     }
     if (displayPrimary) {
       displayPrimary.style.removeProperty('maxWidth');
+      displayPrimary.style.removeProperty('width');
       displayPrimary.style.removeProperty('height');
       displayPrimary.style.removeProperty('minHeight');
+      displayPrimary.style.removeProperty('flex-basis');
     }
     if (status) {
       status.style.removeProperty('maxWidth');
     }
+  }
+
+  function readBoxPixels(computed, propertyName) {
+    if (!computed || typeof computed.getPropertyValue !== 'function') return 0;
+    return parseCssPixels(computed.getPropertyValue(propertyName)) || 0;
+  }
+
+  function syncPreviewContainerBounds(shell) {
+    if (!shell) return null;
+    const { host, status, displayTile, displayPrimary } = shell;
+    if (!host || !displayTile || typeof host.getBoundingClientRect !== 'function') return null;
+
+    const hostRect = host.getBoundingClientRect();
+    const hostWidth = Number(hostRect?.width);
+    if (!Number.isFinite(hostWidth) || hostWidth <= 0) return null;
+
+    let paddingLeft = 0;
+    let paddingRight = 0;
+
+    if (typeof global.getComputedStyle === 'function') {
+      try {
+        const computed = global.getComputedStyle(host);
+        paddingLeft = readBoxPixels(computed, 'padding-left');
+        paddingRight = readBoxPixels(computed, 'padding-right');
+      } catch (err) {
+        /* ignore */
+      }
+    }
+
+    const widthLimit = Math.max(1, hostWidth - paddingLeft - paddingRight);
+    const widthScale = widthLimit / DEFAULT_RENDER_BASE_WIDTH;
+    const scale = Math.max(0.1, Math.min(widthScale, HTML_APP_MAX_SCALE));
+    const width = Math.max(1, Math.floor(DEFAULT_RENDER_BASE_WIDTH * scale));
+    const height = Math.max(1, Math.floor(DEFAULT_RENDER_BASE_HEIGHT * scale));
+    const widthPx = `${width}px`;
+    const heightPx = `${height}px`;
+
+    displayTile.style.width = widthPx;
+    displayTile.style.maxWidth = '100%';
+    displayTile.style.minWidth = '0';
+    displayTile.style.height = heightPx;
+    displayTile.style.minHeight = heightPx;
+    displayTile.style.setProperty('flex-basis', heightPx);
+
+    if (displayPrimary) {
+      displayPrimary.style.width = widthPx;
+      displayPrimary.style.maxWidth = '100%';
+      displayPrimary.style.height = heightPx;
+      displayPrimary.style.minHeight = heightPx;
+      displayPrimary.style.setProperty('flex-basis', heightPx);
+    }
+    if (status) {
+      status.style.maxWidth = widthPx;
+    }
+
+    return { width, height, scale };
   }
 
   function requestPreviewSizeSync() {
@@ -314,6 +375,7 @@
 
     const { host, status, displayTile, displayPrimary } = shell;
     const root = displayPrimary ? displayPrimary.querySelector('.wdash-root') : null;
+    const fittedBox = syncPreviewContainerBounds(shell);
 
     ensurePreviewResizeObservers(root, displayTile);
 
@@ -330,8 +392,8 @@
     const dimensions = readRenderDimensions(root);
     if (!dimensions) return;
 
-    const width = Math.max(1, Math.round(dimensions.width));
-    const height = Math.max(1, Math.round(dimensions.height));
+    const width = fittedBox ? fittedBox.width : Math.max(1, Math.round(dimensions.width));
+    const height = fittedBox ? fittedBox.height : Math.max(1, Math.round(dimensions.height));
 
     if (previewResizeState.lastWidth === width && previewResizeState.lastHeight === height) {
       return;
@@ -343,17 +405,7 @@
     const widthPx = `${width}px`;
     const heightPx = `${height}px`;
 
-    if (displayTile) {
-      displayTile.style.maxWidth = widthPx;
-      displayTile.style.minWidth = '0';
-      displayTile.style.removeProperty('height');
-      displayTile.style.removeProperty('minHeight');
-    }
-    if (displayPrimary) {
-      displayPrimary.style.maxWidth = widthPx;
-      displayPrimary.style.removeProperty('height');
-      displayPrimary.style.removeProperty('minHeight');
-    }
+    syncPreviewContainerBounds(shell);
     if (status) {
       status.style.maxWidth = widthPx;
     }
@@ -378,12 +430,11 @@
         align-items: stretch;
         padding: 24px 16px 36px;
         box-sizing: border-box;
-        overflow: hidden;
+        overflow: auto;
       }
       #${HOST_ID} {
         --wdash-app-font: 'Segoe UI', Roboto, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
         width: 100%;
-        max-width: 1240px;
         display: flex;
         flex-direction: column;
         align-items: stretch;
@@ -392,8 +443,7 @@
         padding: 18px 20px 28px;
         margin: 0 auto;
         box-sizing: border-box;
-        height: 100%;
-        min-height: 0;
+        min-height: 100%;
         --wdash-grid-areas-desktop: 'temp-wind ambient' 'air rain' 'solar rain' 'solar pressure';
         --wdash-grid-areas-tablet: 'temp-wind ambient' 'air rain' 'solar rain' 'solar pressure';
         --wdash-grid-areas-mobile: 'temp-wind' 'ambient' 'air' 'rain' 'solar' 'pressure';
@@ -407,18 +457,17 @@
       }
       #${HOST_ID} .wdash-app-status {
         width: 100%;
-        max-width: 1200px;
         margin: 0 auto;
         flex: 0 0 auto;
       }
       #${HOST_ID} .wdash-app-display-tile {
         width: 100%;
-        max-width: 1200px;
         margin: 0 auto;
         display: flex;
         flex-direction: column;
-        flex: 1 1 auto;
-        min-height: 0;
+        flex: 0 0 auto;
+        aspect-ratio: 4 / 3;
+        min-height: 1px;
       }
       #${HOST_ID} .tile {
         position: relative;
@@ -430,8 +479,8 @@
         overflow: visible;
         display: flex;
         flex-direction: column;
-        flex: 1 1 auto;
-        min-height: 0;
+        flex: 0 0 auto;
+        min-height: 1px;
       }
       #${HOST_ID} .tile-primary {
         position: relative;
@@ -440,24 +489,23 @@
         overflow: visible;
         display: flex;
         flex-direction: column;
-        flex: 1 1 auto;
-        min-height: 0;
+        flex: 0 0 auto;
+        min-height: 1px;
       }
       #${HOST_ID} .wdash-app-display-tile {
         width: 100%;
-        max-width: 1200px;
         margin: 0 auto;
       }
       #${HOST_ID} .wdash-app-display {
         position: relative;
         width: 100%;
-        max-width: 1200px;
         margin: 0 auto;
         display: flex;
         align-items: stretch;
         justify-content: center;
-        flex: 1 1 auto;
-        min-height: 0;
+        flex: 0 0 auto;
+        aspect-ratio: 4 / 3;
+        min-height: 1px;
       }
       #${HOST_ID} .wdash-app-display > * {
         position: relative;
@@ -1372,7 +1420,12 @@
       return null;
     }
     try {
-      const renderer = factory({ window: global, document: global.document, globalThis: global });
+      const renderer = factory({
+        window: global,
+        document: global.document,
+        globalThis: global,
+        maxScale: HTML_APP_MAX_SCALE
+      });
       state.renderer = renderer || (global.weatherDashboard && global.weatherDashboard.__renderer__) || null;
       return state.renderer;
     } catch (err) {
