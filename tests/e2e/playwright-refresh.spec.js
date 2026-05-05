@@ -61,6 +61,90 @@ test('renders Maker API payload and schedules refreshes', async ({ page }) => {
   }
 });
 
+test('statusBar=yes keeps the success panel visible', async ({ page }) => {
+  await page.goto('http://localhost/?hub=192.168.0.10&appId=123&token=abc123&devices=45,46&statusBar=yes');
+  page.queueResponse(successResponse(minimalPayload));
+  page.queueResponse(successResponse(minimalPayload));
+  await page.loadWeatherDashboardApp();
+
+  await page.waitForFunction(win => {
+    const app = win.__WEATHER_DASHBOARD_APP__;
+    return Boolean(app && app.state && app.state.status && app.state.status.level === 'success');
+  }, { timeout: 5000, interval: 25 });
+
+  const snapshot = await page.evaluate(win => {
+    const app = win.__WEATHER_DASHBOARD_APP__;
+    const status = win.document.body.querySelector('.wdash-app-status');
+    return {
+      statusBarVisible: app.state.statusBarVisible,
+      statusBarLocked: app.state.statusBarLocked,
+      bar: Boolean(status && !status.hidden),
+      html: status ? status.innerHTML : ''
+    };
+  });
+
+  expect(snapshot.statusBarVisible).toBe(true);
+  expect(snapshot.statusBarLocked).toBe(true);
+  expect(snapshot.bar).toBe(true);
+  expect(snapshot.html).toContain('Weather data updated');
+});
+
+test('statusBar=no hides the success panel', async ({ page }) => {
+  await page.goto('http://localhost/?hub=192.168.0.10&appId=123&token=abc123&devices=45,46&statusBar=no');
+  page.queueResponse(successResponse(minimalPayload));
+  page.queueResponse(successResponse(minimalPayload));
+  await page.loadWeatherDashboardApp();
+
+  await page.waitForFunction(win => {
+    const app = win.__WEATHER_DASHBOARD_APP__;
+    return Boolean(app && app.state && app.state.status && app.state.status.level === 'success');
+  }, { timeout: 5000, interval: 25 });
+
+  const snapshot = await page.evaluate(win => {
+    const app = win.__WEATHER_DASHBOARD_APP__;
+    const status = win.document.body.querySelector('.wdash-app-status');
+    return {
+      statusBarVisible: app.state.statusBarVisible,
+      statusBarLocked: app.state.statusBarLocked,
+      bar: Boolean(status && !status.hidden),
+      hidden: Boolean(status && status.hidden),
+      html: status ? status.innerHTML : ''
+    };
+  });
+
+  expect(snapshot.statusBarVisible).toBe(false);
+  expect(snapshot.statusBarLocked).toBe(true);
+  expect(snapshot.bar).toBe(false);
+  expect(snapshot.hidden).toBe(true);
+  expect(snapshot.html).toBe('');
+});
+
+test('statusBar absent keeps the success panel visible', async ({ page }) => {
+  await page.goto('http://localhost/?hub=192.168.0.10&appId=123&token=abc123&devices=45,46');
+  page.queueResponse(successResponse(minimalPayload));
+  page.queueResponse(successResponse(minimalPayload));
+  await page.loadWeatherDashboardApp();
+
+  await page.waitForFunction(win => {
+    const app = win.__WEATHER_DASHBOARD_APP__;
+    return Boolean(app && app.state && app.state.status && app.state.status.level === 'success');
+  }, { timeout: 5000, interval: 25 });
+
+  const snapshot = await page.evaluate(win => {
+    const app = win.__WEATHER_DASHBOARD_APP__;
+    const status = win.document.body.querySelector('.wdash-app-status');
+    return {
+      statusBarVisible: app.state.statusBarVisible,
+      statusBarLocked: app.state.statusBarLocked,
+      bar: Boolean(status && !status.hidden)
+    };
+  });
+
+  expect(snapshot.statusBarVisible).toBe(true);
+  expect(snapshot.statusBarLocked).toBe(false);
+  expect(snapshot.bar).toBe(true);
+});
+
 test('backs off after Maker API failures and recovers on success', async ({ page }) => {
   await page.goto('http://localhost/?hub=192.168.0.10&appId=321&token=xyz789&devices=99&interval=80&maxBackoff=320');
   page.queueResponse(errorResponse(503, 'Dashboard payload unavailable.'));
