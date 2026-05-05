@@ -15,7 +15,6 @@
   const DEFAULT_RENDER_BASE_WIDTH = 1200;
   const DEFAULT_RENDER_BASE_HEIGHT = 900;
   const HTML_APP_MAX_SCALE = 2;
-  const STATUS_BAR_QUERY_KEY = 'statusBar';
 
   const state = {
     renderer: null,

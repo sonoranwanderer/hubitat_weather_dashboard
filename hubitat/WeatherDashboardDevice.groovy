@@ -321,36 +321,6 @@ private String buildScriptTag(String url) {
            '></img>'''
 }
 
-private String escapeHtmlAttribute(String value) {
-    if (value == null) {
-        return ''
-    }
-    StringBuilder escaped = new StringBuilder()
-    value.each { ch ->
-        String token = ch?.toString()
-        switch (token) {
-            case '&':
-                escaped.append('&amp;')
-                break
-            case '"':
-                escaped.append('&quot;')
-                break
-            case "'":
-                escaped.append('&#39;')
-                break
-            case '<':
-                escaped.append('&lt;')
-                break
-            case '>':
-                escaped.append('&gt;')
-                break
-            default:
-                escaped.append(ch)
-        }
-    }
-    return escaped.toString()
-}
-
 private void sendAmbientSegments(List<Map> segments) {
     int count = segments instanceof List ? segments.size() : 0
     AMBIENT_SEGMENT_ATTRS.eachWithIndex { attr, idx ->
