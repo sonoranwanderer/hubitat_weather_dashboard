@@ -11,6 +11,8 @@ app/
   weather-dashboard-app.js     Preview bootstrap and Maker API fetch logic
 dashboard/
   weather-dashboard.js         Bundled dashboard renderer for Hubitat tiles
+docs/
+  screenshots/                 README screenshot assets
 hubitat/
   WeatherDashboardApp.groovy   Hubitat app that builds the JSON payload
   WeatherDashboardDevice.groovy Virtual device driver that exposes payload segments
@@ -27,6 +29,21 @@ tests/
 3. `dashboard/weather-dashboard.js` renders the payload inside a single Hubitat dashboard tile.
 4. `app/weather-dashboard-app.html` and `app/weather-dashboard-app.js` provide the Hubitat app landing-page preview and Maker API fetch path.
 
+## Screenshots
+
+Screenshots are stored in `docs/screenshots/` so GitHub can render them directly in this README. Add PNG files with these names when captures are available:
+
+* `docs/screenshots/dashboard-main.png` - Hubitat dashboard tile rendering the weather dashboard.
+* `docs/screenshots/app-preview.png` - Weather Dashboard app landing-page preview.
+
+After adding the image files, replace this note with embedded images:
+
+```markdown
+![Weather Dashboard main tile](docs/screenshots/dashboard-main.png)
+
+![Weather Dashboard app preview](docs/screenshots/app-preview.png)
+```
+
 ## Hubitat Setup Summary
 
 The dashboard has two setup parts:
@@ -40,14 +57,14 @@ The dashboard has two setup parts:
   * The dashboard can use any weather data sources that expose weather data in Hubitat via devices. It expects Ecowitt-style attribute names such as `temperature`, `humidity`, `windSpeed`, `windGust`, `windDirection`, `pressure`, `rainRate`, and `rainDaily`. However attribute names can be remapped in the app if your weather devices use different names.
 * **Maker API** (Hubitat Built-in App) - optional
   * Hubitat's built-in [**Maker API**](https://docs2.hubitat.com/en/apps/maker-api) app if you want the embedded app dashboard preview or external clients to fetch dashboard data. 
-  * The provided Hubitat weather dashboard tile itself does not require Maker API.
+  * The Hubitat dashboard tile itself does not require Maker API.
 
 ### 1. Install The Hubitat Code
 
 Install both Groovy files in Hubitat:
 
-1. Open [**Drivers Code**](https://docs2.hubitat.com/en/how-to/install-custom-drivers) and add `hubitat/WeatherDashboardDevice.groovy`.
-2. Open [**Apps Code**](https://docs2.hubitat.com/en/how-to/install-custom-apps) and add `hubitat/WeatherDashboardApp.groovy`.
+1. Open [**Drivers Code**](https://docs2.hubitat.com/en/how-to/install-custom-drivers) and add the contents of `hubitat/WeatherDashboardDevice.groovy`.
+2. Open [**Apps Code**](https://docs2.hubitat.com/en/how-to/install-custom-apps) and add the contents of `hubitat/WeatherDashboardApp.groovy`.
 3. Save both files.
 
 The driver is the virtual device that exposes dashboard attributes. The app reads your weather devices, calculates derived values and a basic forecast, and pushes segmented JSON into the weather dashboard virtual device.
