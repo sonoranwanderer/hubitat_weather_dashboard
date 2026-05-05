@@ -29,17 +29,103 @@ tests/
 
 ## Hubitat Setup Summary
 
-1. Install the **Weather Dashboard Device** driver and **Weather Dashboard App** in Hubitat.
-2. Create a virtual device using the driver, or let the app create and manage one.
-3. Configure the app by selecting your source weather device and mapping any attribute names that differ from the defaults.
-4. Upload these files to Hubitat's **File Manager** so they are available under `/local/`:
-   - `dashboard/weather-dashboard.js`
-   - `app/weather-dashboard-app.js`
-   - `app/weather-dashboard-app.html`
-5. Add the dashboard device to your Hubitat dashboard with the **Attribute** tile template.
-   - Set `dashboardScript` to `tile-0` so the script injector runs.
-   - Map the remaining segment attributes (`segmentCore`, `segmentPrecip`, `segmentAmbient1`, `segmentAmbient2`, `segmentAirQuality`, `segmentMeta`, `segmentLayout`, and the optional `...B64` attributes) to the later tiles.
-6. Configure Maker API so the landing page preview can fetch data. See [docs/setup-maker-api.md](docs/setup-maker-api.md).
+The dashboard has two setup parts:
+
+* **File installation** - install the Groovy app/driver and upload the JavaScript/HTML assets Hubitat serves from `/local/`.
+* **Functional setup** - connect the app to your weather devices, create or select the dashboard virtual device, place the required Attribute tiles, and optionally configure Maker API for the app-page preview.
+
+### Dependencies
+
+* **Weather Device(s)** - required
+  * The dashboard can use any weather data sources that expose weather data in Hubitat via devices. It expects Ecowitt-style attribute names such as `temperature`, `humidity`, `windSpeed`, `windGust`, `windDirection`, `pressure`, `rainRate`, and `rainDaily`. However attribute names can be remapped in the app if your weather devices use different names.
+* **Maker API** (Hubitat Built-in App) - optional
+  * Hubitat's built-in [**Maker API**](https://docs2.hubitat.com/en/apps/maker-api) app if you want the embedded app dashboard preview or external clients to fetch dashboard data. 
+  * The provided Hubitat weather dashboard tile itself does not require Maker API.
+
+### 1. Install The Hubitat Code
+
+Install both Groovy files in Hubitat:
+
+1. Open [**Drivers Code**](https://docs2.hubitat.com/en/how-to/install-custom-drivers) and add `hubitat/WeatherDashboardDevice.groovy`.
+2. Open [**Apps Code**](https://docs2.hubitat.com/en/how-to/install-custom-apps) and add `hubitat/WeatherDashboardApp.groovy`.
+3. Save both files.
+
+The driver is the virtual device that exposes dashboard attributes. The app reads your weather devices, calculates derived values and a basic forecast, and pushes segmented JSON into the weather dashboard virtual device.
+
+### 2. Upload The Local Assets
+
+Upload these files to Hubitat [**File Manager**](https://docs2.hubitat.com/en/user-interface/settings/file-manager) at the File Manager root:
+
+* `dashboard/weather-dashboard.js`
+* `app/weather-dashboard-app.js`
+* `app/weather-dashboard-app.html`
+
+They should be reachable from the hub as:
+
+* `/local/weather-dashboard.js`
+* `/local/weather-dashboard-app.js`
+* `/local/weather-dashboard-app.html`
+
+Keep those names and locations unless you also change the dashboard device's **Dashboard script URL** preference. The default script URL is `/local/weather-dashboard.js`.
+
+### 3. Create And Configure The Weather Dashboard App
+
+1. Open **Apps**, choose **Add User App**, and install **Weather Dashboard App**.
+2. Open **Configure data sources**.
+3. Select the weather source device or devices under **Weather devices**.
+4. Review the attribute mapping sections. Keep the defaults when your weather driver uses the listed attribute names; otherwise choose the correct device and enter the attribute name used by your Hubitat device.
+5. Set input and display units for temperature, rainfall, wind, pressure, and lightning distance. These must match the units reported by the source devices so the dashboard converts values correctly.
+6. Configure optional sources only when you have them: outdoor/indoor air quality, lightning, sensor batteries, and ambient temperature/humidity sensors.
+7. Choose refresh behavior. Leave the default event-driven refresh plus one-minute cron enabled unless you know your source device is too noisy.
+8. Set the **Dashboard device label**, then click **Save & Refresh**.
+
+After saving, the app creates or updates the Weather Dashboard virtual device. Open that device in **Devices** and confirm it has attributes such as `dashboardScript`, `segmentCore`, `segmentPrecip`, `segmentAirQuality`, `segmentMeta`, `segmentLayout`, and `segmentAmbient1` through `segmentAmbient6`. Empty optional segments may show `{}`; that is normal.
+
+### 4. Add The Hubitat Dashboard Tiles
+
+The rendered dashboard uses one visible Attribute tile plus several hidden/source Attribute tiles from the same Weather Dashboard virtual device.
+
+1. Open the target Hubitat dashboard.
+2. Add an **Attribute** tile for the Weather Dashboard virtual device and choose the `dashboardScript` attribute. Add this tile first so Hubitat gives it the `tile-0` DOM id. This is the tile where `weather-dashboard.js` renders the full dashboard.
+3. Add additional **Attribute** tiles for these same-device attributes:
+   - `segmentCore`
+   - `segmentPrecip`
+   - `segmentAirQuality`
+   - `segmentMeta`
+   - `segmentLayout`
+   - `segmentAmbient1`
+   - `segmentAmbient2`
+   - `segmentAmbient3`
+   - `segmentAmbient4`
+   - `segmentAmbient5`
+   - `segmentAmbient6`
+4. Save the dashboard and refresh the browser page.
+
+The JavaScript reads JSON from the segment tiles and hides those source tiles after rendering. The segment tile order is not important, but the `dashboardScript` tile must be the display tile at `tile-0`.
+
+### 5. Configure Maker API For The App Preview
+
+Maker API is only needed for the embedded preview on the Weather Dashboard app landing page and for external clients that fetch the payload through Maker API.
+
+1. Open **Apps** and add Hubitat's built-in **Maker API** app if it is not already installed.
+2. In Maker API, enable **Local IP Address** under **Allow access via**. Enable **Cloud** only if you need remote access.
+3. Under **Select devices**, choose the Weather Dashboard virtual device.
+4. Save Maker API and copy the hub base URL, Maker API application ID, and access token.
+5. Return to **Apps -> Weather Dashboard App -> Configure data sources -> Maker API access**.
+6. Paste the hub base URL, application ID, and token into the matching fields. Optionally add comma-separated Maker API device IDs.
+7. Click **Save & Refresh**.
+
+For the detailed Maker API walkthrough and troubleshooting, see [docs/setup-maker-api.md](docs/setup-maker-api.md).
+
+### Validation Checklist
+
+Use this checklist when the dashboard does not render:
+
+* **Files:** `http://<hub-ip>/local/weather-dashboard.js` and `/local/weather-dashboard-app.html` should not return Hubitat's 404 page.
+* **Device:** The Weather Dashboard virtual device should have a populated `dashboardScript` attribute and JSON in at least `segmentCore`.
+* **App configuration:** The selected weather devices should show live values for the mapped attributes in Hubitat before the dashboard app reads them.
+* **Dashboard tiles:** The first Attribute tile should be `dashboardScript`; the remaining segment attributes should be present as Attribute tiles from the same virtual device.
+* **Maker API preview:** Maker API must authorize the Weather Dashboard virtual device, and the app's saved base URL, application ID, and token must match the current Maker API app.
 
 The device driver keeps each segment under Hubitat's attribute-size limit, which avoids runtime chunk reassembly.
 
