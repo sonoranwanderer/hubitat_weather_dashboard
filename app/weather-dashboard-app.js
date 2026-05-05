@@ -15,6 +15,7 @@
   const DEFAULT_RENDER_BASE_WIDTH = 1200;
   const DEFAULT_RENDER_BASE_HEIGHT = 900;
   const HTML_APP_MAX_SCALE = 2;
+  const STATUS_BAR_QUERY_KEY = 'statusBar';
 
   const state = {
     renderer: null,
@@ -25,6 +26,8 @@
     pollIntervalMs: DEFAULT_POLL_INTERVAL_MS,
     maxBackoffMs: DEFAULT_MAX_BACKOFF_MS,
     nextDelay: DEFAULT_POLL_INTERVAL_MS,
+    statusBarVisible: true,
+    statusBarLocked: false,
     pollTimer: null,
     fetchInFlight: false,
     failureStreak: 0,
@@ -455,6 +458,10 @@
         background: radial-gradient(circle at top, rgba(20,40,80,0.55), rgba(4,10,22,0.92));
         font-family: var(--wdash-app-font);
       }
+      #${HOST_ID}[data-status-bar-visible="false"][data-status-bar-locked="true"] {
+        gap: 0;
+        padding-top: 0;
+      }
       #${HOST_ID} .wdash-app-status {
         width: 100%;
         margin: 0 auto;
@@ -545,6 +552,22 @@
         font-size: 1.05rem;
         letter-spacing: 0.015em;
       }
+      #${STATUS_ID} .wdash-app-status__bar {
+        margin-top: 10px;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 10px;
+        border-radius: 10px;
+        background: rgba(9, 18, 36, 0.32);
+        border: 1px solid rgba(139, 164, 230, 0.18);
+        font-size: 0.84rem;
+        line-height: 1.35;
+      }
+      #${STATUS_ID} .wdash-app-status__bar-item {
+        white-space: nowrap;
+      }
       #${STATUS_ID} .wdash-app-status__details {
         margin-top: 8px;
         font-size: 0.9rem;
@@ -630,7 +653,6 @@
       const host = ensureAndAppend(doc, doc.body, HOST_ID);
 
       const status = ensureAndAppend(doc, host, STATUS_ID, {
-        prepend: true,
         onCreate: el => {
           el.dataset.level = 'info';
           el.classList.add('wdash-app-status');
@@ -698,6 +720,27 @@
       .replace(/'/g, '&#39;');
   }
 
+  function isRefreshBarLine(value) {
+    const text = normalizeText(value).toLowerCase();
+    return text.startsWith('refresh:')
+      || text.startsWith('next refresh')
+      || text.startsWith('updated ')
+      || text.startsWith('fetched ');
+  }
+
+  function splitStatusDetails(details) {
+    const refreshDetails = [];
+    const regularDetails = [];
+    for (const entry of details) {
+      if (isRefreshBarLine(entry)) {
+        refreshDetails.push(entry);
+      } else {
+        regularDetails.push(entry);
+      }
+    }
+    return { refreshDetails, regularDetails };
+  }
+
   function updateStatus(level, message, details) {
     const shell = ensureAppShell();
     if (!shell) return;
@@ -706,13 +749,36 @@
       ? details.filter(item => item != null && item !== '')
       : (details ? [details] : []);
     state.status = { level, message, details: normalizedDetails.slice() };
+    const { refreshDetails, regularDetails } = splitStatusDetails(normalizedDetails);
+    const hideStatus = level === 'success' && !state.statusBarVisible;
 
+    shell.host.dataset.statusBarVisible = state.statusBarVisible ? 'true' : 'false';
+    shell.host.dataset.statusBarLocked = state.statusBarLocked ? 'true' : 'false';
     status.dataset.level = level || 'info';
-    let markup = `<div class="wdash-app-status__title">${escapeHtml(message || '')}</div>`;
-    if (normalizedDetails.length === 1) {
-      markup += `<div class="wdash-app-status__details">${escapeHtml(normalizedDetails[0])}</div>`;
-    } else if (normalizedDetails.length > 1) {
-      const items = normalizedDetails
+    status.dataset.statusBarVisible = state.statusBarVisible ? 'true' : 'false';
+    status.dataset.statusBarLocked = state.statusBarLocked ? 'true' : 'false';
+    status.hidden = Boolean(hideStatus);
+    if (hideStatus) {
+      status.innerHTML = '';
+      requestPreviewSizeSync();
+      scheduleHostResizeSync();
+      return;
+    }
+    let markup = `
+      <div class="wdash-app-status__header">
+        <div class="wdash-app-status__title">${escapeHtml(message || '')}</div>
+      </div>
+    `;
+    if (state.statusBarVisible && refreshDetails.length > 0) {
+      const refreshItems = refreshDetails
+        .map(item => `<span class="wdash-app-status__bar-item">${escapeHtml(item)}</span>`)
+        .join('');
+      markup += `<div class="wdash-app-status__bar" role="status" aria-label="Refresh statistics">${refreshItems}</div>`;
+    }
+    if (regularDetails.length === 1) {
+      markup += `<div class="wdash-app-status__details">${escapeHtml(regularDetails[0])}</div>`;
+    } else if (regularDetails.length > 1) {
+      const items = regularDetails
         .map(item => `<li>${escapeHtml(item)}</li>`)
         .join('');
       markup += `<div class="wdash-app-status__details"><ul>${items}</ul></div>`;
@@ -1311,6 +1377,7 @@
     const merged = Object.assign({}, inlineResult.config || {}, queryConfig || {});
 
     const normalized = normalizeConfig(merged);
+    const queryStatusBar = normalizeText(queryConfig.statusBar).toLowerCase();
     const intervalWarnings = [];
     sanitizeIntervals(normalized, intervalWarnings);
 
@@ -1334,6 +1401,8 @@
     state.pollIntervalMs = normalized.pollIntervalMs || DEFAULT_POLL_INTERVAL_MS;
     state.maxBackoffMs = normalized.maxBackoffMs || DEFAULT_MAX_BACKOFF_MS;
     state.endpointUrl = endpoint;
+    state.statusBarVisible = queryStatusBar === 'no' || queryStatusBar === '0' ? false : true;
+    state.statusBarLocked = queryStatusBar === 'yes' || queryStatusBar === '1' || queryStatusBar === 'no' || queryStatusBar === '0';
 
     return { normalized, errors, warnings, endpoint };
   }
@@ -1352,8 +1421,11 @@
     } else {
       parts.push('Devices: none provided');
     }
-    parts.push(`Refresh: ${formatDuration(state.pollIntervalMs)} (max backoff ${formatDuration(state.maxBackoffMs)})`);
     return parts.join(' • ');
+  }
+
+  function buildRefreshSummary() {
+    return `Refresh: ${formatDuration(state.pollIntervalMs)} (max backoff ${formatDuration(state.maxBackoffMs)})`;
   }
 
   function formatDuration(ms) {
@@ -1508,6 +1580,8 @@
     const details = [];
     const summary = buildConfigSummary(config);
     if (summary) details.push(summary);
+    const refreshSummary = buildRefreshSummary();
+    if (refreshSummary) details.push(refreshSummary);
     if (state.endpointUrl) {
       details.push(`GET ${state.endpointUrl}`);
     }
@@ -1545,6 +1619,7 @@
     if (summary) {
       details.push(summary);
     }
+    details.push(buildRefreshSummary());
     if (payloadGenerated) {
       details.push(payloadGenerated);
     }
