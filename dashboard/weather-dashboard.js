@@ -126,7 +126,6 @@
         const BREAKPOINTS = ['desktop', 'tablet', 'mobile'];
         const LAYOUT_STYLE_ID = 'weather-dashboard-layout-style';
         const DEFAULT_TRACK_UNIT = 'px';
-        const TILE_MEASURE_TOLERANCE = 1;
       
         const TEMPERATURE_UNITS = ['F', 'C'];
         const TEMPERATURE_UNIT_STORAGE_KEYS = {
@@ -142,7 +141,6 @@
           displayOverride: false
         };
       
-        const RAIN_UNITS = ['in', 'mm'];
         const RAIN_UNIT_STORAGE_KEYS = {
           input: 'wdashRainInputUnit',
           display: 'wdashRainDisplayUnit'
@@ -170,7 +168,6 @@
           displayOverride: false
         };
       
-        const PRESSURE_UNITS = ['inhg', 'mb'];
         const PRESSURE_UNIT_STORAGE_KEYS = {
           input: 'wdashPressureInputUnit',
           display: 'wdashPressureDisplayUnit'
@@ -184,7 +181,6 @@
           displayOverride: false
         };
       
-        const LIGHTNING_UNITS = ['mi', 'km'];
         const LIGHTNING_UNIT_STORAGE_KEYS = {
           input: 'wdashLightningInputUnit',
           display: 'wdashLightningDisplayUnit'
@@ -551,12 +547,6 @@
         const tempWindState = { data: null };
         const solarState = { data: null };
         let solarStaticLayoutCache = null;
-        let rainDropObserver = null;
-        let rainDropResizeHandler = null;
-        let rainDropRaf = null;
-        let rainDropRafType = null;
-        let rainDropLastHeight = null;
-        let rainDropLastCard = null;
         let pressureMode = 'relative';
         let lastSuccessfulPayload = null;
       

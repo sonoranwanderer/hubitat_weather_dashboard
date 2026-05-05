@@ -315,27 +315,45 @@ function setupDomEnvironment() {
   window.setInterval = (fn, delay) => window.setTimeout(fn, delay);
   window.clearInterval = handle => window.clearTimeout(handle);
 
+  const setGlobalValue = (key, value) => {
+    try {
+      global[key] = value;
+    } catch (err) {
+      Object.defineProperty(global, key, {
+        configurable: true,
+        enumerable: true,
+        writable: true,
+        value
+      });
+    }
+  };
+
   for (const key of globalsToCopy) {
     if (Object.prototype.hasOwnProperty.call(window, key)) {
       if (Object.prototype.hasOwnProperty.call(global, key)) {
-        previous.set(key, global[key]);
+        previous.set(key, Object.getOwnPropertyDescriptor(global, key) || {
+          configurable: true,
+          enumerable: true,
+          writable: true,
+          value: global[key]
+        });
       }
-      global[key] = window[key];
+      setGlobalValue(key, window[key]);
     }
   }
 
   const extra = new Map();
   if (!global.window) {
     extra.set('window', window);
-    global.window = window;
+    setGlobalValue('window', window);
   }
   if (!global.document) {
     extra.set('document', window.document);
-    global.document = window.document;
+    setGlobalValue('document', window.document);
   }
   if (!global.navigator) {
     extra.set('navigator', window.navigator);
-    global.navigator = window.navigator;
+    setGlobalValue('navigator', window.navigator);
   }
   global.globalThis = global;
   global.self = global.window;
@@ -345,8 +363,8 @@ function setupDomEnvironment() {
   global.clearTimeout = window.clearTimeout;
 
   return () => {
-    for (const [key, value] of previous.entries()) {
-      global[key] = value;
+    for (const [key, descriptor] of previous.entries()) {
+      Object.defineProperty(global, key, descriptor);
     }
     for (const key of extra.keys()) {
       delete global[key];
