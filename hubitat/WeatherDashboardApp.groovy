@@ -36,11 +36,129 @@ definition(
     trace: 4
 ]
 @Field final int MAKER_PAYLOAD_MAX_BYTES = 100000
+@Field final int BACKUP_SCHEMA_VERSION = 1
+@Field final String BACKUP_APP_NAME = 'Weather Dashboard App'
+// Future features that add operational settings or durable state must update
+// these backup allowlists, import validation, tests, and docs before release.
+@Field final List<String> BACKUP_SECRET_SETTING_NAMES = [
+    'makerApiToken'
+]
+@Field final List<String> BACKUP_SECRET_STATE_NAMES = [
+    'dashboardAccessToken'
+]
+@Field final List<String> BACKUP_DEVICE_SETTING_NAMES = [
+    'weatherDevices',
+    'ambientSensors',
+    'singleTriggerDevice'
+]
+@Field final List<String> BACKUP_ATTRIBUTE_SETTING_NAMES = [
+    'attrOutdoorTemp',
+    'attrFeelsLike',
+    'attrDewPoint',
+    'attrOutdoorHumidity',
+    'attrIndoorTemp',
+    'attrIndoorHumidity',
+    'attrIndoorBattery',
+    'attrWindSpeed',
+    'attrWindGust',
+    'attrWindGustMaxDaily',
+    'attrWindDirection',
+    'attrWindDirectionDegrees',
+    'attrPressure',
+    'attrAbsolutePressure',
+    'attrRainRate',
+    'attrRainDaily',
+    'attrRainEvent',
+    'attrRainHourly',
+    'attrRainWeekly',
+    'attrRainMonthly',
+    'attrRainYearly',
+    'attrUVIndex',
+    'attrUVColor',
+    'attrUVDanger',
+    'attrSolarRadiation',
+    'attrStationUpdatedAt',
+    'attrOutdoorAQI',
+    'attrOutdoorAQI24h',
+    'attrOutdoorAQIColor',
+    'attrOutdoorAQIColor24h',
+    'attrOutdoorAQIDanger',
+    'attrOutdoorAQIDanger24h',
+    'attrOutdoorPM25',
+    'attrOutdoorPM25_24h',
+    'attrOutdoorAQIBattery',
+    'attrIndoorAQI',
+    'attrIndoorAQI24h',
+    'attrIndoorAQIColor',
+    'attrIndoorAQIColor24h',
+    'attrIndoorAQIDanger',
+    'attrIndoorAQIDanger24h',
+    'attrIndoorCO2',
+    'attrIndoorCO2_24h',
+    'attrIndoorPM10',
+    'attrIndoorPM10_24h',
+    'attrIndoorPM25',
+    'attrIndoorPM25_24h',
+    'attrIndoorAQIBattery',
+    'attrLightningCount',
+    'attrLightningDistance',
+    'attrLightningTime',
+    'attrOutdoorBattery',
+    'attrBatteryWind',
+    'attrBatteryRain',
+    'attrLightningBattery'
+]
+@Field final List<String> BACKUP_SCALAR_SETTING_NAMES = [
+    'temperatureInputUnit',
+    'temperatureDisplayUnit',
+    'rainInputUnit',
+    'rainDisplayUnit',
+    'windInputUnit',
+    'windDisplayUnit',
+    'pressureInputUnit',
+    'pressureDisplayUnit',
+    'lightningInputUnit',
+    'lightningDisplayUnit',
+    'ambientTempAttr',
+    'ambientHumidityAttr',
+    'ambientBatteryAttr',
+    'ambientHumidityUnit',
+    'ambientRotationSeconds',
+    'refreshCronMinutes',
+    'enableEventTriggers',
+    'refreshTriggerMode',
+    'singleTriggerAttribute',
+    'logLevel',
+    'makerApiBaseUrl',
+    'makerApiAppId',
+    'makerApiDeviceIds',
+    'windAverageMinutes',
+    'pressureTrendHours',
+    'pressureBaselineDays',
+    'layoutOverrideJson',
+    'dashboardDeviceLabel'
+] + BACKUP_ATTRIBUTE_SETTING_NAMES
+@Field final List<String> BACKUP_DURABLE_STATE_NAMES = [
+    'windHistory',
+    'pressureHistory',
+    'pressureBaseline',
+    'temperatureHistory',
+    'dailyOutdoorTemp',
+    'dailyOutdoorAQ',
+    'dailyIndoorAQ',
+    'forecastDiagnostics',
+    'metrics',
+    'lastPayloadDayKey',
+    'lastPayload',
+    'lastPayloadJson',
+    'payloadSnapshot'
+]
 
 preferences {
     page(name: "landingPage", title: "Weather Dashboard", install: true, uninstall: true)
     page(name: "configurationPage")
     page(name: "diagnosticsPage")
+    page(name: "backupRecoveryPage")
 }
 
 mappings {
@@ -151,6 +269,7 @@ def landingPage() {
 
         section("Quick actions") {
             href "configurationPage", title: "Configure data sources", description: "Select devices, units, and Maker API access."
+            href "backupRecoveryPage", title: "Backup & Recovery", description: "Export configuration and durable history, or import a recovery backup."
             href "diagnosticsPage", title: "Diagnostics", description: "Inspect the latest payload JSON and refresh metrics."
         }
     }
@@ -336,7 +455,11 @@ def configurationPage() {
             }
 
             if (!makerApiSettingsConfigured()) {
-                paragraph "Leaving the fields below blank keeps the embedded preview disabled so the hub avoids any Maker API polling overhead until you are ready."
+                if (state?.makerApiTokenSkipped == true) {
+                    paragraph "Maker API token recovery was skipped. The Hubitat dashboard tile will still run; the embedded preview and external Maker API fetches stay disabled until you enter a token."
+                } else {
+                    paragraph "Leaving the fields below blank keeps the embedded preview disabled so the hub avoids any Maker API polling overhead until you are ready."
+                }
             } else {
                 paragraph "The embedded dashboard preview and external bundle will use the saved hub address, Maker API application ID, and token. Update them whenever you rotate the Maker API credentials or reinstall Maker API."
             }
@@ -394,8 +517,66 @@ def configurationPage() {
             input name: "saveAndPreview", type: "button", title: "Save & Refresh"
             input name: "refreshNow", type: "button", title: "Refresh"
         }
+        section("Backup & Recovery") {
+            href "backupRecoveryPage", title: "Open Backup & Recovery", description: "Export or import configuration and durable forecast/history state."
+        }
         section("Diagnostics") {
             href "diagnosticsPage", title: "View Latest Payload", description: "Show the last generated JSON payload for troubleshooting."
+        }
+    }
+}
+
+def backupRecoveryPage() {
+    dynamicPage(name: "backupRecoveryPage", title: "Backup & Recovery", install: false, uninstall: false) {
+        section("Export backup") {
+            paragraph "Export a JSON backup of Weather Dashboard configuration and durable history used for trends, averages, counts, and forecasts. Maker API and dashboard access tokens are not included. The backup is written to Hubitat File Manager."
+            input name: "generateBackup", type: "button", title: "Write Backup File"
+            Map backupResult = state?.lastBackupFileResult as Map
+            if (backupResult) {
+                paragraph renderBackupFileResultHtml(backupResult)
+            } else {
+                paragraph "No backup file has been generated in this app session."
+            }
+        }
+
+        section("Import recovery backup") {
+            paragraph "Load an existing Weather Dashboard backup file from Hubitat File Manager. To recover from a workstation file, upload that JSON file to Hubitat File Manager first, then refresh this list."
+            input name: "refreshBackupFileList", type: "button", title: "Refresh Backup File List"
+            Map backupFileOptions = backupFileSelectOptions()
+            if (backupFileOptions) {
+                input name: "backupImportFileChoice", type: "enum", title: "Backup file in File Manager", options: backupFileOptions, required: false, submitOnChange: true
+            } else {
+                paragraph "No Weather Dashboard backup files were found in File Manager. Upload a backup file through Hubitat File Manager, refresh the list, or use the advanced filename fallback."
+            }
+            String listHtml = renderBackupFileListResultHtml(state?.backupFileList as Map)
+            if (listHtml) {
+                paragraph listHtml
+            }
+            input name: "loadBackupImportFile", type: "button", title: "Load Selected File"
+            paragraph "<b>Advanced filename fallback:</b> use this only when the backup list cannot find a File Manager backup that you know exists."
+            input name: "backupImportFileName", type: "text", title: "Exact File Manager filename or /local/ path", required: false, submitOnChange: true, description: "Example: weather-dashboard-backup-20260506-143000.json"
+            input name: "validateBackupImport", type: "button", title: "Validate Import"
+            input name: "applyBackupImport", type: "button", title: "Apply Import"
+            String loadHtml = renderBackupFileLoadResultHtml(state?.lastBackupFileLoadResult as Map)
+            if (loadHtml) {
+                paragraph loadHtml
+            }
+            String validationHtml = renderBackupValidationHtml(state?.lastBackupValidation as Map)
+            if (validationHtml) {
+                paragraph validationHtml
+            }
+            String reportHtml = renderImportReportHtml(state?.lastImportReport as Map)
+            if (reportHtml) {
+                paragraph reportHtml
+            }
+        }
+
+        section("Maker API token") {
+            paragraph "Maker API is optional. The Hubitat dashboard tile works without it; only the embedded app preview and external Maker API clients need a token."
+            input name: "makerApiToken", type: "text", title: "Maker API token", required: false, submitOnChange: true
+            input name: "validateMakerApiToken", type: "button", title: "Validate Maker API Token"
+            input name: "skipMakerApiToken", type: "button", title: "Skip Maker API Token"
+            paragraph renderMakerApiRecoveryStatusHtml()
         }
     }
 }
@@ -1290,6 +1471,745 @@ private Integer safeToInt(def value, Integer defaultValue) {
     }
 }
 
+private String buildBackupJson() {
+    Map backup = buildBackupDocument()
+    JsonOutput.prettyPrint(JsonOutput.toJson(backup))
+}
+
+private Map writeBackupFile() {
+    String json = buildBackupJson()
+    String fileName = backupFileName()
+    Map result = [
+        success: false,
+        fileName: fileName,
+        path   : "/local/${fileName}",
+        bytes  : json.getBytes('UTF-8').length,
+        writtenAt: now()
+    ]
+
+    try {
+        uploadHubFile(fileName, json.getBytes('UTF-8'))
+        result.success = true
+        result.message = "Backup written to File Manager as ${fileName}."
+    } catch (Throwable t) {
+        result.message = "Unable to write backup file: ${t?.message ?: t}"
+        logError "Weather Dashboard App backup file write failed", t
+    }
+
+    state.lastBackupFileResult = result
+    state.remove('lastBackupJson')
+    return result
+}
+
+private String backupFileName() {
+    Date generated = new Date(now())
+    TimeZone tz = location?.timeZone ?: UTC_ZONE
+    String timestamp = generated.format('yyyyMMdd-HHmmss', tz)
+    "weather-dashboard-backup-${timestamp}.json"
+}
+
+private Map loadBackupFileForImport() {
+    String fileName = backupImportFileName()
+    Map result = [
+        success : false,
+        fileName: fileName,
+        loadedAt: now()
+    ]
+
+    if (!fileName) {
+        result.message = 'Select a backup file from the list, or enter an exact File Manager filename/path.'
+        state.lastBackupFileLoadResult = result
+        return result
+    }
+
+    try {
+        def raw = downloadHubFile(fileName)
+        String json = bytesOrTextToString(raw)
+        if (!json?.trim()) {
+            result.message = "File Manager backup file ${fileName} was empty or could not be read."
+            state.lastBackupFileLoadResult = result
+            return result
+        }
+
+        state.loadedBackupJson = json
+        state.loadedBackupFileName = fileName
+        result.success = true
+        result.bytes = json.getBytes('UTF-8').length
+        result.message = "Loaded ${fileName} from File Manager."
+        state.lastBackupFileLoadResult = result
+        validateBackupImportJson(json)
+    } catch (Throwable t) {
+        result.message = "Unable to load backup file ${fileName}: ${t?.message ?: t}"
+        state.lastBackupFileLoadResult = result
+        logError "Weather Dashboard App backup file read failed", t
+    }
+    return result
+}
+
+private Map refreshBackupFileList() {
+    Map result = [
+        success  : false,
+        refreshedAt: now(),
+        files    : []
+    ]
+
+    try {
+        List<Map> files = fetchBackupFilesFromFileManager()
+        result.success = true
+        result.files = files
+        result.message = files ? "Found ${files.size()} Weather Dashboard backup file(s)." : 'No Weather Dashboard backup files found in File Manager.'
+    } catch (Throwable t) {
+        result.message = "Unable to list File Manager backup files: ${t?.message ?: t}"
+        logError "Weather Dashboard App backup file list failed", t
+    }
+
+    state.backupFileList = result
+    return result
+}
+
+private List<Map> fetchBackupFilesFromFileManager() {
+    String hubIp = location?.hub?.localIP?.toString()
+    if (!hubIp) {
+        throw new IllegalStateException('Hub local IP is unavailable.')
+    }
+
+    List<Map> files = []
+    httpGet([uri: "http://${hubIp}:8080/hub/fileManager/json", timeout: 10]) { resp ->
+        def json = resp?.data
+        def rawFiles = json?.files
+        if (rawFiles instanceof Collection) {
+            rawFiles.each { rec ->
+                String name = rec?.name?.toString()
+                if (isWeatherDashboardBackupFile(name)) {
+                    files << [
+                        name: name,
+                        size: rec?.size?.toString(),
+                        date: rec?.date?.toString(),
+                        id  : rec?.id?.toString()
+                    ].findAll { it.value != null }
+                }
+            }
+        }
+    }
+    files.sort { a, b -> (b.date ?: '').toString() <=> (a.date ?: '').toString() ?: (b.name ?: '').toString() <=> (a.name ?: '').toString() }
+}
+
+private boolean isWeatherDashboardBackupFile(String name) {
+    if (!name) {
+        return false
+    }
+    String lower = name.toLowerCase()
+    lower.startsWith('weather-dashboard-backup-') && lower.endsWith('.json')
+}
+
+private Map backupFileSelectOptions() {
+    Map cached = state?.backupFileList as Map
+    List files = (cached?.files instanceof List) ? cached.files as List : []
+    if (!files) {
+        try {
+            files = refreshBackupFileList().files as List
+        } catch (Throwable ignored) {
+            files = []
+        }
+    }
+    Map options = [:]
+    files.each { file ->
+        String name = file?.name?.toString()
+        if (name) {
+            String label = name
+            if (file?.size) {
+                label = "${label} (${file.size} bytes)"
+            }
+            options[name] = label
+        }
+    }
+    options
+}
+
+private String backupImportFileName() {
+    String selected = settings?.backupImportFileChoice?.toString()?.trim()
+    if (selected) {
+        return sanitizeBackupFileName(selected)
+    }
+    String configured = settings?.backupImportFileName?.toString()?.trim()
+    if (configured) {
+        return sanitizeBackupFileName(configured)
+    }
+    String previous = state?.lastBackupFileResult?.fileName?.toString()?.trim()
+    previous ? sanitizeBackupFileName(previous) : null
+}
+
+private String sanitizeBackupFileName(String raw) {
+    if (!raw) {
+        return null
+    }
+    String name = raw.trim()
+    if (name.startsWith('/local/')) {
+        name = name.substring('/local/'.length())
+    }
+    if (name.startsWith('local/')) {
+        name = name.substring('local/'.length())
+    }
+    name = name.replace('\\', '/')
+    if (name.contains('/')) {
+        name = name.tokenize('/').last()
+    }
+    name
+}
+
+private String bytesOrTextToString(Object raw) {
+    if (raw == null) {
+        return null
+    }
+    if (raw instanceof byte[]) {
+        return new String(raw as byte[], 'UTF-8')
+    }
+    if (raw instanceof Byte[]) {
+        byte[] bytes = (raw as Byte[]).collect { it as byte } as byte[]
+        return new String(bytes, 'UTF-8')
+    }
+    return raw.toString()
+}
+
+private Map buildBackupDocument() {
+    Date exported = new Date(now())
+    TimeZone tz = location?.timeZone ?: UTC_ZONE
+    Map document = [
+        app     : BACKUP_APP_NAME,
+        schema  : [
+            version: BACKUP_SCHEMA_VERSION
+        ],
+        exported: [
+            at          : exported.format("yyyy-MM-dd'T'HH:mm:ssXXX", tz),
+            appId       : app?.id?.toString(),
+            hubTimeZone : tz?.ID
+        ],
+        settings: [
+            scalars: exportScalarSettings(),
+            devices: exportDeviceSettings()
+        ],
+        state   : exportDurableState(),
+        secrets : [
+            excludedSettings: BACKUP_SECRET_SETTING_NAMES,
+            excludedState   : BACKUP_SECRET_STATE_NAMES
+        ]
+    ]
+    document.findAll { it.value != null }
+}
+
+private Map exportScalarSettings() {
+    Map exported = [:]
+    BACKUP_SCALAR_SETTING_NAMES.each { name ->
+        if (settingsContains(name)) {
+            def value = settings[name]
+            if (value != null) {
+                exported[name] = backupSafeValue(value)
+            }
+        }
+    }
+    exported
+}
+
+private Map exportDeviceSettings() {
+    Map exported = [:]
+    backupDeviceSettingNames().each { name ->
+        if (settingsContains(name)) {
+            def value = settings[name]
+            if (value != null) {
+                exported[name] = backupDeviceSettingValue(value)
+            }
+        }
+    }
+    exported
+}
+
+private List<String> backupDeviceSettingNames() {
+    List names = []
+    names.addAll(BACKUP_DEVICE_SETTING_NAMES)
+    BACKUP_ATTRIBUTE_SETTING_NAMES.each { name ->
+        names << "${name}Device".toString()
+    }
+    names.unique()
+}
+
+private Map exportDurableState() {
+    Map exported = [:]
+    BACKUP_DURABLE_STATE_NAMES.each { name ->
+        if (stateContains(name)) {
+            def value = state[name]
+            if (value != null) {
+                exported[name] = backupSafeValue(value)
+            }
+        }
+    }
+    exported
+}
+
+private boolean settingsContains(String name) {
+    try {
+        return settings != null && settings[name] != null
+    } catch (Throwable ignored) {
+        return false
+    }
+}
+
+private boolean stateContains(String name) {
+    try {
+        return state != null && state[name] != null
+    } catch (Throwable ignored) {
+        return false
+    }
+}
+
+private def backupSafeValue(Object value) {
+    if (value == null) {
+        return null
+    }
+    if (value instanceof Number || value instanceof Boolean || value instanceof CharSequence) {
+        return value
+    }
+    if (value instanceof Map) {
+        Map cleaned = [:]
+        (value as Map).each { key, entryValue ->
+            if (key != null && entryValue != null) {
+                cleaned[key.toString()] = backupSafeValue(entryValue)
+            }
+        }
+        return cleaned
+    }
+    if (value instanceof Collection) {
+        return (value as Collection).collect { backupSafeValue(it) }
+    }
+    if (looksLikeDevice(value)) {
+        return deviceReference(value)
+    }
+    return value.toString()
+}
+
+private boolean looksLikeDevice(Object value) {
+    if (value == null) {
+        return false
+    }
+    try {
+        return value?.id != null && (value?.displayName != null || value?.label != null || value?.name != null)
+    } catch (Throwable ignored) {
+        return false
+    }
+}
+
+private def backupDeviceSettingValue(Object value) {
+    if (value instanceof Collection) {
+        return (value as Collection).collect { deviceReference(it) }.findAll { it != null }
+    }
+    return deviceReference(value)
+}
+
+private Map deviceReference(Object deviceOrId) {
+    if (deviceOrId == null) {
+        return null
+    }
+    if (looksLikeDevice(deviceOrId)) {
+        return [
+            id         : deviceOrId?.id?.toString(),
+            displayName: deviceOrId?.displayName?.toString(),
+            label      : deviceOrId?.label?.toString(),
+            name       : deviceOrId?.name?.toString(),
+            typeName   : deviceOrId?.typeName?.toString()
+        ].findAll { it.value != null }
+    }
+    String id = deviceOrId.toString()
+    return id ? [id: id] : null
+}
+
+private Map validateBackupImportJson(String rawJson = null) {
+    Map validation = [
+        valid            : false,
+        errors           : [],
+        warnings         : [],
+        unresolvedDevices: [],
+        missingSecrets   : []
+    ]
+
+    String text = rawJson != null ? rawJson : (state?.loadedBackupJson?.toString())
+    if (!text?.trim()) {
+        validation.errors << 'No backup file has been loaded. Select a File Manager backup file and click Load Selected File first.'
+        state.lastBackupValidation = validation
+        return validation
+    }
+
+    Map document = parseBackupDocument(text, validation)
+    if (!document) {
+        state.lastBackupValidation = validation
+        return validation
+    }
+
+    validateBackupDocumentShape(document, validation)
+    if (!validation.errors) {
+        validation.unresolvedDevices = unresolvedDevicesForBackup(document)
+        validation.missingSecrets = missingSecretsForBackup(document)
+        if (validation.unresolvedDevices) {
+            validation.warnings << "Some device references were not found on this hub and will need manual review."
+        }
+        if (validation.missingSecrets) {
+            validation.warnings << "Maker API token is not included in backups. You can enter and validate it, or skip it and run without Maker API preview support."
+        }
+    }
+
+    validation.valid = validation.errors.isEmpty()
+    state.lastBackupValidation = validation
+    return validation
+}
+
+private Map parseBackupDocument(String text, Map validation) {
+    try {
+        def parsed = new JsonSlurper().parseText(text)
+        if (parsed instanceof Map) {
+            return parsed as Map
+        }
+        validation.errors << 'Backup JSON must be an object.'
+    } catch (Exception ex) {
+        validation.errors << "Backup JSON could not be parsed: ${ex?.message ?: ex}"
+    }
+    return null
+}
+
+private void validateBackupDocumentShape(Map document, Map validation) {
+    if (document.app != BACKUP_APP_NAME) {
+        validation.errors << "Backup app name is not ${BACKUP_APP_NAME}."
+    }
+    Integer version = safeToInt((document.schema instanceof Map) ? document.schema.version : null, null)
+    if (version != BACKUP_SCHEMA_VERSION) {
+        validation.errors << "Unsupported backup schema version ${version ?: 'unknown'}."
+    }
+    if (!(document.settings instanceof Map)) {
+        validation.errors << 'Backup settings section is missing.'
+    }
+    if (!(document.state instanceof Map)) {
+        validation.errors << 'Backup state section is missing.'
+    }
+    if (document.settings instanceof Map) {
+        Map backupSettings = document.settings as Map
+        if (backupSettings.scalars != null && !(backupSettings.scalars instanceof Map)) {
+            validation.errors << 'Backup scalar settings section must be an object.'
+        }
+        if (backupSettings.devices != null && !(backupSettings.devices instanceof Map)) {
+            validation.errors << 'Backup device settings section must be an object.'
+        }
+    }
+}
+
+private List<Map> unresolvedDevicesForBackup(Map document) {
+    Map devices = ((document.settings instanceof Map) ? document.settings.devices : [:]) ?: [:]
+    List<Map> unresolved = []
+    devices.each { settingName, value ->
+        List refs = normalizeDeviceReferenceList(value)
+        refs.each { Map ref ->
+            String id = ref.id?.toString()
+            if (id && !findConfiguredDeviceById(id)) {
+                unresolved << [
+                    setting    : settingName?.toString(),
+                    id         : id,
+                    displayName: ref.displayName ?: ref.label ?: ref.name
+                ].findAll { it.value != null }
+            }
+        }
+    }
+    unresolved
+}
+
+private List<String> missingSecretsForBackup(Map document) {
+    Map scalars = ((document.settings instanceof Map) ? document.settings.scalars : [:]) ?: [:]
+    boolean hasMakerCoordinates = scalars.makerApiBaseUrl || scalars.makerApiAppId || scalars.makerApiDeviceIds
+    boolean hasToken = settings?.makerApiToken?.toString()?.trim()
+    if (hasMakerCoordinates && !hasToken && state?.makerApiTokenSkipped != true) {
+        return ['makerApiToken']
+    }
+    return []
+}
+
+private List<Map> normalizeDeviceReferenceList(Object value) {
+    if (value == null) {
+        return []
+    }
+    if (value instanceof Collection) {
+        return (value as Collection).collectMany { normalizeDeviceReferenceList(it) }
+    }
+    if (value instanceof Map) {
+        return [value as Map]
+    }
+    String id = value.toString()
+    return id ? [[id: id]] : []
+}
+
+private def findConfiguredDeviceById(String id) {
+    if (!id) {
+        return null
+    }
+    (getWeatherDevices() + getAmbientSensors()).find { dev -> dev?.id?.toString() == id }
+}
+
+private Map applyBackupImportJson(String rawJson = null) {
+    Map validation = validateBackupImportJson(rawJson)
+    if (!validation.valid) {
+        state.lastImportReport = [
+            applied: false,
+            errors : validation.errors
+        ]
+        return state.lastImportReport as Map
+    }
+
+    String text = rawJson != null ? rawJson : (state?.loadedBackupJson?.toString())
+    Map document = new JsonSlurper().parseText(text) as Map
+    Map report = [
+        applied          : true,
+        importedSettings : [],
+        importedState    : [],
+        unresolvedDevices: validation.unresolvedDevices ?: [],
+        missingSecrets   : validation.missingSecrets ?: []
+    ]
+
+    Map backupSettings = (document.settings ?: [:]) as Map
+    Map scalars = (backupSettings.scalars ?: [:]) as Map
+    scalars.each { key, value ->
+        String name = key?.toString()
+        if (!name || BACKUP_SECRET_SETTING_NAMES.contains(name) || !BACKUP_SCALAR_SETTING_NAMES.contains(name)) {
+            return
+        }
+        applyBackupSetting(name, value, backupSettingType(name))
+        report.importedSettings << name
+    }
+
+    Map deviceSettings = (backupSettings.devices ?: [:]) as Map
+    deviceSettings.each { key, value ->
+        String name = key?.toString()
+        if (!name || !backupDeviceSettingNames().contains(name)) {
+            return
+        }
+        def resolvedValue = importDeviceSettingValue(value, isMultipleDeviceSetting(name))
+        if (resolvedValue != null) {
+            applyBackupSetting(name, resolvedValue, backupSettingType(name))
+            report.importedSettings << name
+        }
+    }
+
+    Map backupState = (document.state ?: [:]) as Map
+    backupState.each { key, value ->
+        String name = key?.toString()
+        if (!name || BACKUP_SECRET_STATE_NAMES.contains(name) || !BACKUP_DURABLE_STATE_NAMES.contains(name)) {
+            return
+        }
+        state[name] = value
+        report.importedState << name
+    }
+
+    state.pressureBaseline = normalizePressureBaselineState(state.pressureBaseline)
+    state.remove('dashboardAccessToken')
+    ensureDashboardAccessToken()
+    state.forceRefresh = true
+    state.lastImportReport = report
+    updated()
+    return report
+}
+
+private def importDeviceSettingValue(Object exportedValue, boolean multiple) {
+    List<Map> refs = normalizeDeviceReferenceList(exportedValue)
+    List<String> ids = refs.collect { it.id?.toString() }.findAll { it }
+    if (multiple) {
+        return ids
+    }
+    return ids ? ids.first() : null
+}
+
+private boolean isMultipleDeviceSetting(String name) {
+    name in ['weatherDevices', 'ambientSensors']
+}
+
+private String backupSettingType(String name) {
+    if (name in ['weatherDevices', 'ambientSensors']) return 'capability.sensor'
+    if (name.endsWith('Device') || name == 'singleTriggerDevice') return 'enum'
+    if (name in ['enableEventTriggers']) return 'bool'
+    if (name in ['ambientRotationSeconds', 'refreshCronMinutes', 'windAverageMinutes', 'pressureTrendHours', 'pressureBaselineDays']) return 'number'
+    if (name == 'layoutOverrideJson') return 'textarea'
+    return 'text'
+}
+
+private void applyBackupSetting(String name, Object value, String type) {
+    try {
+        app?.updateSetting(name, [value: value, type: type])
+    } catch (Throwable ignored) {
+    }
+    try {
+        if (settings instanceof Map) {
+            settings[name] = value
+        }
+    } catch (Throwable ignored) {
+    }
+}
+
+private void skipMakerApiTokenRecovery() {
+    applyBackupSetting('makerApiToken', '', 'text')
+    state.makerApiTokenSkipped = true
+    state.remove('makerApiTokenValidation')
+    Map validation = (state.lastBackupValidation instanceof Map) ? (state.lastBackupValidation as Map) : [:]
+    if (validation) {
+        validation.missingSecrets = []
+        validation.warnings = ((validation.warnings instanceof List) ? validation.warnings : []).findAll {
+            !it.toString().toLowerCase().contains('maker api token')
+        }
+        state.lastBackupValidation = validation
+    }
+}
+
+private Map validateMakerApiTokenSetting() {
+    Map result = [
+        valid  : false,
+        checked: now()
+    ]
+    String baseUrl = settings?.makerApiBaseUrl?.toString()?.trim()
+    String appId = makerApiAppIdSetting()
+    String token = settings?.makerApiToken?.toString()?.trim()
+    if (!baseUrl || !appId || !token) {
+        result.message = 'Maker API base URL, app ID, and token are required to validate.'
+        state.makerApiTokenValidation = result
+        return result
+    }
+
+    String endpoint = "${baseUrl.replaceAll('/+$', '')}/apps/api/${urlEncode(appId)}/devices?access_token=${urlEncode(token)}"
+    try {
+        httpGet([uri: endpoint, timeout: 10]) { resp ->
+            int status = safeToInt(resp?.status, 0)
+            result.status = status
+            result.valid = status >= 200 && status < 300
+            result.message = result.valid ? 'Maker API token validated.' : "Maker API returned HTTP ${status}."
+        }
+    } catch (Throwable t) {
+        result.message = "Maker API validation failed: ${t?.message ?: t}"
+    }
+    if (result.valid) {
+        state.makerApiTokenSkipped = false
+    }
+    state.makerApiTokenValidation = result
+    return result
+}
+
+private String renderBackupValidationHtml(Map validation) {
+    if (!validation) {
+        return null
+    }
+    List<String> lines = []
+    lines << (validation.valid ? 'Backup JSON is valid.' : 'Backup JSON is not valid.')
+    ((validation.errors instanceof List) ? validation.errors : []).each { lines << "Error: ${it}" }
+    ((validation.warnings instanceof List) ? validation.warnings : []).each { lines << "Warning: ${it}" }
+    ((validation.unresolvedDevices instanceof List) ? validation.unresolvedDevices : []).each { entry ->
+        lines << "Unresolved device for ${entry.setting}: ${entry.displayName ?: 'unknown'} (${entry.id ?: 'no id'})"
+    }
+    ((validation.missingSecrets instanceof List) ? validation.missingSecrets : []).each { secret ->
+        lines << "Optional secret missing: ${secret}"
+    }
+    return "<b>Import validation</b>${htmlList(lines)}"
+}
+
+private String renderImportReportHtml(Map report) {
+    if (!report) {
+        return null
+    }
+    List<String> lines = []
+    lines << (report.applied ? 'Import applied.' : 'Import was not applied.')
+    if (report.importedSettings instanceof List) {
+        lines << "Settings imported: ${report.importedSettings.size()}"
+    }
+    if (report.importedState instanceof List) {
+        lines << "State entries imported: ${report.importedState.size()}"
+    }
+    ((report.errors instanceof List) ? report.errors : []).each { lines << "Error: ${it}" }
+    ((report.unresolvedDevices instanceof List) ? report.unresolvedDevices : []).each { entry ->
+        lines << "Review device mapping for ${entry.setting}: ${entry.displayName ?: 'unknown'} (${entry.id ?: 'no id'})"
+    }
+    ((report.missingSecrets instanceof List) ? report.missingSecrets : []).each { secret ->
+        lines << "Optional secret still missing: ${secret}"
+    }
+    return "<b>Import report</b>${htmlList(lines)}"
+}
+
+private String renderMakerApiRecoveryStatusHtml() {
+    if (state?.makerApiTokenSkipped == true) {
+        return "Maker API token recovery skipped. The dashboard tile can run without Maker API."
+    }
+    Map validation = state?.makerApiTokenValidation as Map
+    if (validation) {
+        String checked = validation.checked ? formatTimestamp(validation.checked as Long) : 'n/a'
+        String status = validation.valid ? 'validated' : 'not validated'
+        return "Maker API token ${status} at ${checked}. ${htmlEncode(validation.message?.toString())}"
+    }
+    if (makerApiSettingsConfigured()) {
+        return "Maker API settings are present. Validate the token if this was recently restored."
+    }
+    return "Maker API token is not configured. You can enter one or skip it."
+}
+
+private String renderBackupFileResultHtml(Map result) {
+    if (!result) {
+        return null
+    }
+    List<String> lines = []
+    lines << (result.success ? 'Backup file written.' : 'Backup file was not written.')
+    if (result.fileName) {
+        lines << "File Manager name: ${result.fileName}"
+    }
+    if (result.path) {
+        lines << "Local path: ${result.path}"
+    }
+    if (result.bytes != null) {
+        lines << "Size: ${result.bytes} bytes"
+    }
+    if (result.writtenAt) {
+        lines << "Generated: ${formatTimestamp(result.writtenAt as Long)}"
+    }
+    if (result.message) {
+        lines << result.message.toString()
+    }
+    return "<b>Backup export</b>${htmlList(lines)}"
+}
+
+private String renderBackupFileLoadResultHtml(Map result) {
+    if (!result) {
+        return null
+    }
+    List<String> lines = []
+    lines << (result.success ? 'Backup file loaded.' : 'Backup file was not loaded.')
+    if (result.fileName) {
+        lines << "File Manager name: ${result.fileName}"
+    }
+    if (result.bytes != null) {
+        lines << "Size: ${result.bytes} bytes"
+    }
+    if (result.loadedAt) {
+        lines << "Loaded: ${formatTimestamp(result.loadedAt as Long)}"
+    }
+    if (result.message) {
+        lines << result.message.toString()
+    }
+    return "<b>Backup file import</b>${htmlList(lines)}"
+}
+
+private String renderBackupFileListResultHtml(Map result) {
+    if (!result) {
+        return null
+    }
+    List<String> lines = []
+    lines << (result.success ? 'Backup file list refreshed.' : 'Backup file list was not refreshed.')
+    if (result.files instanceof List) {
+        lines << "Matching backup files: ${result.files.size()}"
+    }
+    if (result.refreshedAt) {
+        lines << "Checked: ${formatTimestamp(result.refreshedAt as Long)}"
+    }
+    if (result.message) {
+        lines << result.message.toString()
+    }
+    return "<b>File Manager backups</b>${htmlList(lines)}"
+}
+
 def appButtonHandler(String buttonName) {
     switch (buttonName) {
         case 'saveAndPreview':
@@ -1304,6 +2224,34 @@ def appButtonHandler(String buttonName) {
             state.forceRefresh = true
             enqueueRefreshSource('manual')
             refreshWeatherData()
+            break
+        case 'generateBackup':
+            logInfo "Weather Dashboard App backup export requested"
+            writeBackupFile()
+            break
+        case 'refreshBackupFileList':
+            logInfo "Weather Dashboard App backup file list refresh requested"
+            refreshBackupFileList()
+            break
+        case 'loadBackupImportFile':
+            logInfo "Weather Dashboard App backup file load requested"
+            loadBackupFileForImport()
+            break
+        case 'validateBackupImport':
+            logInfo "Weather Dashboard App backup import validation requested"
+            validateBackupImportJson()
+            break
+        case 'applyBackupImport':
+            logInfo "Weather Dashboard App backup import apply requested"
+            applyBackupImportJson()
+            break
+        case 'validateMakerApiToken':
+            logInfo "Weather Dashboard App Maker API token validation requested"
+            validateMakerApiTokenSetting()
+            break
+        case 'skipMakerApiToken':
+            logInfo "Weather Dashboard App Maker API token recovery skipped"
+            skipMakerApiTokenRecovery()
             break
         default:
             logWarn "Unhandled button press: ${buttonName}"
@@ -1593,6 +2541,7 @@ private List getWeatherDevices() {
     if (!devices && settings.weatherDevice) {
         devices << settings.weatherDevice
     }
+    devices = devices.findAll { looksLikeDevice(it) }
     def unique = []
     devices.each { dev ->
         if (dev && !unique.any { it.id == dev.id }) {
@@ -1610,6 +2559,7 @@ private List getAmbientSensors() {
     } else if (configured) {
         sensors << configured
     }
+    sensors = sensors.findAll { looksLikeDevice(it) }
     def unique = []
     sensors.each { dev ->
         if (dev && !unique.any { it.id == dev.id }) {

@@ -7385,13 +7385,20 @@
       
         function formatTime(value) {
           if (!value) return '--';
-          if (/\d{4}-\d{2}-\d{2}T/.test(value)) {
-            const d = new Date(value);
-            if (!isNaN(d)) {
-              return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            }
+          const parts = parseIsoDateParts(value);
+          if (parts && parts.hasTime) {
+            return formatClockTime(parts.hour, parts.minute);
           }
           return value;
+        }
+      
+        function formatClockTime(hour, minute) {
+          if (!Number.isFinite(hour) || !Number.isFinite(minute)) return '--';
+          const normalizedHour = Math.max(0, Math.min(23, Math.floor(hour)));
+          const normalizedMinute = Math.max(0, Math.min(59, Math.floor(minute)));
+          const period = normalizedHour >= 12 ? 'PM' : 'AM';
+          const hour12 = normalizedHour % 12 || 12;
+          return `${String(hour12).padStart(2, '0')}:${String(normalizedMinute).padStart(2, '0')} ${period}`;
         }
       
         function formatRelativeTime(value) {

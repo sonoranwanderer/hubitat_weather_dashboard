@@ -13,6 +13,7 @@ dashboard/
   weather-dashboard.js         Bundled dashboard renderer for Hubitat tiles
 docs/
   screenshots/                 README screenshot assets
+  build-and-test.md            Local build, dependency, and verification guide
 hubitat/
   WeatherDashboardApp.groovy   Hubitat app that builds the JSON payload
   WeatherDashboardDevice.groovy Virtual device driver that exposes payload segments
@@ -133,25 +134,28 @@ Use this checklist when the dashboard does not render:
 
 The device driver keeps each segment under Hubitat's attribute-size limit, which avoids runtime chunk reassembly.
 
+## Backup And Recovery
+
+Use **Apps -> Weather Dashboard App -> Backup & Recovery** to export or import a recovery JSON document. Export writes a timestamped `weather-dashboard-backup-YYYYMMDD-HHMMSS.json` file to Hubitat File Manager. Export a new backup after initial setup, after adding or remapping sensors, after changing units/layout/forecast settings, and before app upgrades.
+
+Backups include non-secret configuration, device references, and durable state used for rainfall totals, lightning statistics, temperature trends, wind averages, pressure tendency/baseline, forecast diagnostics, and recent payload recovery. Backups intentionally exclude Maker API and dashboard access tokens.
+
+For a same-hub restore, refresh the File Manager backup list in **Backup & Recovery**, select a backup, click **Load Selected File**, validate it, review any unresolved devices, then apply it. The exact filename field is an advanced fallback when the list cannot find a file you know exists. For a different-hub migration, upload the backup file from your workstation to the destination hub's File Manager, load it in the destination app, apply the backup, reselect any unresolved devices in **Configure data sources**, and save. After either restore, re-enter and validate the Maker API token if you use the embedded app preview or external Maker API clients. You can also choose **Skip Maker API Token**; the Hubitat dashboard tile works without Maker API.
+
+See [docs/backup-recovery.md](docs/backup-recovery.md) for the detailed workflow and troubleshooting.
+
+Developer note: any future setting, durable state key, forecast input, history tracker, derived-stat accumulator, or recovery-critical cache added by a feature must be evaluated for backup export, import validation, and documentation before release.
+
 ## Development Notes
 
 * Presentation logic lives in JavaScript; calculations live in the Hubitat app.
 * The generated `dashboard/weather-dashboard.js` bundle is checked in so Hubitat users can upload it without running the build toolchain.
 * Re-run `npm run build` whenever you change files under `src/` so the checked-in bundle stays aligned with the source.
+* When changing Hubitat configuration or durable calculation state, update the Backup & Recovery allowlists and tests so exported backups remain complete.
 
 ## Build and Verification
 
-```bash
-npm install
-npm run build
-npm run verify:hubitat
-npm test
-npm run clean
-```
-
-If you prefer Docker, `./build/run-docker-build.sh` runs the same build and test commands inside a container.
-
-The repository vendors a minimal `esbuild` shim under `vendor/esbuild-stub` so `npm install` works without reaching the public npm registry.
+See [docs/build-and-test.md](docs/build-and-test.md) for local build requirements, dependency setup, automated tests, bundle verification, Docker usage, and manual validation notes.
 
 ## Runtime Layout Overrides
 
