@@ -29,8 +29,6 @@ tests/
 3. `dashboard/weather-dashboard.js` renders the payload inside a single Hubitat dashboard tile.
 4. `app/weather-dashboard-app.html` and `app/weather-dashboard-app.js` provide the Hubitat app landing-page preview and Maker API fetch path.
 
-## Screenshot
-
 ![Weather Dashboard main tile](docs/screenshots/dashboard-main.png)
 
 ## Hubitat Setup Summary
