@@ -1964,6 +1964,8 @@ private Map applyBackupImportJson(String rawJson = null) {
         applied          : true,
         importedSettings : [],
         importedState    : [],
+        clearedState     : [],
+        errors           : [],
         unresolvedDevices: validation.unresolvedDevices ?: [],
         missingSecrets   : validation.missingSecrets ?: []
     ]
@@ -1975,8 +1977,11 @@ private Map applyBackupImportJson(String rawJson = null) {
         if (!name || BACKUP_SECRET_SETTING_NAMES.contains(name) || !BACKUP_SCALAR_SETTING_NAMES.contains(name)) {
             return
         }
-        applyBackupSetting(name, value, backupSettingType(name))
-        report.importedSettings << name
+        if (applyBackupSetting(name, value, backupSettingType(name))) {
+            report.importedSettings << name
+        } else {
+            report.errors << "Setting ${name} could not be imported."
+        }
     }
 
     Map deviceSettings = (backupSettings.devices ?: [:]) as Map
@@ -1987,27 +1992,46 @@ private Map applyBackupImportJson(String rawJson = null) {
         }
         def resolvedValue = importDeviceSettingValue(value, isMultipleDeviceSetting(name))
         if (resolvedValue != null) {
-            applyBackupSetting(name, resolvedValue, backupSettingType(name))
-            report.importedSettings << name
+            if (applyBackupSetting(name, resolvedValue, backupSettingType(name))) {
+                report.importedSettings << name
+            } else {
+                report.errors << "Device setting ${name} could not be imported."
+            }
         }
     }
 
     Map backupState = (document.state ?: [:]) as Map
+    BACKUP_DURABLE_STATE_NAMES.each { name ->
+        if (!backupState.containsKey(name) && !BACKUP_SECRET_STATE_NAMES.contains(name) && stateContains(name)) {
+            state.remove(name)
+            if (!stateContains(name)) {
+                report.clearedState << name
+            } else {
+                report.errors << "State entry ${name} could not be cleared."
+            }
+        }
+    }
     backupState.each { key, value ->
         String name = key?.toString()
         if (!name || BACKUP_SECRET_STATE_NAMES.contains(name) || !BACKUP_DURABLE_STATE_NAMES.contains(name)) {
             return
         }
-        state[name] = value
-        report.importedState << name
+        if (applyBackupState(name, value)) {
+            report.importedState << name
+        } else {
+            report.errors << "State entry ${name} could not be imported."
+        }
     }
 
     state.pressureBaseline = normalizePressureBaselineState(state.pressureBaseline)
     state.remove('dashboardAccessToken')
     ensureDashboardAccessToken()
     state.forceRefresh = true
+    report.applied = report.errors.isEmpty()
     state.lastImportReport = report
-    updated()
+    if (report.applied) {
+        updated()
+    }
     return report
 }
 
@@ -2033,17 +2057,45 @@ private String backupSettingType(String name) {
     return 'text'
 }
 
-private void applyBackupSetting(String name, Object value, String type) {
+private boolean applyBackupSetting(String name, Object value, String type) {
+    boolean appUpdated = false
     try {
-        app?.updateSetting(name, [value: value, type: type])
-    } catch (Throwable ignored) {
+        if (app != null) {
+            app.updateSetting(name, [value: value, type: type])
+            appUpdated = true
+        }
+    } catch (Throwable t) {
+        logWarn "Weather Dashboard App could not import setting ${name}: ${t?.message ?: t}"
     }
+    boolean mapUpdated = false
     try {
         if (settings instanceof Map) {
             settings[name] = value
+            mapUpdated = backupValuesEquivalent(settings[name], value)
         }
     } catch (Throwable ignored) {
     }
+    appUpdated || (app == null && mapUpdated)
+}
+
+private boolean applyBackupState(String name, Object value) {
+    try {
+        state[name] = value
+        return backupValuesEquivalent(state[name], value)
+    } catch (Throwable t) {
+        logWarn "Weather Dashboard App could not import state ${name}: ${t?.message ?: t}"
+        return false
+    }
+}
+
+private boolean backupValuesEquivalent(Object actual, Object expected) {
+    if (actual == expected) {
+        return true
+    }
+    if (actual == null || expected == null) {
+        return false
+    }
+    actual == expected || actual.toString() == expected.toString()
 }
 
 private void skipMakerApiTokenRecovery() {
@@ -2120,6 +2172,9 @@ private String renderImportReportHtml(Map report) {
     }
     if (report.importedState instanceof List) {
         lines << "State entries imported: ${report.importedState.size()}"
+    }
+    if (report.clearedState instanceof List && report.clearedState) {
+        lines << "State entries cleared: ${report.clearedState.size()}"
     }
     ((report.errors instanceof List) ? report.errors : []).each { lines << "Error: ${it}" }
     ((report.unresolvedDevices instanceof List) ? report.unresolvedDevices : []).each { entry ->

@@ -185,4 +185,38 @@ Map skippedValidation = appScript.binding.getVariable('state').lastBackupValidat
 assert appScript.binding.getVariable('state').makerApiTokenSkipped == true
 assert skippedValidation.missingSecrets == []
 
+// Scenario: importing a sparse backup clears stale durable state that is absent from the backup.
+Map sparseBackup = new groovy.json.JsonSlurper().parseText(backupJson) as Map
+sparseBackup.state.remove('pressureHistory')
+sparseBackup.state.remove('temperatureHistory')
+sparseBackup.state.remove('pressureBaseline')
+appScript.binding.setVariable('app', appStub)
+appScript.binding.setVariable('settings', [:])
+appScript.binding.setVariable('state', [
+    pressureHistory   : [[time: 1L, pressure: 30.01G]],
+    temperatureHistory: [[time: 1L, temperature: 99.9G]],
+    pressureBaseline  : [currentDay: 'stale', dailySum: 99.9G, dailyCount: 9, history: [[day: 'stale', avg: 99.9G]]]
+])
+Map sparseReport = invokePrivate(appScript, 'applyBackupImportJson', [String] as Class<?>[], JsonOutput.toJson(sparseBackup)) as Map
+Map sparseState = appScript.binding.getVariable('state') as Map
+assert sparseReport.applied == true
+assert sparseReport.clearedState.contains('pressureHistory')
+assert sparseReport.clearedState.contains('temperatureHistory')
+assert sparseReport.clearedState.contains('pressureBaseline')
+assert !sparseState.containsKey('pressureHistory')
+assert !sparseState.containsKey('temperatureHistory')
+assert sparseState.pressureBaseline.history == []
+assert sparseState.pressureBaseline.currentDay == null
+
+// Scenario: failed setting persistence is reported as an import error instead of success.
+def failingApp = [id: 102] as Expando
+failingApp.updateSetting = { String name, Map spec -> throw new RuntimeException("cannot update ${name}") }
+appScript.binding.setVariable('app', failingApp)
+appScript.binding.setVariable('settings', [:])
+appScript.binding.setVariable('state', [:])
+Map failedReport = invokePrivate(appScript, 'applyBackupImportJson', [String] as Class<?>[], backupJson) as Map
+assert failedReport.applied == false
+assert failedReport.errors.any { it.toString().contains('could not be imported') }
+assert !failedReport.importedSettings.contains('dashboardDeviceLabel')
+
 println JsonOutput.toJson([status: 'ok', message: 'Weather Dashboard landing helpers verified'])
