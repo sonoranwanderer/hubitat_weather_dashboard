@@ -41,7 +41,7 @@ The dashboard has two setup parts:
 ### Dependencies
 
 * **Weather Device(s)** - required
-  * The dashboard can use any weather data sources that expose weather data in Hubitat via devices. It expects Ecowitt-style attribute names such as `temperature`, `humidity`, `windSpeed`, `windGust`, `windDirection`, `pressure`, `rainRate`, and `rainDaily`. However attribute names can be remapped in the app if your weather devices use different names.
+  * The dashboard can use any weather data sources that expose weather data in Hubitat via devices. It expects Ecowitt-style attribute names such as `temperature`, `humidity`, `windSpeed`, `windGust`, `windDirection`, `pressure`, `rainRate`, and `rainDaily`. However attribute names can be remapped in the app if your weather devices use different attribute names.
 * **Maker API** (Hubitat Built-in App) - optional
   * Hubitat's built-in [**Maker API**](https://docs2.hubitat.com/en/apps/maker-api) app if you want the embedded app dashboard preview or external clients to fetch dashboard data. 
   * The Hubitat dashboard tile itself does not require Maker API.
