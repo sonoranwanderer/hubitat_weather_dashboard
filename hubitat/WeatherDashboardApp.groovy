@@ -38,7 +38,6 @@ definition(
 @Field final int MAKER_PAYLOAD_MAX_BYTES = 100000
 @Field final int BACKUP_SCHEMA_VERSION = 1
 @Field final String BACKUP_APP_NAME = 'Weather Dashboard App'
-@Field Map refreshRuntimeCache = null
 // Future features that add operational settings or durable state must update
 // these backup allowlists, import validation, tests, and docs before release.
 @Field final List<String> BACKUP_SECRET_SETTING_NAMES = [
@@ -2587,10 +2586,6 @@ private List<Map> getAmbientSubscriptions() {
 }
 
 private List getWeatherDevices() {
-    if (refreshRuntimeCache instanceof Map && refreshRuntimeCache.containsKey('weatherDevices')) {
-        return refreshRuntimeCache.weatherDevices as List
-    }
-
     def devices = []
     def configured = settings.weatherDevices
     if (configured instanceof Collection) {
@@ -2608,17 +2603,10 @@ private List getWeatherDevices() {
             unique << dev
         }
     }
-    if (refreshRuntimeCache instanceof Map) {
-        refreshRuntimeCache.weatherDevices = unique
-    }
     unique
 }
 
 private List getAmbientSensors() {
-    if (refreshRuntimeCache instanceof Map && refreshRuntimeCache.containsKey('ambientSensors')) {
-        return refreshRuntimeCache.ambientSensors as List
-    }
-
     def sensors = []
     def configured = settings.ambientSensors
     if (configured instanceof Collection) {
@@ -2632,9 +2620,6 @@ private List getAmbientSensors() {
         if (dev && !unique.any { it.id == dev.id }) {
             unique << dev
         }
-    }
-    if (refreshRuntimeCache instanceof Map) {
-        refreshRuntimeCache.ambientSensors = unique
     }
     unique
 }
@@ -2746,25 +2731,12 @@ private Map attributeOptionsForSetting(String attrSetting, String defaultAttr) {
 }
 
 private Map attributeConfig(String attrSetting) {
-    Map attributeCache = (refreshRuntimeCache instanceof Map && refreshRuntimeCache.attributeConfigs instanceof Map)
-        ? (refreshRuntimeCache.attributeConfigs as Map)
-        : null
-    if (attributeCache != null && attributeCache.containsKey(attrSetting)) {
-        return attributeCache[attrSetting] as Map
-    }
-
     def attrName = settings[attrSetting]
-    if (!attrName) {
-        if (attributeCache != null) attributeCache[attrSetting] = null
-        return null
-    }
+    if (!attrName) return null
     def deviceSetting = "${attrSetting}Device"
     def device = resolveDevice(settings[deviceSetting]) ?: primaryWeatherDevice()
-    Map config = device ? [device: device, attribute: attrName] : null
-    if (attributeCache != null) {
-        attributeCache[attrSetting] = config
-    }
-    config
+    if (!device) return null
+    [device: device, attribute: attrName]
 }
 
 private BigDecimal readDecimalFor(String attrSetting) {
@@ -2985,7 +2957,6 @@ def refreshWeatherData() {
     String source = consumeRefreshSource()
     boolean suppressed = false
     boolean payloadUpdated = false
-    refreshRuntimeCache = [attributeConfigs: [:]]
     try {
         def devices = getWeatherDevices()
         if (!devices) {
@@ -3322,7 +3293,6 @@ def refreshWeatherData() {
         child.updateDashboardData(json)
     }
     } finally {
-        refreshRuntimeCache = null
         recordRefreshMetrics(source, startedAt, now(), suppressed, payloadUpdated)
     }
 }

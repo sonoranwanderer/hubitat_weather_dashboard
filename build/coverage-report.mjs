@@ -65,6 +65,31 @@ function lineForOffset(starts, offset) {
   return 0;
 }
 
+function sourceNonBlankLines(source) {
+  return new Set(source.split(/\r?\n/)
+    .map((line, index) => (line.trim() ? index + 1 : null))
+    .filter(Boolean));
+}
+
+function addRangeLines(target, nonBlankLines, starts, startOffset, endOffset) {
+  const startLine = lineForOffset(starts, startOffset);
+  const endLine = lineForOffset(starts, Math.max(startOffset, endOffset - 1));
+  for (let line = startLine; line <= endLine; line += 1) {
+    const lineNumber = line + 1;
+    if (nonBlankLines.has(lineNumber)) {
+      target.add(lineNumber);
+    }
+  }
+}
+
+function removeRangeLines(target, starts, startOffset, endOffset) {
+  const startLine = lineForOffset(starts, startOffset);
+  const endLine = lineForOffset(starts, Math.max(startOffset, endOffset - 1));
+  for (let line = startLine; line <= endLine; line += 1) {
+    target.delete(line + 1);
+  }
+}
+
 function summarizeJsCoverage() {
   const files = new Map();
   for (const file of walkFiles(v8CoverageDir, item => item.endsWith('.json'))) {
@@ -76,9 +101,7 @@ function summarizeJsCoverage() {
       if (!isJsSource(repoPath) || !fs.existsSync(filePath)) continue;
 
       const source = fs.readFileSync(filePath, 'utf8');
-      const nonBlankLines = new Set(source.split(/\r?\n/)
-        .map((line, index) => (line.trim() ? index + 1 : null))
-        .filter(Boolean));
+      const nonBlankLines = sourceNonBlankLines(source);
       const entry = files.get(repoPath) || {
         path: repoPath,
         source,
@@ -99,16 +122,20 @@ function summarizeJsCoverage() {
           && ranges[0].endOffset >= source.length;
         if (!covered || isTopLevel) continue;
 
+        const functionCoveredLines = new Set();
+        const zeroCountRanges = [];
         for (const range of ranges) {
-          if (Number(range.count) <= 0) continue;
-          const startLine = lineForOffset(starts, range.startOffset);
-          const endLine = lineForOffset(starts, Math.max(range.startOffset, range.endOffset - 1));
-          for (let line = startLine; line <= endLine; line += 1) {
-            const lineNumber = line + 1;
-            if (entry.nonBlankLines.has(lineNumber)) {
-              entry.coveredLines.add(lineNumber);
-            }
+          if (Number(range.count) > 0) {
+            addRangeLines(functionCoveredLines, entry.nonBlankLines, starts, range.startOffset, range.endOffset);
+          } else {
+            zeroCountRanges.push(range);
           }
+        }
+        for (const range of zeroCountRanges) {
+          removeRangeLines(functionCoveredLines, starts, range.startOffset, range.endOffset);
+        }
+        for (const lineNumber of functionCoveredLines) {
+          entry.coveredLines.add(lineNumber);
         }
       }
       files.set(repoPath, entry);
@@ -121,9 +148,7 @@ function summarizeJsCoverage() {
       files.set(repoPath, {
         path: repoPath,
         source: fs.readFileSync(filePath, 'utf8'),
-        nonBlankLines: new Set(fs.readFileSync(filePath, 'utf8').split(/\r?\n/)
-          .map((line, index) => (line.trim() ? index + 1 : null))
-          .filter(Boolean)),
+        nonBlankLines: sourceNonBlankLines(fs.readFileSync(filePath, 'utf8')),
         functions: new Map(),
         coveredLines: new Set()
       });
@@ -163,21 +188,96 @@ function summarizeJsCoverage() {
   };
 }
 
+function stripGroovyNonCode(source) {
+  let output = '';
+  let index = 0;
+  let mode = 'code';
+  while (index < source.length) {
+    const current = source[index];
+    const next = source[index + 1] || '';
+    const trio = source.slice(index, index + 3);
+
+    if (mode === 'code') {
+      if (trio === "'''" || trio === '"""') {
+        mode = trio;
+        output += '   ';
+        index += 3;
+        continue;
+      }
+      if (current === '/' && next === '*') {
+        mode = 'block-comment';
+        output += '  ';
+        index += 2;
+        continue;
+      }
+      if (current === '/' && next === '/') {
+        mode = 'line-comment';
+        output += '  ';
+        index += 2;
+        continue;
+      }
+      output += current;
+      index += 1;
+      continue;
+    }
+
+    if (mode === 'line-comment') {
+      output += current === '\n' ? '\n' : ' ';
+      if (current === '\n') mode = 'code';
+      index += 1;
+      continue;
+    }
+
+    if (mode === 'block-comment') {
+      if (current === '*' && next === '/') {
+        output += '  ';
+        index += 2;
+        mode = 'code';
+      } else {
+        output += current === '\n' ? '\n' : ' ';
+        index += 1;
+      }
+      continue;
+    }
+
+    if (mode === "'''" || mode === '"""') {
+      if (trio === mode) {
+        output += '   ';
+        index += 3;
+        mode = 'code';
+      } else {
+        output += current === '\n' ? '\n' : ' ';
+        index += 1;
+      }
+    }
+  }
+  return output;
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function summarizeGroovyCoverageApproximation() {
   const testText = walkFiles(path.join(repoRoot, 'tests', 'hubitat'), file => file.endsWith('.groovy'))
-    .map(file => fs.readFileSync(file, 'utf8'))
+    .map(file => stripGroovyNonCode(fs.readFileSync(file, 'utf8')))
     .join('\n');
   const methodPattern = /^\s*(?:(?:private|public|protected)\s+)?(?:static\s+)?(?:(?:def)|(?:[A-Za-z_][\w<>, ?\[\]]*))\s+([A-Za-z_]\w*)\s*\(/;
 
   const files = walkFiles(repoRoot, file => isGroovySource(toRepoPath(file))).sort().map(filePath => {
-    const methods = fs.readFileSync(filePath, 'utf8')
+    const methods = stripGroovyNonCode(fs.readFileSync(filePath, 'utf8'))
       .split(/\r?\n/)
       .map((line, index) => {
         const match = line.match(methodPattern);
         return match ? { name: match[1], line: index + 1 } : null;
       })
       .filter(Boolean);
-    const covered = methods.filter(method => new RegExp(`['"]${method.name}['"]|\\b${method.name}\\s*\\(`).test(testText));
+    const covered = methods.filter(method => {
+      const name = escapeRegExp(method.name);
+      const explicitPrivateCall = new RegExp(`\\binvokePrivate\\s*\\([^\\n]*['"]${name}['"]`).test(testText);
+      const directReceiverCall = new RegExp(`(?:\\b[A-Za-z_]\\w*|\\))\\s*\\.\\s*${name}\\s*\\(`).test(testText);
+      return explicitPrivateCall || directReceiverCall;
+    });
     return {
       path: toRepoPath(filePath),
       coverageType: 'method-reference approximation',

@@ -16,9 +16,9 @@ Current result from this branch:
 
 | Area | Coverage |
 | --- | ---: |
-| JavaScript lines | 99.26% |
+| JavaScript lines | 99.16% |
 | JavaScript functions | 79.22% |
-| Groovy methods | 7.47% approximation |
+| Groovy methods | 6.20% approximation |
 
 The JavaScript report is generated from Node V8 coverage while running the
 existing local harnesses. The Groovy number is intentionally labeled as an
@@ -58,15 +58,13 @@ The implemented changes preserve product capability.
   `ResizeObserver` or fallback resize listener for the active ambient container
   instead of allocating a new observer/listener after every render. This reduces
   browser memory growth and duplicate resize work during long dashboard sessions.
-- Hubitat Groovy app: each `refreshWeatherData` call now uses an in-memory
-  per-refresh cache for resolved weather devices, ambient sensors, and attribute
-  mappings. This reduces repeated settings/device resolution while keeping the
-  generated payload and refresh behavior unchanged.
 
 ## Performance Review Findings
 
 Capability-preserving follow-up candidates:
 
+- Revisit Hubitat refresh lookup caching only if it can be scoped to a local
+  refresh call path without shared script fields or cross-instance state.
 - Add refresh diagnostics that expose attribute read count, child `sendEvent`
   count, payload byte size, and suppressed-refresh count together in one place.
 - Expand driver tests before changing segmentation logic; the driver is the main
