@@ -5,6 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 const { createRenderer } = require('../src/render');
+const { bootstrapRenderer } = require('./support/dashboard-test-utils');
 
 
 describe('Weather Dashboard Renderer', () => {
@@ -107,5 +108,53 @@ describe('Renderer measurement hooks', () => {
     expect(observeCalls.length).toBe(1);
     expect(observeCalls[0].type).toBe('base-dimensions');
     expect(typeof observeCalls[0].onMeasure).toBe('function');
+  });
+});
+
+describe('Renderer resize observer lifecycle', () => {
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('reuses the ambient ring observer across repeated renders', () => {
+    const createdObservers = [];
+    global.ResizeObserver = class ResizeObserver {
+      constructor(callback) {
+        this.callback = callback;
+        this.observed = [];
+        this.disconnected = false;
+        createdObservers.push(this);
+      }
+
+      observe(element) {
+        this.observed.push(element);
+      }
+
+      unobserve() {}
+
+      disconnect() {
+        this.disconnected = true;
+      }
+    };
+
+    const { hooks, document: dashboardDocument, window: dashboardWindow } = bootstrapRenderer();
+    dashboardWindow.ResizeObserver = global.ResizeObserver;
+    const ambient = dashboardDocument.createElement('div');
+    ambient.classList.add('wdash-ambient');
+    dashboardDocument.body.appendChild(ambient);
+
+    hooks.setupAmbientRingResizeSync(ambient);
+    hooks.setupAmbientRingResizeSync(ambient);
+    hooks.setupAmbientRingResizeSync(ambient);
+
+    const firstState = hooks.getAmbientRingResizeState();
+    expect(firstState.target).toBe(ambient);
+    hooks.setupAmbientRingResizeSync(ambient);
+    hooks.setupAmbientRingResizeSync(ambient);
+    expect(hooks.getAmbientRingResizeState().observer).toBe(firstState.observer);
+
+    hooks.teardownAmbientRingResizeSync();
+    expect(hooks.getAmbientRingResizeState().observer).toBe(null);
+    expect(hooks.getAmbientRingResizeState().target).toBe(null);
   });
 });
