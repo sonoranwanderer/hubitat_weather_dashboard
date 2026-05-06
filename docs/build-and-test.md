@@ -62,8 +62,10 @@ npm test
 - Unit conversion harnesses for rain, pressure, lightning, and air quality.
 - Timer and async error harnesses.
 - Hubitat tile adapter harness.
+- App-preview source harness.
 - Maker API endpoint simulation.
 - Browser-style preview checks through the local Playwright stub.
+- Groovy virtual device segmentation smoke tests when `groovy` is installed.
 - Groovy Hubitat app smoke tests when `groovy` is installed.
 - Jest unit tests through the local Jest stub.
 

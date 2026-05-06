@@ -16,9 +16,9 @@ Current result from this branch:
 
 | Area | Coverage |
 | --- | ---: |
-| JavaScript lines | 81.46% |
-| JavaScript functions | 80.00% |
-| Groovy methods | 5.69% approximation |
+| JavaScript lines | 99.26% |
+| JavaScript functions | 79.22% |
+| Groovy methods | 7.47% approximation |
 
 The JavaScript report is generated from Node V8 coverage while running the
 existing local harnesses. The Groovy number is intentionally labeled as an
@@ -38,13 +38,14 @@ Yes. The current suite is useful and passes, but coverage is uneven:
 - `src/adapters/hubitat-tiles.js` has strong line coverage, but should add more
   branch tests for malformed segment envelopes, missing chunks, and stale tile
   replacement.
-- `app/weather-dashboard-app.js` currently has no V8-covered source execution in
-  the coverage report, despite app-preview behavior being checked by the e2e
-  stub. Add direct unit or harness coverage for Maker API polling, status
-  rendering, resize sync, and failure backoff.
-- `hubitat/WeatherDashboardDevice.groovy` has no local smoke coverage. Add a
-  driver harness for payload segmentation, unchanged segment suppression, empty
-  payload clearing, and dashboard script publication.
+- `app/weather-dashboard-app.js` now has direct source-level harness coverage
+  for Maker API configuration, polling success, failure backoff, status-bar
+  behavior, and reconfiguration. Add more cases for inline configuration,
+  resize sync, and malformed device payloads.
+- `hubitat/WeatherDashboardDevice.groovy` now has a smoke harness for payload
+  segmentation, unchanged segment suppression, empty payload clearing, invalid
+  JSON handling, and dashboard script generation. Add more cases for oversize
+  segment limits and optional/partial payload combinations.
 - `hubitat/WeatherDashboardApp.groovy` needs more direct tests around payload
   generation, event debounce/cron fallback, source fingerprint suppression,
   history pruning, pressure forecast branches, and backup validation failures.
