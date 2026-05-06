@@ -106,8 +106,24 @@ assert parseEventJson('segmentAmbient1') == [:]
 driver.updateDashboardData('{not json')
 assert errors.any { it.contains('JSON parse error') || it.contains('Unable to parse') }
 
+events.clear()
+driver.updateDashboardData(JsonOutput.toJson([metadata: [generatedAt: '2026-05-06T12:05:00Z']]))
+assert parseEventJson('segmentCore') == [:]
+assert parseEventJson('segmentPrecip') == [:]
+assert parseEventJson('segmentAirQuality') == [:]
+assert parseEventJson('segmentMeta').metadata.generatedAt == '2026-05-06T12:05:00Z'
+assert parseEventJson('segmentLayout') == [:]
+assert parseEventJson('segmentAmbient1').ambientSensors == []
+assert parseEventJson('segmentAmbient1').totalAmbientSensors == 0
+
+String oversized = invokePrivate(driver, 'buildScriptTag', [String] as Class<?>[], '/local/' + ('x' * 1200) + '.js') as String
+events.clear()
+invokePrivate(driver, 'sendSegmentJson', [String, String] as Class<?>[], 'segmentCore', oversized)
+assert eventByName('segmentCore').value.size() == 1024
+assert errors.any { it.contains('exceeds Hubitat event limit') }
+
 String customScript = invokePrivate(driver, 'buildScriptTag', [String] as Class<?>[], '/local/custom-weather-dashboard.js') as String
 assert customScript.contains('/local/custom-weather-dashboard.js')
-assert eventByName('dashboardScript').value.contains('WeatherDashboardDevice')
+assert customScript.contains('WeatherDashboardDevice')
 
 println 'Weather Dashboard device segmentation verified'

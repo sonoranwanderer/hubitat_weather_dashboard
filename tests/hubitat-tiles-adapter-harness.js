@@ -59,6 +59,25 @@ const { window, document, hooks, dom } = bootstrapRenderer({
   ]
 });
 
+const observerInstances = [];
+let renderCount = 0;
+window.MutationObserver = class MutationObserver {
+  constructor(callback) {
+    this.callback = callback;
+    this.observed = [];
+    this.disconnected = false;
+    observerInstances.push(this);
+  }
+
+  observe(target, options) {
+    this.observed.push({ target, options });
+  }
+
+  disconnect() {
+    this.disconnected = true;
+  }
+};
+
 const infoMessages = [];
 const originalInfo = window.console?.info ? window.console.info.bind(window.console) : null;
 window.console.info = (...args) => {
@@ -76,8 +95,9 @@ try {
   const adapter = createHubitatTilesAdapter({
     window,
     document,
+    globalThis: window,
     knownPayloadKeys: hooks.KNOWN_PAYLOAD_KEYS,
-    safeRenderFromData: () => {}
+    safeRenderFromData: () => { renderCount += 1; }
   });
 
   const payloads = adapter.readPayloads();
@@ -94,11 +114,28 @@ try {
   assert(document.getElementById('tile-2').classList.contains('wdash-source-tile'), 'Expected tile-2 to be masked');
   assert(!document.getElementById('tile-3').classList.contains('wdash-source-tile'), 'Noise tile should not be masked');
 
+  document.getElementById('tile-2').querySelector('.tile-primary').textContent = noiseTileText;
+  const payloadsAfterTileTwoWentStale = adapter.readPayloads();
+  assert.strictEqual(payloadsAfterTileTwoWentStale.length, 1, 'Only tile-1 should remain as a valid payload source');
+  adapter.toggleSourceTileMask(true);
+  assert(document.getElementById('tile-1').classList.contains('wdash-source-tile'), 'Current source tile should stay masked');
+  assert(!document.getElementById('tile-2').classList.contains('wdash-source-tile'), 'Stale source tile mask should be removed');
+
   adapter.toggleSourceTileMask(false);
   assert(!document.getElementById('tile-1').classList.contains('wdash-source-tile'), 'Tile-1 mask should be cleared');
   assert(!document.getElementById('tile-2').classList.contains('wdash-source-tile'), 'Tile-2 mask should be cleared');
 
   assert(infoMessages.some(message => message.includes('Ignoring non-JSON content from tile-3')), 'Expected warning for invalid tile payload');
+  assert(infoMessages.some(message => message.includes('Ignoring non-JSON content from tile-2')), 'Expected warning for stale invalid tile payload');
+
+  adapter.ensureDataTileObservers();
+  assert(observerInstances.length >= 3, 'Expected data tile observers to be created');
+  assert(renderCount > 0, 'Observer setup should trigger a render when sources are discovered');
+  const tileTwoObserver = observerInstances.find(observer => observer.observed.some(entry => entry.target.id === 'tile-2'));
+  assert(tileTwoObserver, 'Expected observer for tile-2');
+  document.getElementById('tile-2').remove();
+  adapter.ensureDataTileObservers();
+  assert(tileTwoObserver.disconnected, 'Observer for removed tile should be disconnected');
 
   console.log('hubitat-tiles-adapter-harness.js passed');
 } finally {
