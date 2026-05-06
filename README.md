@@ -31,18 +31,11 @@ tests/
 
 ## Screenshots
 
-Screenshots are stored in `docs/screenshots/` so GitHub can render them directly in this README. Add PNG files with these names when captures are available:
+Screenshots are stored in `docs/screenshots/` so GitHub can render them directly in this README.
 
-* `docs/screenshots/dashboard-main.png` - Hubitat dashboard tile rendering the weather dashboard.
-* `docs/screenshots/app-preview.png` - Weather Dashboard app landing-page preview.
-
-After adding the image files, replace this note with embedded images:
-
-```markdown
 ![Weather Dashboard main tile](docs/screenshots/dashboard-main.png)
 
 ![Weather Dashboard app preview](docs/screenshots/app-preview.png)
-```
 
 ## Hubitat Setup Summary
 
