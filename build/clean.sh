@@ -40,9 +40,9 @@ for glob in "${CLEAN_GLOBS[@]}"; do
 done
 shopt -u nullglob
 
-while IFS= read -r file; do
+while IFS= read -r -d '' file; do
   remove_path "$file"
-done < <(find . -path './.git' -prune -o -type f -name '.DS_Store' -print)
+done < <(find . -path './.git' -prune -o -type f -name '.DS_Store' -print0)
 
 if [ $removed_any -eq 0 ]; then
   echo "Nothing to clean"
