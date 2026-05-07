@@ -16,7 +16,8 @@ binding.setVariable('createAccessToken', { -> 'generated-dashboard-token' })
 binding.setVariable('now', { -> 1778103354260L })
 binding.setVariable('unschedule', { Object... args -> })
 binding.setVariable('unsubscribe', { Object... args -> })
-binding.setVariable('runIn', { Object... args -> })
+List<List> runInCalls = []
+binding.setVariable('runIn', { Object... args -> runInCalls << args.toList() })
 Map uploadedFiles = [:]
 binding.setVariable('uploadHubFile', { String fileName, byte[] bytes -> uploadedFiles[fileName] = new String(bytes, 'UTF-8') })
 binding.setVariable('downloadHubFile', { String fileName ->
@@ -218,5 +219,56 @@ Map failedReport = invokePrivate(appScript, 'applyBackupImportJson', [String] as
 assert failedReport.applied == false
 assert failedReport.errors.any { it.toString().contains('could not be imported') }
 assert !failedReport.importedSettings.contains('dashboardDeviceLabel')
+
+// Scenario: event debounce and cron refresh paths record scheduling/skip metrics.
+runInCalls.clear()
+appScript.binding.setVariable('settings', [enableEventTriggers: true, refreshCronMinutes: 1])
+appScript.binding.setVariable('state', [:])
+appScript.handleWeatherEvent([displayName: 'Gateway', name: 'temperature'] as Expando)
+Map eventState = appScript.binding.getVariable('state') as Map
+assert eventState.eventDebounceActive == true
+assert runInCalls.any { it[0] == 2 && it[1] == 'refreshFromEvent' }
+assert eventState.metrics.events.totalEvents == 1L
+
+runInCalls.clear()
+appScript.binding.setVariable('settings', [enableEventTriggers: true, refreshCronMinutes: 1])
+appScript.binding.setVariable('state', [eventDebounceActive: true, metrics: [:]])
+appScript.scheduledCronRefresh()
+Map cronState = appScript.binding.getVariable('state') as Map
+assert cronState.metrics.refresh.cron.skippedDuringEvent == 1L
+assert runInCalls.any { it[0] == 60 && it[1] == 'scheduledCronRefresh' }
+
+// Scenario: time-series histories prune stale entries and preserve fresh samples.
+long baseTs = 1778103354260L
+appScript.binding.setVariable('settings', [windAverageMinutes: 10, pressureBaselineDays: 2])
+appScript.binding.setVariable('state', [
+    windHistory       : [[time: baseTs - 900000L, speed: 1.0G, direction: 90G], [time: baseTs - 60000L, speed: 3.0G, direction: 180G]],
+    pressureHistory   : [[time: baseTs - (25L * 60L * 60L * 1000L), pressure: 28.0G], [time: baseTs - 60000L, pressure: 29.9G]],
+    temperatureHistory: [[time: baseTs - (7L * 60L * 60L * 1000L), temperature: 60.0G], [time: baseTs - 60000L, temperature: 70.0G]],
+    pressureBaseline  : [history: [[day: '2026-05-04', avg: 29.7G], [day: '2026-05-05', avg: 29.8G], [day: '2026-05-06', avg: 29.9G]]],
+    metrics           : [:]
+])
+invokePrivate(appScript, 'updateWindHistory', [BigDecimal, BigDecimal, Long.TYPE] as Class<?>[], 5.0G, 270.0G, baseTs)
+invokePrivate(appScript, 'updatePressureHistory', [BigDecimal, Long.TYPE] as Class<?>[], 30.01G, baseTs)
+invokePrivate(appScript, 'updateTemperatureHistory', [BigDecimal, Long.TYPE] as Class<?>[], 75.0G, baseTs)
+Map baselineForLimit = (appScript.binding.getVariable('state') as Map).pressureBaseline as Map
+invokePrivate(appScript, 'enforcePressureBaselineLimit', [Map] as Class<?>[], baselineForLimit)
+Map historyState = appScript.binding.getVariable('state') as Map
+assert historyState.windHistory.size() == 2
+assert historyState.windHistory*.speed.contains(5.0G)
+assert historyState.pressureHistory.size() == 2
+assert historyState.temperatureHistory.size() == 2
+assert baselineForLimit.history*.day == ['2026-05-05', '2026-05-06']
+assert historyState.metrics.histories.wind.totalPruned == 1L
+assert historyState.metrics.histories.pressure.totalPruned == 1L
+assert historyState.metrics.histories.temperature.totalPruned == 1L
+
+// Scenario: payload metadata and forecast helpers handle explicit layout and pressure inputs.
+Map layoutOverride = invokePrivate(appScript, 'parseLayoutOverrideSetting', [String] as Class<?>[], '{"baseWidth":1000,"desktop":{"gap":"4px"}}') as Map
+Map metadata = invokePrivate(appScript, 'buildMetadata', [Date, TimeZone, String, Map] as Class<?>[], new Date(baseTs), TimeZone.getTimeZone('UTC'), 'station-time', layoutOverride) as Map
+assert metadata.layout.baseWidth == 1000
+assert metadata.weatherStationTime == 'station-time'
+Map dryOutlook = invokePrivate(appScript, 'computeOutlook', [BigDecimal, Map, BigDecimal, Map, String] as Class<?>[], 29.4G, [label: 'falling', ratePerHour: -0.05G], 20.0G, [:], 'inHg') as Map
+assert dryOutlook.summary
 
 println JsonOutput.toJson([status: 'ok', message: 'Weather Dashboard landing helpers verified'])

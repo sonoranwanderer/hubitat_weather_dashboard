@@ -109,17 +109,28 @@ try {
   const merged = hooks.mergePayloads(payloads);
   assert.deepStrictEqual(merged, fixture, 'Merged payload does not match fixture data');
 
+  const incompleteMerged = hooks.mergePayloads([segmentOne]);
+  assert(incompleteMerged.outdoor, 'Single available segment should still produce a partial payload');
+  assert(!incompleteMerged.pressure, 'Missing segment data should stay absent');
+  assert.strictEqual(hooks.mergePayloads([{ segmentIndex: 0, segmentSize: 2 }]), null, 'Empty segment envelope should not create a payload');
+
+  document.getElementById('tile-3').querySelector('.tile-primary').textContent = '{"segmentIndex":0,"segmentSize":2}';
+  const payloadsWithEmptyEnvelope = adapter.readPayloads();
+  assert.strictEqual(payloadsWithEmptyEnvelope.length, 3, 'Recognized segment envelope should be returned for merge handling');
+  assert.strictEqual(hooks.mergePayloads([payloadsWithEmptyEnvelope[2]]), null, 'Malformed/missing chunk envelope should merge to null');
+
   adapter.toggleSourceTileMask(true);
   assert(document.getElementById('tile-1').classList.contains('wdash-source-tile'), 'Expected tile-1 to be masked');
   assert(document.getElementById('tile-2').classList.contains('wdash-source-tile'), 'Expected tile-2 to be masked');
-  assert(!document.getElementById('tile-3').classList.contains('wdash-source-tile'), 'Noise tile should not be masked');
+  assert(document.getElementById('tile-3').classList.contains('wdash-source-tile'), 'Recognized empty envelope should be tracked as a source');
 
   document.getElementById('tile-2').querySelector('.tile-primary').textContent = noiseTileText;
   const payloadsAfterTileTwoWentStale = adapter.readPayloads();
-  assert.strictEqual(payloadsAfterTileTwoWentStale.length, 1, 'Only tile-1 should remain as a valid payload source');
+  assert.strictEqual(payloadsAfterTileTwoWentStale.length, 2, 'Tile-1 and the empty envelope should remain as valid payload sources');
   adapter.toggleSourceTileMask(true);
   assert(document.getElementById('tile-1').classList.contains('wdash-source-tile'), 'Current source tile should stay masked');
   assert(!document.getElementById('tile-2').classList.contains('wdash-source-tile'), 'Stale source tile mask should be removed');
+  assert(document.getElementById('tile-3').classList.contains('wdash-source-tile'), 'Remaining source tile should stay masked');
 
   adapter.toggleSourceTileMask(false);
   assert(!document.getElementById('tile-1').classList.contains('wdash-source-tile'), 'Tile-1 mask should be cleared');

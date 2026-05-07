@@ -18,7 +18,7 @@ Current result from this branch:
 | --- | ---: |
 | JavaScript lines | 99.16% |
 | JavaScript functions | 81.36% |
-| Groovy methods | 6.57% approximation |
+| Groovy methods | 9.85% approximation |
 
 The JavaScript report is generated from Node V8 coverage while running the
 existing local harnesses. The Groovy number is intentionally labeled as an
@@ -30,13 +30,16 @@ The detailed machine-readable report is written to
 
 ## Do We Need More Tests?
 
-Yes. The current suite is useful and passes, but coverage is uneven:
+No immediate test gaps identified by this review remain unaddressed. The suite
+now includes targeted local coverage for the highest-risk gaps found during the
+review:
 
-- `src/render/index.js` has high line coverage through fixture harnesses, but
-  lower function coverage because many interaction, error, and alternate layout
-  branches are not directly exercised.
-- `src/adapters/hubitat-tiles.js` has strong line coverage, but should add more
-  branch tests for malformed segment envelopes and missing chunks.
+- `src/render/index.js` has fixture coverage plus targeted branch tests for
+  partial segment merging, empty segment envelopes, invalid layout fallback, and
+  metadata-driven unit behavior.
+- `src/adapters/hubitat-tiles.js` has branch coverage for non-JSON tiles,
+  recognized empty segment envelopes, stale source mask removal, and observer
+  cleanup when a source tile is removed.
 - `app/weather-dashboard-app.js` now has direct source-level harness coverage
   for Maker API configuration, polling success, failure backoff, status-bar
   behavior, inline configuration, resize sync, malformed device payloads, and
@@ -45,9 +48,13 @@ Yes. The current suite is useful and passes, but coverage is uneven:
   segmentation, unchanged segment suppression, empty payload clearing, invalid
   JSON handling, dashboard script generation, oversize segment limits, and
   optional/partial payload combinations.
-- `hubitat/WeatherDashboardApp.groovy` needs more direct tests around payload
-  generation, event debounce/cron fallback, source fingerprint suppression,
-  history pruning, pressure forecast branches, and backup validation failures.
+- `hubitat/WeatherDashboardApp.groovy` has direct tests for backup validation
+  and import failures, event debounce scheduling, cron skip behavior, history
+  pruning, baseline limit enforcement, metadata/layout payload helpers, and
+  pressure outlook branches.
+
+Future feature work should still add focused tests alongside behavior changes,
+especially for code paths that only execute on a live Hubitat hub.
 
 ## Performance Changes Implemented
 
