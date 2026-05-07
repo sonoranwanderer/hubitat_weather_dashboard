@@ -13,6 +13,7 @@ import java.math.RoundingMode
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.TimeZone
+import java.net.URI
 import java.net.URLEncoder
 
 definition(
@@ -170,6 +171,7 @@ mappings {
 }
 
 def landingPage() {
+    clearTransientBackupImportState()
     dynamicPage(name: "landingPage") {
         section("Dashboard preview") {
             String embedUrl = buildDashboardEmbedUrl()
@@ -276,6 +278,7 @@ def landingPage() {
 }
 
 def configurationPage() {
+    clearTransientBackupImportState()
     dynamicPage(name: "configurationPage") {
         section("Weather data sources") {
             input name: "weatherDevices", type: "capability.sensor", title: "Weather devices", multiple: true, required: true, submitOnChange: true
@@ -578,6 +581,18 @@ def backupRecoveryPage() {
             input name: "skipMakerApiToken", type: "button", title: "Skip Maker API Token"
             paragraph renderMakerApiRecoveryStatusHtml()
         }
+    }
+}
+
+private void clearTransientBackupImportState() {
+    [
+        'loadedBackupJson',
+        'loadedBackupFileName',
+        'lastBackupFileLoadResult',
+        'lastBackupValidation',
+        'lastImportReport'
+    ].each { name ->
+        state.remove(name)
     }
 }
 
@@ -1841,11 +1856,7 @@ private Map validateBackupImportJson(String rawJson = null) {
 
     validateBackupDocumentShape(document, validation)
     if (!validation.errors) {
-        validation.unresolvedDevices = unresolvedDevicesForBackup(document)
         validation.missingSecrets = missingSecretsForBackup(document)
-        if (validation.unresolvedDevices) {
-            validation.warnings << "Some device references were not found on this hub and will need manual review."
-        }
         if (validation.missingSecrets) {
             validation.warnings << "Maker API token is not included in backups. You can enter and validate it, or skip it and run without Maker API preview support."
         }
@@ -1894,23 +1905,17 @@ private void validateBackupDocumentShape(Map document, Map validation) {
     }
 }
 
-private List<Map> unresolvedDevicesForBackup(Map document) {
-    Map devices = ((document.settings instanceof Map) ? document.settings.devices : [:]) ?: [:]
-    List<Map> unresolved = []
-    devices.each { settingName, value ->
-        List refs = normalizeDeviceReferenceList(value)
-        refs.each { Map ref ->
+private Map<String, Map> backupDeviceReferenceCatalog(Map devices) {
+    Map<String, Map> refsById = [:]
+    ['weatherDevices', 'ambientSensors'].each { settingName ->
+        normalizeDeviceReferenceList(devices[settingName]).each { Map ref ->
             String id = ref.id?.toString()
-            if (id && !findConfiguredDeviceById(id)) {
-                unresolved << [
-                    setting    : settingName?.toString(),
-                    id         : id,
-                    displayName: ref.displayName ?: ref.label ?: ref.name
-                ].findAll { it.value != null }
+            if (id && !refsById.containsKey(id)) {
+                refsById[id] = ref
             }
         }
     }
-    unresolved
+    refsById
 }
 
 private List<String> missingSecretsForBackup(Map document) {
@@ -1930,18 +1935,15 @@ private List<Map> normalizeDeviceReferenceList(Object value) {
     if (value instanceof Collection) {
         return (value as Collection).collectMany { normalizeDeviceReferenceList(it) }
     }
+    if (looksLikeDevice(value)) {
+        Map ref = deviceReference(value)
+        return ref ? [ref] : []
+    }
     if (value instanceof Map) {
         return [value as Map]
     }
     String id = value.toString()
     return id ? [[id: id]] : []
-}
-
-private def findConfiguredDeviceById(String id) {
-    if (!id) {
-        return null
-    }
-    (getWeatherDevices() + getAmbientSensors()).find { dev -> dev?.id?.toString() == id }
 }
 
 private Map applyBackupImportJson(String rawJson = null) {
@@ -1962,7 +1964,7 @@ private Map applyBackupImportJson(String rawJson = null) {
         importedState    : [],
         clearedState     : [],
         errors           : [],
-        unresolvedDevices: validation.unresolvedDevices ?: [],
+        deviceMappingIssues: [],
         missingSecrets   : validation.missingSecrets ?: []
     ]
 
@@ -1981,6 +1983,7 @@ private Map applyBackupImportJson(String rawJson = null) {
     }
 
     Map deviceSettings = (backupSettings.devices ?: [:]) as Map
+    List<String> appliedDeviceSettings = []
     deviceSettings.each { key, value ->
         String name = key?.toString()
         if (!name || !backupDeviceSettingNames().contains(name)) {
@@ -1990,11 +1993,13 @@ private Map applyBackupImportJson(String rawJson = null) {
         if (resolvedValue != null) {
             if (applyBackupSetting(name, resolvedValue, backupSettingType(name))) {
                 report.importedSettings << name
+                appliedDeviceSettings << name
             } else {
                 report.errors << "Device setting ${name} could not be imported."
             }
         }
     }
+    report.deviceMappingIssues = deviceMappingIssuesAfterImport(deviceSettings, appliedDeviceSettings)
 
     Map backupState = (document.state ?: [:]) as Map
     BACKUP_DURABLE_STATE_NAMES.each { name ->
@@ -2038,6 +2043,47 @@ private def importDeviceSettingValue(Object exportedValue, boolean multiple) {
         return ids
     }
     return ids ? ids.first() : null
+}
+
+private List<Map> deviceMappingIssuesAfterImport(Map deviceSettings, List<String> appliedDeviceSettings) {
+    if (!deviceSettings || !appliedDeviceSettings) {
+        return []
+    }
+    Map<String, Map> backupRefsById = backupDeviceReferenceCatalog(deviceSettings)
+    Map<String, Map> issuesById = [:]
+    appliedDeviceSettings.each { name ->
+        Object exportedValue = deviceSettings[name]
+        List<Map> expectedRefs = normalizeDeviceReferenceList(exportedValue)
+        Set<String> expectedIds = expectedRefs.collect { it.id?.toString() }.findAll { it } as Set
+        Set<String> actualIds = restoredDeviceSettingIds(settings[name]) as Set
+        (expectedIds - actualIds).each { id ->
+            Map ref = expectedRefs.find { it.id?.toString() == id } ?: [:]
+            Map catalogRef = backupRefsById[id] ?: [:]
+            Map issue = issuesById[id]
+            if (!issue) {
+                issue = [
+                    id         : id,
+                    displayName: ref.displayName ?: ref.label ?: ref.name ?: catalogRef.displayName ?: catalogRef.label ?: catalogRef.name,
+                    settings   : [] as Set
+                ].findAll { it.value != null }
+                issuesById[id] = issue
+            }
+            issue.settings << name
+        }
+    }
+    issuesById.values().collect { Map issue ->
+        List<String> affectedSettings = ((issue.settings instanceof Set) ? issue.settings as List : issue.settings)?.collect { it.toString() }?.sort() ?: []
+        [
+            id           : issue.id,
+            displayName  : issue.displayName,
+            settings     : affectedSettings,
+            settingsCount: affectedSettings.size()
+        ].findAll { it.value != null }
+    }
+}
+
+private List<String> restoredDeviceSettingIds(Object value) {
+    normalizeDeviceReferenceList(value).collect { it.id?.toString() }.findAll { it }
 }
 
 private boolean isMultipleDeviceSetting(String name) {
@@ -2113,7 +2159,7 @@ private Map validateMakerApiTokenSetting() {
         valid  : false,
         checked: now()
     ]
-    String baseUrl = settings?.makerApiBaseUrl?.toString()?.trim()
+    String baseUrl = normalizeMakerApiBaseUrl(settings?.makerApiBaseUrl)
     String appId = makerApiAppIdSetting()
     String token = settings?.makerApiToken?.toString()?.trim()
     if (!baseUrl || !appId || !token) {
@@ -2123,6 +2169,7 @@ private Map validateMakerApiTokenSetting() {
     }
 
     String endpoint = "${baseUrl.replaceAll('/+$', '')}/apps/api/${urlEncode(appId)}/devices?access_token=${urlEncode(token)}"
+    result.endpoint = redactUrlSecrets(endpoint)
     try {
         httpGet([uri: endpoint, timeout: 10]) { resp ->
             int status = safeToInt(resp?.status, 0)
@@ -2138,6 +2185,34 @@ private Map validateMakerApiTokenSetting() {
     }
     state.makerApiTokenValidation = result
     return result
+}
+
+private String normalizeMakerApiBaseUrl(Object raw) {
+    String text = raw?.toString()?.trim()
+    if (!text) {
+        return null
+    }
+    if (!(text ==~ /(?i)^https?:\/\/.*/)) {
+        text = "http://${text}"
+    }
+    try {
+        URI uri = new URI(text)
+        String scheme = uri.scheme?.toLowerCase()
+        String authority = uri.rawAuthority
+        if (!(scheme in ['http', 'https']) || !authority) {
+            return null
+        }
+        return "${scheme}://${authority}"
+    } catch (Throwable ignored) {
+        return null
+    }
+}
+
+private String redactUrlSecrets(String value) {
+    if (value == null) {
+        return null
+    }
+    value.replaceAll(/(?i)([?&](?:access_token|makerToken|dashboardToken)=)[^&#]*/, '$1REDACTED')
 }
 
 private String renderBackupValidationHtml(Map validation) {
@@ -2173,13 +2248,24 @@ private String renderImportReportHtml(Map report) {
         lines << "State entries cleared: ${report.clearedState.size()}"
     }
     ((report.errors instanceof List) ? report.errors : []).each { lines << "Error: ${it}" }
-    ((report.unresolvedDevices instanceof List) ? report.unresolvedDevices : []).each { entry ->
-        lines << "Review device mapping for ${entry.setting}: ${entry.displayName ?: 'unknown'} (${entry.id ?: 'no id'})"
+    ((report.deviceMappingIssues instanceof List) ? report.deviceMappingIssues : []).each { entry ->
+        lines << "Review restored device mapping: ${entry.displayName ?: 'unknown'} (${entry.id ?: 'no id'}) was not retained for ${deviceMappingIssueSettingSummary(entry)}."
     }
     ((report.missingSecrets instanceof List) ? report.missingSecrets : []).each { secret ->
         lines << "Optional secret still missing: ${secret}"
     }
     return "<b>Import report</b>${htmlList(lines)}"
+}
+
+private String deviceMappingIssueSettingSummary(Map issue) {
+    List<String> settingNames = ((issue?.settings instanceof List) ? issue.settings : [])*.toString()
+    if (!settingNames) {
+        return 'one setting'
+    }
+    if (settingNames.size() <= 3) {
+        return settingNames.join(', ')
+    }
+    return "${settingNames.take(3).join(', ')}, and ${settingNames.size() - 3} more setting(s)"
 }
 
 private String renderMakerApiRecoveryStatusHtml() {
@@ -4556,6 +4642,7 @@ private String htmlEncode(String value) {
 }
 
 def diagnosticsPage() {
+    clearTransientBackupImportState()
     state.forceRefresh = true
     enqueueRefreshSource('diagnostics')
     refreshWeatherData()

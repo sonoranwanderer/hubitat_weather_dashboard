@@ -47,7 +47,9 @@ binding.setVariable('downloadHubFile', { String fileName ->
     }
     return uploadedFiles[fileName].getBytes('UTF-8')
 })
+List<Map> httpGetCalls = []
 binding.setVariable('httpGet', { Map params, Closure handler ->
+    httpGetCalls << params
     def files = uploadedFiles.collect { name, contents ->
         [name: name, size: contents.getBytes('UTF-8').length.toString(), date: '1770000000000', type: 'file']
     } + [[name: 'not-a-weather-dashboard-backup.json', size: '2', date: '1760000000000', type: 'file']]
@@ -151,6 +153,38 @@ Map detectedMaker = invokePrivate(appScript, 'makerApiAppInfo') as Map
 assert detectedMaker.installed == true
 assert detectedMaker.label == 'Maker API'
 
+// Scenario: Maker API token validation accepts restored bare hub addresses and redacts diagnostics.
+httpGetCalls.clear()
+appScript.binding.setVariable('settings', [
+    makerApiBaseUrl: '192.168.1.60/local/weather-dashboard-app.html?old=true',
+    makerApiAppId  : '777',
+    makerApiToken  : 'restored-token'
+])
+appScript.binding.setVariable('state', [:])
+Map tokenValidation = invokePrivate(appScript, 'validateMakerApiTokenSetting') as Map
+assert tokenValidation.valid == true
+assert httpGetCalls.last().uri == 'http://192.168.1.60/apps/api/777/devices?access_token=restored-token'
+assert tokenValidation.endpoint == 'http://192.168.1.60/apps/api/777/devices?access_token=REDACTED'
+assert !tokenValidation.endpoint.contains('restored-token')
+
+// Scenario: stale import feedback is cleared after leaving the Backup & Recovery workflow.
+appScript.binding.setVariable('state', [
+    loadedBackupJson         : '{"app":"Weather Dashboard App"}',
+    loadedBackupFileName     : 'weather-dashboard-backup-20260507-150000.json',
+    lastBackupFileLoadResult : [success: true],
+    lastBackupValidation     : [valid: true],
+    lastImportReport         : [applied: true],
+    lastBackupFileResult     : [success: true]
+])
+invokePrivate(appScript, 'clearTransientBackupImportState')
+Map clearedImportState = appScript.binding.getVariable('state') as Map
+assert !clearedImportState.containsKey('loadedBackupJson')
+assert !clearedImportState.containsKey('loadedBackupFileName')
+assert !clearedImportState.containsKey('lastBackupFileLoadResult')
+assert !clearedImportState.containsKey('lastBackupValidation')
+assert !clearedImportState.containsKey('lastImportReport')
+assert clearedImportState.lastBackupFileResult.success == true
+
 // Scenario: backup export preserves operational configuration/state but excludes secrets.
 def weatherDevice = [
     id: 22,
@@ -229,6 +263,28 @@ invokePrivate(appScript, 'skipMakerApiTokenRecovery')
 Map skippedValidation = appScript.binding.getVariable('state').lastBackupValidation as Map
 assert appScript.binding.getVariable('state').makerApiTokenSkipped == true
 assert skippedValidation.missingSecrets == []
+
+// Scenario: preflight validates backup shape without claiming hub-global device resolution failures.
+appScript.binding.setVariable('settings', [:])
+appScript.binding.setVariable('state', [:])
+Map remapValidation = invokePrivate(appScript, 'validateBackupImportJson', [String] as Class<?>[], backupJson) as Map
+assert remapValidation.valid == true
+assert remapValidation.unresolvedDevices == []
+assert !remapValidation.warnings.any { it.toString().contains('device references') }
+
+// Scenario: post-apply device verification groups repeated mapping issues by device.
+appScript.binding.setVariable('settings', [
+    weatherDevices: ['22']
+])
+List groupedDeviceIssues = invokePrivate(appScript, 'deviceMappingIssuesAfterImport', [Map, List] as Class<?>[], [
+    weatherDevices            : [[id: '22', displayName: 'Weather Gateway']],
+    attrOutdoorTempDevice     : [id: '22'],
+    attrOutdoorHumidityDevice : [id: '22']
+], ['weatherDevices', 'attrOutdoorTempDevice', 'attrOutdoorHumidityDevice']) as List
+assert groupedDeviceIssues.size() == 1
+assert groupedDeviceIssues[0].id == '22'
+assert groupedDeviceIssues[0].displayName == 'Weather Gateway'
+assert groupedDeviceIssues[0].settings == ['attrOutdoorHumidityDevice', 'attrOutdoorTempDevice']
 
 // Scenario: importing a sparse backup clears stale durable state that is absent from the backup.
 Map sparseBackup = new groovy.json.JsonSlurper().parseText(backupJson) as Map
