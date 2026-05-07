@@ -31,6 +31,21 @@ Script loadApp(Map initialSettings = [:], Map initialState = [:]) {
     binding.setVariable('unsubscribe', { Object... args -> })
     binding.setVariable('runIn', { Object... args -> })
     binding.setVariable('subscribe', { Object... args -> })
+    Map childDevices = [:]
+    binding.setVariable('getChildDevice', { String dni -> childDevices[dni] })
+    binding.setVariable('addChildDevice', { String namespace, String typeName, String dni, Map options ->
+        def device = new Expando([
+            namespace  : namespace,
+            typeName   : typeName,
+            dni        : dni,
+            label      : options?.label,
+            displayName: options?.label ?: typeName
+        ])
+        device.setLabel = { String label -> device.label = label }
+        childDevices[dni] = device
+        return device
+    })
+    binding.setVariable('deleteChildDevice', { String dni -> childDevices.remove(dni) })
     binding.setVariable('log', new Expando(
         info : { Object... args -> },
         warn : { Object... args -> },

@@ -18,6 +18,27 @@ binding.setVariable('unschedule', { Object... args -> })
 binding.setVariable('unsubscribe', { Object... args -> })
 List<List> runInCalls = []
 binding.setVariable('runIn', { Object... args -> runInCalls << args.toList() })
+Map childDevices = [:]
+List<Map> childDeviceCreations = []
+List<String> deletedChildDevices = []
+binding.setVariable('getChildDevice', { String dni -> childDevices[dni] })
+binding.setVariable('addChildDevice', { String namespace, String typeName, String dni, Map options ->
+    def device = new Expando([
+        namespace  : namespace,
+        typeName   : typeName,
+        dni        : dni,
+        label      : options?.label,
+        displayName: options?.label ?: typeName
+    ])
+    device.setLabel = { String label -> device.label = label }
+    childDevices[dni] = device
+    childDeviceCreations << [namespace: namespace, typeName: typeName, dni: dni, options: options]
+    return device
+})
+binding.setVariable('deleteChildDevice', { String dni ->
+    deletedChildDevices << dni
+    childDevices.remove(dni)
+})
 Map uploadedFiles = [:]
 binding.setVariable('uploadHubFile', { String fileName, byte[] bytes -> uploadedFiles[fileName] = new String(bytes, 'UTF-8') })
 binding.setVariable('downloadHubFile', { String fileName ->
@@ -78,6 +99,27 @@ assert !embedUrl.contains('hub=')
 assert !embedUrl.contains('makerApiToken=')
 assert !embedUrl.contains('token=')
 assert !embedUrl.contains('devices=')
+
+// Scenario: fresh app initialization creates the dashboard child device before weather devices are configured.
+childDevices.clear()
+childDeviceCreations.clear()
+deletedChildDevices.clear()
+runInCalls.clear()
+appScript.binding.setVariable('settings', [:])
+appScript.binding.setVariable('state', [:])
+appScript.initialize()
+assert childDeviceCreations.size() == 1
+assert childDeviceCreations[0].namespace == 'hubitat-weather-dashboard'
+assert childDeviceCreations[0].typeName == 'Weather Dashboard Device'
+assert childDeviceCreations[0].dni == 'weather-dashboard-101'
+assert childDeviceCreations[0].options.label == 'Weather Dashboard'
+assert childDeviceCreations[0].options.isComponent == true
+assert runInCalls.empty
+
+// Scenario: uninstall removes the dashboard child device owned by the app.
+appScript.uninstalled()
+assert deletedChildDevices == ['weather-dashboard-101']
+assert !childDevices.containsKey('weather-dashboard-101')
 
 // Scenario: HTML attribute encoding prevents iframe injection issues.
 String encoded = invokePrivate(appScript, 'htmlAttributeEncode', [String] as Class<?>[], '"foo&bar<baz>') as String

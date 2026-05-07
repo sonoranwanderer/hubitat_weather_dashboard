@@ -2323,14 +2323,22 @@ def updated() {
     initialize()
 }
 
+def uninstalled() {
+    logInfo "Uninstalling Weather Dashboard App"
+    unschedule()
+    unsubscribe()
+    deleteDashboardChildDevice()
+}
+
 def initialize() {
+    createOrUpdateChildDevice()
+
     def devices = getWeatherDevices()
     if (!devices) {
         logWarn "Weather devices not configured yet"
         return
     }
 
-    createOrUpdateChildDevice()
     state.windHistory = state.windHistory ?: []
     state.pressureHistory = state.pressureHistory ?: []
     state.pressureBaseline = normalizePressureBaselineState(state.pressureBaseline)
@@ -3491,7 +3499,7 @@ private void createOrUpdateChildDevice() {
                 "hubitat-weather-dashboard",
                 "Weather Dashboard Device",
                 dni,
-                [label: settings.dashboardDeviceLabel ?: "Weather Dashboard", isComponent: false]
+                [label: settings.dashboardDeviceLabel ?: "Weather Dashboard", isComponent: true]
             )
             logInfo "Created dashboard device: ${existing?.displayName}"
         } catch (Throwable t) {
@@ -3501,6 +3509,22 @@ private void createOrUpdateChildDevice() {
         if (settings.dashboardDeviceLabel && existing.label != settings.dashboardDeviceLabel) {
             existing.setLabel(settings.dashboardDeviceLabel)
         }
+    }
+}
+
+private void deleteDashboardChildDevice() {
+    String dni = childDeviceDni()
+    def child = getChildDevice(dni)
+    if (!child) {
+        logDebug "No Weather Dashboard child device found for deletion"
+        return
+    }
+
+    try {
+        deleteChildDevice(dni)
+        logInfo "Deleted Weather Dashboard child device: ${child?.displayName ?: dni}"
+    } catch (Throwable t) {
+        logWarn "Unable to delete Weather Dashboard child device ${child?.displayName ?: dni}: ${t.message}"
     }
 }
 
