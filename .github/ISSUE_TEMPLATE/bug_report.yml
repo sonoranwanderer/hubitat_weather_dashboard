@@ -1,0 +1,62 @@
+name: Bug report
+description: Report a setup, display, data, or backup issue.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting an issue. Please include enough Hubitat and weather-device context to reproduce or narrow it down.
+  - type: input
+    id: hubitat-version
+    attributes:
+      label: Hubitat platform version
+      description: Find this in Settings -> Hub Details.
+      placeholder: "2.4.x"
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and device
+      placeholder: "Chrome on Windows, Safari on iPad, Fully Kiosk on Fire tablet, etc."
+    validations:
+      required: false
+  - type: textarea
+    id: weather-devices
+    attributes:
+      label: Weather device and driver details
+      description: Include the weather station/gateway, custom driver names, and any optional sensors involved.
+      placeholder: "Weather source device, air quality sensor, lightning sensor, ambient sensors..."
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Describe the visible issue, what you expected, and when it started.
+    validations:
+      required: true
+  - type: textarea
+    id: setup
+    attributes:
+      label: Relevant setup details
+      description: Include whether you installed manually or with HPM, whether Maker API preview is configured, and any non-default attribute mappings or layout JSON.
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Paste relevant Hubitat logs, browser console errors, or attach screenshots. Remove tokens, local secrets, and public IPs before posting.
+      render: text
+    validations:
+      required: false
+  - type: textarea
+    id: troubleshooting
+    attributes:
+      label: What have you already tried?
+      placeholder: "Refreshed dashboard, re-uploaded File Manager assets, clicked Save & Refresh, validated Maker API device selection..."
+    validations:
+      required: false

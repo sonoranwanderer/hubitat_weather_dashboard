@@ -1,0 +1,17 @@
+{
+  "author": "Gatewood Green",
+  "gitHubUrl": "https://github.com/sonoranwanderer",
+  "packages": [
+    {
+      "id": "61deb191-7a0b-4a29-93f2-733f56bd4039",
+      "name": "Hubitat Weather Dashboard",
+      "category": "Convenience",
+      "tags": [
+        "Dashboards",
+        "Weather"
+      ],
+      "location": "https://raw.githubusercontent.com/sonoranwanderer/hubitat_weather_dashboard/main/packageManifest.json",
+      "description": "A rich local weather-station dashboard for Hubitat."
+    }
+  ]
+}

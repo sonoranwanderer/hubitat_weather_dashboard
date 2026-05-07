@@ -41,6 +41,24 @@ The dashboard has two setup parts:
 * **File installation** - install the Groovy app and driver and upload the JavaScript/HTML assets using the Hubitat File Manager.
 * **Functional setup** - configure the app for your weather devices, create the dashboard virtual device, configure the dashboard and required attribute tiles, and optionally configure Maker API for the app dashboard preview.
 
+### Install With Hubitat Package Manager
+
+Hubitat Package Manager can install the app, driver, and all three File Manager assets from this package manifest:
+
+* [packageManifest.json](https://raw.githubusercontent.com/sonoranwanderer/hubitat_weather_dashboard/main/packageManifest.json)
+
+After HPM finishes, continue with **Create And Configure The Weather Dashboard App** below.
+
+### Manual Install Links
+
+Use these links if you are installing manually:
+
+* [WeatherDashboardDevice.groovy](https://raw.githubusercontent.com/sonoranwanderer/hubitat_weather_dashboard/main/hubitat/WeatherDashboardDevice.groovy)
+* [WeatherDashboardApp.groovy](https://raw.githubusercontent.com/sonoranwanderer/hubitat_weather_dashboard/main/hubitat/WeatherDashboardApp.groovy)
+* [weather-dashboard.js](https://raw.githubusercontent.com/sonoranwanderer/hubitat_weather_dashboard/main/dashboard/weather-dashboard.js)
+* [weather-dashboard-app.js](https://raw.githubusercontent.com/sonoranwanderer/hubitat_weather_dashboard/main/app/weather-dashboard-app.js)
+* [weather-dashboard-app.html](https://raw.githubusercontent.com/sonoranwanderer/hubitat_weather_dashboard/main/app/weather-dashboard-app.html)
+
 ### Dependencies
 
 * **Weather Device(s)** - required
@@ -72,6 +90,8 @@ They should be reachable from the hub as:
 * `/local/weather-dashboard.js`
 * `/local/weather-dashboard-app.js`
 * `/local/weather-dashboard-app.html`
+
+Keep these filenames unless you also update the matching app/device settings.
 
 ### 3. Create And Configure The Weather Dashboard App
 
@@ -148,7 +168,7 @@ Developer note: any future setting, durable state key, forecast input, history t
 
 ## Bug Reports
 
-Having issues getting the dashboard to work? Find display quirks? Feel free to reach out on the Hubitat community forums to the release thread or message [@gatewoodgreen](https://community.hubitat.com/u/gatewoodgreen/). You can also open a [bug report](/issues) here on GitHub.
+Having issues getting the dashboard to work? Find display quirks? Feel free to reach out on the Hubitat community forums to the release thread or message [@gatewoodgreen](https://community.hubitat.com/u/gatewoodgreen/). You can also open a [bug report](https://github.com/sonoranwanderer/hubitat_weather_dashboard/issues) here on GitHub.
 
 ## Development Notes
 
@@ -160,6 +180,10 @@ Having issues getting the dashboard to work? Find display quirks? Feel free to r
 ## Build and Verification
 
 See [docs/build-and-test.md](docs/build-and-test.md) for local build requirements, dependency setup, automated tests, bundle verification, Docker usage, and manual validation notes.
+
+## License
+
+This project is licensed under the [Apache License 2.0](LICENSE).
 
 ## Runtime Layout Overrides
 
