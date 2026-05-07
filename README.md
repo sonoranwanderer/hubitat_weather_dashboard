@@ -146,6 +146,12 @@ See [docs/backup-recovery.md](docs/backup-recovery.md) for the detailed workflow
 
 Developer note: any future setting, durable state key, forecast input, history tracker, derived-stat accumulator, or recovery-critical cache added by a feature must be evaluated for backup export, import validation, and documentation before release.
 
+## Security Notes
+
+The recommended deployment is LAN-first. Maker API is optional, and Cloud access should only be enabled when you accept the higher exposure of bearer-token URLs. Treat Maker API tokens and generated dashboard access tokens as secrets; rotate them after sharing screenshots, logs, browser URLs, or support bundles that might include preview links.
+
+See [docs/security-review.md](docs/security-review.md) for the current threat model, LAN/cloud risk ratings, Hubitat platform limitations, and the security review PR process.
+
 ## Development Notes
 
 * Presentation logic lives in JavaScript; calculations live in the Hubitat app.

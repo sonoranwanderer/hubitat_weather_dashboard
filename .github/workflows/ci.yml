@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    name: Build and test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Groovy
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y groovy
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Verify Hubitat bundle
+        run: npm run verify:hubitat
+
+      - name: Run tests
+        run: npm test
