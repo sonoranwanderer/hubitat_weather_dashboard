@@ -743,20 +743,10 @@ function loadWeatherDashboard(window, options = {}) {
     return window.__WDASH_TEST_HOOKS__;
   }
 
-  const variant = String(options.variant || process.env.WDASH_VARIANT || 'legacy').toLowerCase();
-  const defaultPath = variant === 'v2'
-    ? path.join(rootDir, 'v2', 'dashboard', 'weather-dashboard.js')
-    : path.join(rootDir, 'dashboard', 'weather-dashboard.js');
-
-  let scriptPath = defaultPath;
+  const scriptPath = path.join(rootDir, 'dashboard', 'weather-dashboard.js');
 
   if (!fs.existsSync(scriptPath)) {
-    const fallbackPath = path.join(rootDir, 'dashboard', 'weather-dashboard.js');
-    if (fallbackPath !== scriptPath && fs.existsSync(fallbackPath)) {
-      scriptPath = fallbackPath;
-    } else {
-      throw new Error(`Weather dashboard script not found at ${scriptPath}`);
-    }
+    throw new Error(`Weather dashboard script not found at ${scriptPath}`);
   }
 
   const code = fs.readFileSync(scriptPath, 'utf8');
