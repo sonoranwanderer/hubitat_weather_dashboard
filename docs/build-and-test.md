@@ -45,7 +45,7 @@ npm run clean
 - `build:watch` rebuilds when source files change.
 - `build:release` creates a minified bundle.
 - `verify:hubitat` checks that the checked-in bundle matches the current source.
-- `clean` removes generated build artifacts.
+- `clean` removes generated local artifacts (`dist/`, `coverage/`, `tmp/`, dashboard source maps, and `.DS_Store` files) without deleting installed dependencies.
 
 ## Automated Tests
 
