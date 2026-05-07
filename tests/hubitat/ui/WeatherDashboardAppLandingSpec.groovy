@@ -112,9 +112,9 @@ assert detectedMaker.label == 'Maker API'
 // Scenario: backup export preserves operational configuration/state but excludes secrets.
 def weatherDevice = [
     id: 22,
-    displayName: 'Ecowitt Gateway',
-    label: 'Ecowitt Gateway',
-    name: 'ecowitt-gateway',
+    displayName: 'Weather Gateway',
+    label: 'Weather Gateway',
+    name: 'weather-gateway',
     typeName: 'Virtual Weather'
 ] as Expando
 appSettings = [

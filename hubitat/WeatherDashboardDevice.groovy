@@ -31,9 +31,9 @@ private static List<String> buildAmbientSegmentAttrs() {
 
 definition(
     name: "Weather Dashboard Device",
-    namespace: "ecowitt-dashboard",
+    namespace: "hubitat-weather-dashboard",
     author: "Gatewood Green",
-    importUrl: "https://raw.githubusercontent.com/sonoranwanderer/ecowitt_weather_hubitat_dashboard/main/hubitat/WeatherDashboardDevice.groovy"
+    importUrl: "https://raw.githubusercontent.com/sonoranwanderer/hubitat_weather_dashboard/main/hubitat/WeatherDashboardDevice.groovy"
 ) {
     capability "Sensor"
     capability "Refresh"

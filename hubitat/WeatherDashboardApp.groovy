@@ -17,13 +17,13 @@ import java.net.URLEncoder
 
 definition(
     name: "Weather Dashboard App",
-    namespace: "ecowitt-dashboard",
+    namespace: "hubitat-weather-dashboard",
     author: "Gatewood Green",
     description: "Aggregates weather data for the JavaScript dashboard tile.",
     category: "Convenience",
-    importUrl: "https://raw.githubusercontent.com/sonoranwanderer/ecowitt_weather_hubitat_dashboard/main/hubitat/WeatherDashboardApp.groovy",
-    iconUrl: "https://raw.githubusercontent.com/sonoranwanderer/ecowitt_weather_hubitat_dashboard/main/assets/weather-dashboard-icon.svg",
-    iconX2Url: "https://raw.githubusercontent.com/sonoranwanderer/ecowitt_weather_hubitat_dashboard/main/assets/weather-dashboard-icon.svg",
+    importUrl: "https://raw.githubusercontent.com/sonoranwanderer/hubitat_weather_dashboard/main/hubitat/WeatherDashboardApp.groovy",
+    iconUrl: "https://raw.githubusercontent.com/sonoranwanderer/hubitat_weather_dashboard/main/assets/weather-dashboard-icon.svg",
+    iconX2Url: "https://raw.githubusercontent.com/sonoranwanderer/hubitat_weather_dashboard/main/assets/weather-dashboard-icon.svg",
     oauth: true
 )
 
@@ -3488,7 +3488,7 @@ private void createOrUpdateChildDevice() {
     if (!existing) {
         try {
             existing = addChildDevice(
-                "ecowitt-dashboard",
+                "hubitat-weather-dashboard",
                 "Weather Dashboard Device",
                 dni,
                 [label: settings.dashboardDeviceLabel ?: "Weather Dashboard", isComponent: false]

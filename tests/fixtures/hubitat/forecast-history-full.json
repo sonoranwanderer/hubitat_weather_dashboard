@@ -101,40 +101,40 @@
                     "displayName": "Outdoor Air Quality Sensor",
                     "label": "Outdoor Air Quality Sensor",
                     "name": "Air Quality Sensor 1",
-                    "typeName": "Ecowitt RF Sensor"
+                    "typeName": "Weather RF Sensor"
                 },
                 {
                     "id": "337",
                     "displayName": "Dining Room AQIN",
                     "label": "Dining Room AQIN",
                     "name": "Air Quality Sensor",
-                    "typeName": "Ecowitt RF Sensor"
+                    "typeName": "Weather RF Sensor"
                 },
                 {
                     "id": "338",
                     "displayName": "Lightning Detection Sensor",
                     "name": "Lightning Detection Sensor",
-                    "typeName": "Ecowitt RF Sensor"
+                    "typeName": "Weather RF Sensor"
                 },
                 {
                     "id": "327",
-                    "displayName": "Casa Verde Ecowitt",
-                    "label": "Casa Verde Ecowitt",
-                    "name": "Ecowitt WiFi Gateway",
-                    "typeName": "Ecowitt WiFi Gateway"
+                    "displayName": "Casa Verde Weather",
+                    "label": "Casa Verde Weather",
+                    "name": "Weather WiFi Gateway",
+                    "typeName": "Weather WiFi Gateway"
                 },
                 {
                     "id": "328",
                     "displayName": "Living Room Sensor",
                     "label": "Living Room Sensor",
                     "name": "Indoor Ambient Sensor",
-                    "typeName": "Ecowitt RF Sensor"
+                    "typeName": "Weather RF Sensor"
                 },
                 {
                     "id": "329",
                     "displayName": "PWS Sensor",
                     "name": "PWS Sensor",
-                    "typeName": "Ecowitt RF Sensor"
+                    "typeName": "Weather RF Sensor"
                 }
             ],
             "ambientSensors": [
@@ -143,56 +143,56 @@
                     "displayName": "Dining Room AQIN",
                     "label": "Dining Room AQIN",
                     "name": "Air Quality Sensor",
-                    "typeName": "Ecowitt RF Sensor"
+                    "typeName": "Weather RF Sensor"
                 },
                 {
                     "id": "328",
                     "displayName": "Living Room Sensor",
                     "label": "Living Room Sensor",
                     "name": "Indoor Ambient Sensor",
-                    "typeName": "Ecowitt RF Sensor"
+                    "typeName": "Weather RF Sensor"
                 },
                 {
                     "id": "330",
                     "displayName": "Kitchen Fridge",
                     "label": "Kitchen Fridge",
                     "name": "Ambient Sensor 1",
-                    "typeName": "Ecowitt RF Sensor"
+                    "typeName": "Weather RF Sensor"
                 },
                 {
                     "id": "331",
                     "displayName": "Kitchen Freezer",
                     "label": "Kitchen Freezer",
                     "name": "Ambient Sensor 2",
-                    "typeName": "Ecowitt RF Sensor"
+                    "typeName": "Weather RF Sensor"
                 },
                 {
                     "id": "332",
                     "displayName": "WH Fridge",
                     "label": "WH Fridge",
                     "name": "Ambient Sensor 3",
-                    "typeName": "Ecowitt RF Sensor"
+                    "typeName": "Weather RF Sensor"
                 },
                 {
                     "id": "333",
                     "displayName": "WH Freezer",
                     "label": "WH Freezer",
                     "name": "Ambient Sensor 4",
-                    "typeName": "Ecowitt RF Sensor"
+                    "typeName": "Weather RF Sensor"
                 },
                 {
                     "id": "334",
                     "displayName": "Big Freezer",
                     "label": "Big Freezer",
                     "name": "Ambient Sensor 5",
-                    "typeName": "Ecowitt RF Sensor"
+                    "typeName": "Weather RF Sensor"
                 },
                 {
                     "id": "335",
                     "displayName": "Pool Temperature",
                     "label": "Pool Temperature",
                     "name": "Ambient Sensor 8",
-                    "typeName": "Ecowitt RF Sensor"
+                    "typeName": "Weather RF Sensor"
                 }
             ],
             "singleTriggerDevice": {
@@ -7754,11 +7754,11 @@
                 }
             },
             "events": {
-                "lastEventSource": "Casa Verde Ecowitt.lastUpdate",
+                "lastEventSource": "Casa Verde Weather.lastUpdate",
                 "lastEventAt": 1778103351667,
                 "totalEvents": 257121,
                 "bySource": {
-                    "Casa Verde Ecowitt.lastUpdate": 257121
+                    "Casa Verde Weather.lastUpdate": 257121
                 }
             }
         },

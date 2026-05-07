@@ -4,8 +4,7 @@
 // Dashboard virtual device publishes a tile attribute that injects this script
 // (tile-0).  It reads the
 // JSON payload exposed by the Weather Dashboard virtual device (tile-1, optional
-// tile-2/tile-3) and renders an information dense layout inspired by the Ecowitt
-// console.
+// tile-2/tile-3) and renders an information dense weather-console layout.
 
 const { createHubitatTilesAdapter } = require('../adapters/hubitat-tiles.js');
 
