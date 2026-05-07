@@ -1,6 +1,8 @@
-# Ecowitt Weather Dashboard (Hubitat)
+# Hubitat Weather Dashboard
 
-This repository contains the current Hubitat weather dashboard implementation. Data collection, aggregation, and forecasting happen inside Hubitat; the browser code only renders the dashboard and the landing-page preview.
+Self-contained rich weather dashboard for Hubitat. Instead of building a dashboard one tile at a time or looking at raw sensor numbers across many devices, this app and dashboard bring your personal weather station data together into one visual display with current conditions, trends, rain and wind details, sensor status, and a basic forecast. It is designed for people who connect their personal weather station to Hubitat and want a complete local weather console (no web access required).
+
+The default data layout is loosely based on the Ecowitt HP2561 / AmbientWeather WS-2000 console and is very customizable. See Runtime Layout Overrides below.
 
 ## Project layout
 
@@ -36,16 +38,16 @@ tests/
 
 The dashboard has two setup parts:
 
-* **File installation** - install the Groovy app/driver and upload the JavaScript/HTML assets Hubitat serves from `/local/`.
-* **Functional setup** - connect the app to your weather devices, create or select the dashboard virtual device, place the required Attribute tiles, and optionally configure Maker API for the app-page preview.
+* **File installation** - install the Groovy app and driver and upload the JavaScript/HTML assets using the Hubitat File Manager.
+* **Functional setup** - configure the app for your weather devices, create the dashboard virtual device, configure the dashboard and required attribute tiles, and optionally configure Maker API for the app dashboard preview.
 
 ### Dependencies
 
 * **Weather Device(s)** - required
-  * The dashboard can use any weather data sources that expose weather data in Hubitat via devices. It expects Ecowitt-style attribute names such as `temperature`, `humidity`, `windSpeed`, `windGust`, `windDirection`, `pressure`, `rainRate`, and `rainDaily`. However attribute names can be remapped in the app if your weather devices use different attribute names.
+  * The dashboard can use any weather data sources that expose weather data in Hubitat via device attributes. By default it expects Ecowitt-style attribute names such as `temperature`, `humidity`, `windSpeed`, `windGust`, `windDirection`, `pressure`, `rainRate`, and `rainDaily`. However attribute names can be remapped in the app if your weather devices use different attribute names.
 * **Maker API** (Hubitat Built-in App) - optional
-  * Hubitat's built-in [**Maker API**](https://docs2.hubitat.com/en/apps/maker-api) app if you want the embedded app dashboard preview or external clients to fetch dashboard data. 
-  * The Hubitat dashboard tile itself does not require Maker API.
+  * Hubitat's built-in [**Maker API**](https://docs2.hubitat.com/en/apps/maker-api) app if you want the embedded app dashboard preview or external web clients to fetch the weather dashboard directly (not using the Hubitat Dashboard app and interface). 
+  * The Hubitat Dashboard tile itself does not require Maker API.
 
 ### 1. Install The Hubitat Code
 
@@ -70,8 +72,6 @@ They should be reachable from the hub as:
 * `/local/weather-dashboard.js`
 * `/local/weather-dashboard-app.js`
 * `/local/weather-dashboard-app.html`
-
-Keep those names and locations unless you also change the dashboard device's **Dashboard script URL** preference. The default script URL is `/local/weather-dashboard.js`.
 
 ### 3. Create And Configure The Weather Dashboard App
 
@@ -106,7 +106,7 @@ The rendered dashboard uses one visible Attribute tile plus several hidden/sourc
    - `segmentAmbient6`
 4. Save the dashboard and refresh the browser page.
 
-The JavaScript reads JSON from the segment tiles and hides those source tiles after rendering. The segment tile order is not important, but the `dashboardScript` tile must be the display tile at `tile-0`.
+The JavaScript reads JSON from the segment tiles and automatically hides the data source tiles as part of its rendering. The segment tile order is not important, but the `dashboardScript` tile must be the display tile at `tile-0`.
 
 ### 5. Configure Maker API For The App Preview
 
@@ -124,7 +124,7 @@ For the detailed Maker API walkthrough and troubleshooting, see [docs/setup-make
 
 ### Validation Checklist
 
-Use this checklist when the dashboard does not render:
+Follow this checklist if the dashboard does not render correctly:
 
 * **Files:** `http://<hub-ip>/local/weather-dashboard.js` and `/local/weather-dashboard-app.html` should not return Hubitat's 404 page.
 * **Device:** The Weather Dashboard virtual device should have a populated `dashboardScript` attribute and JSON in at least `segmentCore`.
@@ -145,6 +145,10 @@ For a same-hub restore, refresh the File Manager backup list in **Backup & Recov
 See [docs/backup-recovery.md](docs/backup-recovery.md) for the detailed workflow and troubleshooting.
 
 Developer note: any future setting, durable state key, forecast input, history tracker, derived-stat accumulator, or recovery-critical cache added by a feature must be evaluated for backup export, import validation, and documentation before release.
+
+## Bug Reports
+
+Having issues getting the dashboard to work? Find display quirks? Feel free to reach out on the Hubitat community forums to the release thread or message [@gatewoodgreen](https://community.hubitat.com/u/gatewoodgreen/). You can also open a [bug report](/issues) here on GitHub.
 
 ## Development Notes
 
