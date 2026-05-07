@@ -73,9 +73,11 @@ assert embedUrl?.startsWith('/local/weather-dashboard-app.html?')
 assert embedUrl.contains('hubBaseUrl=http%3A%2F%2F192.168.1.50')
 assert embedUrl.contains('appId=501')
 assert embedUrl.contains('makerToken=s3cr3tTOKEN')
-assert embedUrl.contains('makerApiToken=s3cr3tTOKEN')
 assert embedUrl.contains('deviceIds=10%2C11%2C12%2C13')
-assert embedUrl.contains('devices=10%2C11%2C12%2C13')
+assert !embedUrl.contains('hub=')
+assert !embedUrl.contains('makerApiToken=')
+assert !embedUrl.contains('token=')
+assert !embedUrl.contains('devices=')
 
 // Scenario: HTML attribute encoding prevents iframe injection issues.
 String encoded = invokePrivate(appScript, 'htmlAttributeEncode', [String] as Class<?>[], '"foo&bar<baz>') as String

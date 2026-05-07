@@ -34,10 +34,18 @@ Keep the files at the File Manager root unless you plan to override the preview 
 
 The app stores those values in `makerApiBaseUrl`, `makerApiAppId`, `makerApiToken`, and `makerApiDeviceIds`. When the settings are present, `buildDashboardEmbedUrl()` generates `/local/weather-dashboard-app.html` with the following query parameters:
 
-- `hubBaseUrl` and `hub`
+- `hubBaseUrl`
 - `appId`
-- `makerToken`, `makerApiToken`, and `token`
-- `deviceIds` and `devices` when device IDs are configured
+- `makerToken`
+- `deviceIds` when device IDs are configured
+
+The same canonical parameters support opening the File Manager page directly:
+
+```text
+/local/weather-dashboard-app.html?hubBaseUrl=http://192.168.1.10&appId=123&makerToken=YOUR_TOKEN&deviceIds=45,46
+```
+
+Older alias names such as `hub`, `token`, `makerApiToken`, and `devices` are intentionally not generated or supported.
 
 ## 4. Confirm the integration
 

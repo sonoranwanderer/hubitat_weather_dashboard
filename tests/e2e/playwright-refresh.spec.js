@@ -19,7 +19,7 @@ function errorResponse(status, message) {
 }
 
 test('renders Maker API payload and schedules refreshes', async ({ page }) => {
-  await page.goto('http://localhost/?hub=192.168.0.10&appId=123&token=abc123&devices=45,46&interval=100&maxBackoff=500');
+  await page.goto('http://localhost/?hubBaseUrl=192.168.0.10&appId=123&makerToken=abc123&deviceIds=45,46&interval=100&maxBackoff=500');
   page.queueResponse(successResponse(minimalPayload));
   page.queueResponse(successResponse(minimalPayload));
   await page.loadWeatherDashboardApp();
@@ -42,7 +42,9 @@ test('renders Maker API payload and schedules refreshes', async ({ page }) => {
       nextDelay: snapshot.nextDelay,
       pollIntervalMs: snapshot.pollIntervalMs,
       endpointUrl: snapshot.endpointUrl,
+      redactedEndpointUrl: snapshot.redactedEndpointUrl,
       statusLevel: snapshot.status.level,
+      statusDetails: snapshot.status.details.slice(),
       payloadText: text
     };
   });
@@ -53,7 +55,10 @@ test('renders Maker API payload and schedules refreshes', async ({ page }) => {
   expect(state.pollIntervalMs).toBe(5000);
   expect(state.nextDelay).toBe(5000);
   expect(state.endpointUrl).toContain('/apps/api/123/devices/all');
-  expect(state.endpointUrl).toContain('access_token=abc123');
+  expect(state.endpointUrl).toContain('access_token=REDACTED');
+  expect(state.redactedEndpointUrl).toContain('access_token=REDACTED');
+  expect(state.endpointUrl.includes('abc123')).toBe(false);
+  expect(state.statusDetails.join(' ').includes('abc123')).toBe(false);
   expect(state.endpointUrl).toContain('deviceIds=45%2C46');
   if (state.payloadText) {
     expect(state.payloadText.startsWith('{')).toBe(true);
@@ -62,7 +67,7 @@ test('renders Maker API payload and schedules refreshes', async ({ page }) => {
 });
 
 test('statusBar=yes keeps the success panel visible', async ({ page }) => {
-  await page.goto('http://localhost/?hub=192.168.0.10&appId=123&token=abc123&devices=45,46&statusBar=yes');
+  await page.goto('http://localhost/?hubBaseUrl=192.168.0.10&appId=123&makerToken=abc123&deviceIds=45,46&statusBar=yes');
   page.queueResponse(successResponse(minimalPayload));
   page.queueResponse(successResponse(minimalPayload));
   await page.loadWeatherDashboardApp();
@@ -90,7 +95,7 @@ test('statusBar=yes keeps the success panel visible', async ({ page }) => {
 });
 
 test('statusBar=no hides the success panel', async ({ page }) => {
-  await page.goto('http://localhost/?hub=192.168.0.10&appId=123&token=abc123&devices=45,46&statusBar=no');
+  await page.goto('http://localhost/?hubBaseUrl=192.168.0.10&appId=123&makerToken=abc123&deviceIds=45,46&statusBar=no');
   page.queueResponse(successResponse(minimalPayload));
   page.queueResponse(successResponse(minimalPayload));
   await page.loadWeatherDashboardApp();
@@ -120,7 +125,7 @@ test('statusBar=no hides the success panel', async ({ page }) => {
 });
 
 test('statusBar absent keeps the success panel visible', async ({ page }) => {
-  await page.goto('http://localhost/?hub=192.168.0.10&appId=123&token=abc123&devices=45,46');
+  await page.goto('http://localhost/?hubBaseUrl=192.168.0.10&appId=123&makerToken=abc123&deviceIds=45,46');
   page.queueResponse(successResponse(minimalPayload));
   page.queueResponse(successResponse(minimalPayload));
   await page.loadWeatherDashboardApp();
@@ -146,7 +151,7 @@ test('statusBar absent keeps the success panel visible', async ({ page }) => {
 });
 
 test('backs off after Maker API failures and recovers on success', async ({ page }) => {
-  await page.goto('http://localhost/?hub=192.168.0.10&appId=321&token=xyz789&devices=99&interval=80&maxBackoff=320');
+  await page.goto('http://localhost/?hubBaseUrl=192.168.0.10&appId=321&makerToken=xyz789&deviceIds=99&interval=80&maxBackoff=320');
   page.queueResponse(errorResponse(503, 'Dashboard payload unavailable.'));
   page.queueResponse(successResponse(minimalPayload));
   page.queueResponse(successResponse(minimalPayload));

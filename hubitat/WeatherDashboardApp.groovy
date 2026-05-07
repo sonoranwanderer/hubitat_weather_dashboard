@@ -592,18 +592,14 @@ private String buildDashboardEmbedUrl() {
 
     Map<String, String> params = [
         hubBaseUrl : baseUrl,
-        hub        : baseUrl,
         appId      : appId,
-        makerToken : token,
-        makerApiToken: token,
-        token      : token
+        makerToken : token
     ]
 
     List<String> deviceIds = makerApiDeviceIdList()
     if (deviceIds) {
         String joined = deviceIds.join(',')
         params.deviceIds = joined
-        params.devices = joined
     }
 
     String query = params.collect { key, value -> "${urlEncode(key)}=${urlEncode(value)}" }.join('&')
@@ -978,7 +974,7 @@ private String makerTokenSetting() {
 }
 
 private String extractMakerToken() {
-    def raw = params?.makerToken ?: params?.makerApiToken ?: params?.token ?: params?.accessToken
+    def raw = params?.makerToken
     if (!(raw instanceof CharSequence)) {
         return null
     }

@@ -144,8 +144,26 @@ async function flushMicrotasks() {
   assert(env.renderCalls.length === 1, 'successful fetch should render payload text');
   assert(api.state.statusBarVisible === false, 'statusBar=no should hide success status after successful renders');
   assert(api.state.failureStreak === 0);
+  assert(api.state.endpointUrl.includes('access_token=REDACTED'), 'public endpoint URL should redact token');
+  assert(api.state.redactedEndpointUrl.includes('access_token=REDACTED'), 'redacted endpoint should mask token');
+  assert(!api.state.endpointUrl.includes('inline-token'), 'public state should not expose raw token');
+  assert(api.state.config.makerToken === 'REDACTED', 'public config should redact maker token');
+  const mutableSnapshot = api.state;
+  mutableSnapshot.config.deviceIds.push('999');
+  mutableSnapshot.status.details.push('mutated detail');
+  mutableSnapshot.configErrors.push('mutated config error');
+  mutableSnapshot.validationWarnings.push('mutated warning');
+  assert(!api.state.config.deviceIds.includes('999'), 'public config device IDs should not mutate internal state');
+  assert(!api.state.status.details.includes('mutated detail'), 'public status details should not mutate internal state');
+  assert(!api.state.configErrors.includes('mutated config error'), 'public config errors should not mutate internal state');
+  assert(!api.state.validationWarnings.includes('mutated warning'), 'public validation warnings should not mutate internal state');
 
+  const statusPanel = env.window.document.querySelector('.wdash-app-status');
+  assert(statusPanel, 'status panel should exist after initial render');
+  assert(statusPanel.hidden === true, 'statusBar=no should hide success status panel');
   api.refreshNow();
+  assert(statusPanel.hidden === true, 'background refresh should not unhide hidden status panel');
+  assert(api.state.status.level === 'success', 'background refresh should keep previous status until the fetch resolves');
   await flushMicrotasks();
   assert(api.state.failureStreak === 1, 'failed fetch increments failure streak');
   assert(api.state.status.level === 'error');
@@ -158,6 +176,7 @@ async function flushMicrotasks() {
 
   api.reconfigure();
   assert(api.state.endpointUrl.includes('/apps/api/777/devices/all'));
+  assert(!api.state.endpointUrl.includes('inline-token'), 'reconfigured public state should not expose raw token');
 
   api.refreshNow();
   await flushMicrotasks();
