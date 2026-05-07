@@ -32,6 +32,7 @@
     failureStreak: 0,
     lastSuccessAt: null,
     endpointUrl: null,
+    redactedEndpointUrl: null,
     status: { level: 'info', message: 'Initializing…', details: [] },
     statusMinHeight: 0
   };
@@ -52,7 +53,7 @@
 
   const publicApi = {
     get state() {
-      return { ...state };
+      return publicStateSnapshot();
     },
     refreshNow,
     stop: stopPolling,
@@ -69,6 +70,35 @@
     }
   } catch (err) {
     // ignore globals that cannot be defined
+  }
+
+  function publicStateSnapshot() {
+    const snapshot = {
+      ...state,
+      endpointUrl: state.redactedEndpointUrl
+    };
+    if (Array.isArray(snapshot.configErrors)) {
+      snapshot.configErrors = snapshot.configErrors.slice();
+    }
+    if (Array.isArray(snapshot.validationWarnings)) {
+      snapshot.validationWarnings = snapshot.validationWarnings.slice();
+    }
+    if (snapshot.status && typeof snapshot.status === 'object') {
+      snapshot.status = { ...snapshot.status };
+      if (Array.isArray(snapshot.status.details)) {
+        snapshot.status.details = snapshot.status.details.slice();
+      }
+    }
+    if (snapshot.config && typeof snapshot.config === 'object') {
+      snapshot.config = { ...snapshot.config };
+      if (Array.isArray(snapshot.config.deviceIds)) {
+        snapshot.config.deviceIds = snapshot.config.deviceIds.slice();
+      }
+      if (snapshot.config.makerToken) {
+        snapshot.config.makerToken = 'REDACTED';
+      }
+    }
+    return snapshot;
   }
 
   function whenDomReady(callback) {
@@ -994,22 +1024,12 @@
     const source = rawSource || {};
     const config = {};
 
-    config.hubBaseUrl = normalizeHubBase(pickValue(source, ['hubBaseUrl', 'hubUrl', 'hub', 'hubIp']));
-    config.appId = normalizeId(pickValue(source, ['appId', 'applicationId', 'app', 'dashboardAppId']));
-    config.dashboardToken = normalizeToken(
-      pickValue(source, ['appToken', 'previewToken', 'dashboardToken', 'access_token', 'appAccessToken', 'dashboardAccessToken'])
-    );
-    config.makerToken = normalizeToken(pickValue(source, ['makerToken', 'makerApiToken', 'maker_token', 'token', 'maker']));
-    config.deviceIds = normalizeDeviceList(pickValue(source, ['deviceIds', 'devices', 'deviceId', 'device']));
+    config.hubBaseUrl = normalizeHubBase(pickValue(source, ['hubBaseUrl']));
+    config.appId = normalizeId(pickValue(source, ['appId']));
+    config.makerToken = normalizeToken(pickValue(source, ['makerToken']));
+    config.deviceIds = normalizeDeviceList(pickValue(source, ['deviceIds']));
     config.pollIntervalMs = normalizeDuration(pickValue(source, ['pollIntervalMs', 'pollInterval', 'interval', 'refresh', 'refreshInterval']));
     config.maxBackoffMs = normalizeDuration(pickValue(source, ['maxBackoffMs', 'maxBackoff', 'backoff', 'backoffMs']));
-
-    if (!config.dashboardToken && config.makerToken) {
-      config.dashboardToken = config.makerToken;
-    }
-    if (!config.makerToken && config.dashboardToken) {
-      config.makerToken = config.dashboardToken;
-    }
 
     return config;
   }
@@ -1044,7 +1064,7 @@
     const warnings = [];
 
     if (!config.hubBaseUrl) {
-      errors.push('Hub address missing. Provide it via ?hub=HUB_IP or set hubBaseUrl in the inline JSON configuration.');
+      errors.push('Hub address missing. Provide it via ?hubBaseUrl=HUB_URL or set hubBaseUrl in the inline JSON configuration.');
     } else if (!isHttpUrl(config.hubBaseUrl)) {
       errors.push('Hub address must use http:// or https://.');
     }
@@ -1060,7 +1080,7 @@
     }
 
     if (!Array.isArray(config.deviceIds) || config.deviceIds.length === 0) {
-      warnings.push('No Maker API device IDs provided. Provide ?devices=ID1,ID2 to enable future device-scoped features.');
+      warnings.push('No Maker API device IDs provided. Provide ?deviceIds=ID1,ID2 to enable future device-scoped features.');
     } else {
       const invalid = config.deviceIds.filter(id => !/^\d+$/.test(id));
       if (invalid.length) {
@@ -1096,6 +1116,27 @@
       return target.toString();
     } catch (err) {
       return null;
+    }
+  }
+
+  function redactUrlSecrets(value) {
+    if (!value) return value;
+    const text = String(value);
+    const secretParams = new Set([
+      'access_token',
+      'makerToken',
+      'dashboardToken'
+    ]);
+    try {
+      const target = new URL(text);
+      for (const key of secretParams) {
+        if (target.searchParams.has(key)) {
+          target.searchParams.set(key, 'REDACTED');
+        }
+      }
+      return target.toString();
+    } catch (err) {
+      return text.replace(/([?&](?:access_token|makerToken|dashboardToken)=)[^&#]*/g, '$1REDACTED');
     }
   }
 
@@ -1400,6 +1441,7 @@
     state.pollIntervalMs = normalized.pollIntervalMs || DEFAULT_POLL_INTERVAL_MS;
     state.maxBackoffMs = normalized.maxBackoffMs || DEFAULT_MAX_BACKOFF_MS;
     state.endpointUrl = endpoint;
+    state.redactedEndpointUrl = redactUrlSecrets(endpoint);
     state.statusBarVisible = queryStatusBar === 'no' || queryStatusBar === '0' ? false : true;
     state.statusBarLocked = queryStatusBar === 'yes' || queryStatusBar === '1' || queryStatusBar === 'no' || queryStatusBar === '0';
 
@@ -1581,8 +1623,8 @@
     if (summary) details.push(summary);
     const refreshSummary = buildRefreshSummary();
     if (refreshSummary) details.push(refreshSummary);
-    if (state.endpointUrl) {
-      details.push(`GET ${state.endpointUrl}`);
+    if (state.redactedEndpointUrl) {
+      details.push(`GET ${state.redactedEndpointUrl}`);
     }
     if (state.validationWarnings.length) {
       details.push(...state.validationWarnings.map(item => `⚠ ${item}`));
@@ -1699,6 +1741,12 @@
     });
   }
 
+  function shouldShowLoadingStatus() {
+    if (!state.lastSuccessAt) return true;
+    const level = state.status && state.status.level;
+    return level === 'error' || level === 'warning';
+  }
+
   function runFetchCycle() {
     if (state.fetchInFlight) {
       return;
@@ -1708,7 +1756,9 @@
       return;
     }
     state.fetchInFlight = true;
-    updateStatus('loading', 'Refreshing weather data…', buildLoadingDetails(state.config));
+    if (shouldShowLoadingStatus()) {
+      updateStatus('loading', 'Refreshing weather data…', buildLoadingDetails(state.config));
+    }
     performFetch(state.endpointUrl)
       .then(handleSuccess)
       .catch(handleFailure)
