@@ -5,6 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 const { createRenderer } = require('../src/render');
+const { bootstrapRenderer } = require('./support/dashboard-test-utils');
 
 
 describe('Weather Dashboard Renderer', () => {
@@ -107,5 +108,108 @@ describe('Renderer measurement hooks', () => {
     expect(observeCalls.length).toBe(1);
     expect(observeCalls[0].type).toBe('base-dimensions');
     expect(typeof observeCalls[0].onMeasure).toBe('function');
+  });
+});
+
+describe('Renderer resize observer lifecycle', () => {
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('reuses the ambient ring observer across repeated renders', () => {
+    const createdObservers = [];
+    global.ResizeObserver = class ResizeObserver {
+      constructor(callback) {
+        this.callback = callback;
+        this.observed = [];
+        this.disconnected = false;
+        createdObservers.push(this);
+      }
+
+      observe(element) {
+        this.observed.push(element);
+      }
+
+      unobserve() {}
+
+      disconnect() {
+        this.disconnected = true;
+      }
+    };
+
+    const { hooks, document: dashboardDocument, window: dashboardWindow } = bootstrapRenderer();
+    dashboardWindow.ResizeObserver = global.ResizeObserver;
+    const ambient = dashboardDocument.createElement('div');
+    ambient.classList.add('wdash-ambient');
+    dashboardDocument.body.appendChild(ambient);
+
+    hooks.setupAmbientRingResizeSync(ambient);
+    hooks.setupAmbientRingResizeSync(ambient);
+    hooks.setupAmbientRingResizeSync(ambient);
+
+    const firstState = hooks.getAmbientRingResizeState();
+    expect(firstState.target).toBe(ambient);
+    hooks.setupAmbientRingResizeSync(ambient);
+    hooks.setupAmbientRingResizeSync(ambient);
+    expect(hooks.getAmbientRingResizeState().observer).toBe(firstState.observer);
+
+    hooks.teardownAmbientRingResizeSync();
+    expect(hooks.getAmbientRingResizeState().observer).toBe(null);
+    expect(hooks.getAmbientRingResizeState().target).toBe(null);
+  });
+});
+
+describe('Renderer payload and layout branches', () => {
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('merges partial payload segments and ignores empty segment envelopes', () => {
+    const { hooks } = bootstrapRenderer();
+    const merged = hooks.mergePayloads([
+      { segmentIndex: 1, segmentSize: 3 },
+      {
+        segmentIndex: 2,
+        segmentSize: 3,
+        ambientSensors: [{ name: 'Second', ordinal: 2 }],
+        totalAmbientSensors: 2,
+        metadata: { generatedAt: '2026-05-06T12:00:00Z' }
+      },
+      {
+        segmentIndex: 3,
+        segmentSize: 3,
+        ambientSensors: [{ name: 'First', ordinal: 1 }],
+        layout: { desktop: { gap: '8px' } },
+        metadata: { weatherStationTimezone: 'America/Phoenix' },
+        outdoor: { temperature: 82 }
+      }
+    ]);
+
+    expect(merged.outdoor.temperature).toBe(82);
+    expect(merged.ambientSensors[0].name).toBe('First');
+    expect(merged.ambientSensors[1].name).toBe('Second');
+    expect(merged.totalAmbientSensors).toBe(2);
+    expect(merged.metadata.generatedAt).toBe('2026-05-06T12:00:00Z');
+    expect(merged.metadata.weatherStationTimezone).toBe('America/Phoenix');
+    expect(merged.metadata.layout.desktop.gap).toBe('8px');
+
+    expect(hooks.mergePayloads([{ segmentIndex: 1, segmentSize: 2 }])).toBe(null);
+  });
+
+  it('falls back to default layout when metadata layout is invalid', () => {
+    const { hooks } = bootstrapRenderer();
+    hooks.applyLayoutOverrides({ layout: 'not-json' });
+    expect(hooks.layoutState.baseWidth).toBe(1200);
+    expect(hooks.layoutState.baseHeight).toBe(900);
+  });
+
+  it('applies metadata unit defaults and preserves user overrides', () => {
+    const { hooks } = bootstrapRenderer();
+    hooks.applyTemperatureUnitsFromMetadata({ temperatureDisplayUnit: 'C', temperatureInputUnit: 'F' });
+    expect(hooks.getDisplayTemperatureUnit()).toBe('C');
+    hooks.setTemperatureDisplayUnit('F');
+    expect(hooks.getDisplayTemperatureUnit()).toBe('F');
+    hooks.applyTemperatureUnitsFromMetadata({ temperatureDisplayUnit: 'C', temperatureInputUnit: 'F' });
+    expect(hooks.getDisplayTemperatureUnit()).toBe('F');
   });
 });

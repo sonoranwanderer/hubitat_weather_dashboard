@@ -544,6 +544,9 @@
         let tempWindGaugeResizeHandler = null;
         let tempWindGaugeHosts = [];
         const tempWindGaugeLastSizes = new WeakMap();
+        let ambientRingResizeObserver = null;
+        let ambientRingResizeTarget = null;
+        let ambientRingResizeHandler = null;
         const tempWindState = { data: null };
         const solarState = { data: null };
         let solarStaticLayoutCache = null;
@@ -780,15 +783,8 @@
             setupAirQualityRotation(payload);
             setupInteractiveComponents(grid);
             setupHubClock(payload);
-            // observe ambient container for size changes to keep ring geometry synchronized
             const ambientContainer = document.querySelector('#' + DISPLAY_TILE_ID + ' .wdash-ambient');
-            if (ambientContainer && typeof ResizeObserver !== 'undefined') {
-              const ro = new ResizeObserver(() => { applyAmbientRingSizing(); applyOutdoorRingSizing(); });
-              ro.observe(ambientContainer);
-            } else {
-              // fallback: window resize
-              window.addEventListener('resize', () => { applyAmbientRingSizing(); applyOutdoorRingSizing(); });
-            }
+            setupAmbientRingResizeSync(ambientContainer);
           } finally {
             if (maskMode === 'hide') {
               toggleSourceTileMask(true);
@@ -811,6 +807,7 @@
           resetDashboardToWaiting(grid);
           stopHubClock();
           teardownTempWindGaugeSizing();
+          teardownAmbientRingResizeSync();
           toggleSourceTileMask(false);
         }
       
@@ -821,6 +818,7 @@
           renderState.markupByKey.clear();
           tempWindState.data = null;
           clearAmbientRotation();
+          teardownAmbientRingResizeSync();
         }
       
         function collectMeasurementCandidate(element, role) {
@@ -4940,6 +4938,48 @@
           }
         }
       
+        function teardownAmbientRingResizeSync() {
+          if (ambientRingResizeObserver) {
+            ambientRingResizeObserver.disconnect();
+            ambientRingResizeObserver = null;
+          }
+          ambientRingResizeTarget = null;
+          if (ambientRingResizeHandler && typeof window !== 'undefined' && window.removeEventListener) {
+            window.removeEventListener('resize', ambientRingResizeHandler);
+          }
+          ambientRingResizeHandler = null;
+        }
+      
+        function setupAmbientRingResizeSync(container) {
+          if (!container) {
+            teardownAmbientRingResizeSync();
+            return;
+          }
+      
+          if (ambientRingResizeTarget === container && (ambientRingResizeObserver || ambientRingResizeHandler)) {
+            return;
+          }
+      
+          teardownAmbientRingResizeSync();
+          ambientRingResizeTarget = container;
+      
+          const syncRings = () => {
+            applyAmbientRingSizing();
+            applyOutdoorRingSizing();
+          };
+      
+          const ResizeObserverCtor = typeof window !== 'undefined' && typeof window.ResizeObserver === 'function'
+            ? window.ResizeObserver
+            : (typeof ResizeObserver === 'function' ? ResizeObserver : null);
+          if (ResizeObserverCtor) {
+            ambientRingResizeObserver = new ResizeObserverCtor(syncRings);
+            ambientRingResizeObserver.observe(container);
+          } else if (typeof window !== 'undefined' && window.addEventListener) {
+            ambientRingResizeHandler = syncRings;
+            window.addEventListener('resize', ambientRingResizeHandler);
+          }
+        }
+      
         function teardownTempWindGaugeSizing() {
           if (tempWindGaugeObserver) {
             tempWindGaugeObserver.disconnect();
@@ -7804,6 +7844,13 @@
             stopAmbientRotationTimer,
             stopAirQualityRotationTimer,
             clearAirQualityRotation,
+            setupAmbientRingResizeSync,
+            teardownAmbientRingResizeSync,
+            getAmbientRingResizeState: () => ({
+              observer: ambientRingResizeObserver,
+              target: ambientRingResizeTarget,
+              handler: ambientRingResizeHandler
+            }),
             applyTempWindGaugeSize,
             updateAirQualityCard,
             getAirQualityRotationState: () => ({

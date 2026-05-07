@@ -22,10 +22,12 @@ node "$(dirname "$0")/air-quality-rotation-harness.js"
 node "$(dirname "$0")/timer-stub-harness.js"
 node "$(dirname "$0")/jest-async-error-harness.js"
 node "$(dirname "$0")/hubitat-tiles-adapter-harness.js"
+node "$(dirname "$0")/weather-dashboard-app-harness.js"
 node "$(dirname "$0")/maker-endpoint-simulation.js"
 node "$(dirname "$0")/e2e/playwright-refresh.spec.js"
 
 if command -v groovy >/dev/null 2>&1; then
+  groovy "$(dirname "$0")/hubitat/ui/WeatherDashboardDeviceSpec.groovy"
   groovy "$(dirname "$0")/hubitat/ui/WeatherDashboardAppLandingSpec.groovy"
   groovy "$(dirname "$0")/hubitat/ui/WeatherDashboardBackupForecastSpec.groovy"
 else
