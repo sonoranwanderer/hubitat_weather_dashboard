@@ -1,0 +1,63 @@
+{
+  "packageName": "Hubitat Weather Dashboard",
+  "author": "Gatewood Green",
+  "version": "1.0.0",
+  "minimumHEVersion": "2.3.0",
+  "dateReleased": "2026-05-07",
+  "releaseNotes": "Initial public Hubitat Package Manager manifest.",
+  "documentationLink": "https://github.com/sonoranwanderer/hubitat_weather_dashboard#readme",
+  "communityLink": "https://github.com/sonoranwanderer/hubitat_weather_dashboard/issues",
+  "category": "Convenience",
+  "tags": [
+    "Dashboards",
+    "Weather"
+  ],
+  "apps": [
+    {
+      "id": "87f20e3b-e933-4c1c-8e0f-f555f280c868",
+      "name": "Weather Dashboard App",
+      "namespace": "hubitat-weather-dashboard",
+      "location": "https://raw.githubusercontent.com/sonoranwanderer/hubitat_weather_dashboard/main/hubitat/WeatherDashboardApp.groovy",
+      "required": true,
+      "oauth": true,
+      "description": "Aggregates weather data and publishes the dashboard payload."
+    }
+  ],
+  "drivers": [
+    {
+      "id": "c77c8cab-f97f-44e1-ab40-06084e5f5aa7",
+      "name": "Weather Dashboard Device",
+      "namespace": "hubitat-weather-dashboard",
+      "location": "https://raw.githubusercontent.com/sonoranwanderer/hubitat_weather_dashboard/main/hubitat/WeatherDashboardDevice.groovy",
+      "required": true,
+      "oauth": false,
+      "description": "Virtual device exposing weather dashboard payload segments."
+    }
+  ],
+  "files": [
+    {
+      "id": "7f118868-4b88-4b15-b546-aaf616ff2f56",
+      "name": "weather-dashboard.js",
+      "location": "https://raw.githubusercontent.com/sonoranwanderer/hubitat_weather_dashboard/main/dashboard/weather-dashboard.js",
+      "required": true,
+      "category": "Convenience",
+      "description": "Dashboard renderer uploaded to Hubitat File Manager."
+    },
+    {
+      "id": "82458094-278c-49d5-9daa-f1ce3ff3ce6b",
+      "name": "weather-dashboard-app.js",
+      "location": "https://raw.githubusercontent.com/sonoranwanderer/hubitat_weather_dashboard/main/app/weather-dashboard-app.js",
+      "required": true,
+      "category": "Convenience",
+      "description": "App preview bootstrap uploaded to Hubitat File Manager."
+    },
+    {
+      "id": "c6ebb129-a078-48be-8cdb-ea8ef2320fc1",
+      "name": "weather-dashboard-app.html",
+      "location": "https://raw.githubusercontent.com/sonoranwanderer/hubitat_weather_dashboard/main/app/weather-dashboard-app.html",
+      "required": true,
+      "category": "Convenience",
+      "description": "App preview shell uploaded to Hubitat File Manager."
+    }
+  ]
+}
