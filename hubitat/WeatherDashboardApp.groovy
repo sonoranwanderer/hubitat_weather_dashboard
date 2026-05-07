@@ -39,6 +39,20 @@ definition(
 @Field final int MAKER_PAYLOAD_MAX_BYTES = 100000
 @Field final int BACKUP_SCHEMA_VERSION = 1
 @Field final String BACKUP_APP_NAME = 'Weather Dashboard App'
+@Field final List<String> DASHBOARD_TILE_ATTRIBUTES = [
+    'dashboardScript',
+    'segmentCore',
+    'segmentPrecip',
+    'segmentAirQuality',
+    'segmentMeta',
+    'segmentLayout',
+    'segmentAmbient1',
+    'segmentAmbient2',
+    'segmentAmbient3',
+    'segmentAmbient4',
+    'segmentAmbient5',
+    'segmentAmbient6'
+]
 // Future features that add operational settings or durable state must update
 // these backup allowlists, import validation, tests, and docs before release.
 @Field final List<String> BACKUP_SECRET_SETTING_NAMES = [
@@ -158,6 +172,7 @@ definition(
 preferences {
     page(name: "landingPage", title: "Weather Dashboard", install: true, uninstall: true)
     page(name: "configurationPage")
+    page(name: "dashboardSetupPage")
     page(name: "diagnosticsPage")
     page(name: "backupRecoveryPage")
 }
@@ -271,6 +286,7 @@ def landingPage() {
 
         section("Quick actions") {
             href "configurationPage", title: "Configure data sources", description: "Select devices, units, and Maker API access."
+            href "dashboardSetupPage", title: "Dashboard Setup", description: "Generate Hubitat Dashboard import JSON for the required tiles."
             href "backupRecoveryPage", title: "Backup & Recovery", description: "Export configuration and durable history, or import a recovery backup."
             href "diagnosticsPage", title: "Diagnostics", description: "Inspect the latest payload JSON and refresh metrics."
         }
@@ -529,6 +545,31 @@ def configurationPage() {
     }
 }
 
+def dashboardSetupPage() {
+    dynamicPage(name: "dashboardSetupPage", title: "Dashboard Setup", install: false, uninstall: false) {
+        String childDeviceId = dashboardChildDeviceIdForLayout()
+        section("Before importing") {
+            paragraph "Save and refresh this app first so the Weather Dashboard virtual device exists and has current attributes."
+            paragraph "Create a Hubitat Dashboard or open an existing one, then use the dashboard's Advanced layout import option to paste the JSON below. Importing layout JSON can replace the dashboard layout, so export or copy the existing dashboard JSON first if you are modifying a dashboard you already use."
+            if (childDeviceId) {
+                paragraph "This template is using Weather Dashboard device ID <b>${htmlEncode(childDeviceId)}</b>."
+            } else {
+                paragraph "<b>Weather Dashboard device ID not available yet.</b> Click Save & Refresh on Configure data sources, then return to this page. If you still see this message, replace <code>REPLACE_WITH_WEATHER_DASHBOARD_DEVICE_ID</code> in the JSON with the virtual device ID from Hubitat Devices."
+            }
+        }
+
+        section("Import JSON") {
+            String json = buildDashboardLayoutTemplateJson()
+            paragraph "<textarea readonly style='width:100%; min-height:520px; font-family:monospace; white-space:pre; box-sizing:border-box;'>${htmlEncode(json)}</textarea>"
+        }
+
+        section("After importing") {
+            paragraph "Open the dashboard and refresh the browser page. The visible tile must remain <code>tile-0</code>; it loads <code>dashboardScript</code> and renders the full weather dashboard."
+            paragraph "The segment tiles provide JSON data to the renderer. They are intentionally included in the layout and are hidden by dashboard CSS and by the renderer after it reads them."
+        }
+    }
+}
+
 def backupRecoveryPage() {
     dynamicPage(name: "backupRecoveryPage", title: "Backup & Recovery", install: false, uninstall: false) {
         section("Export backup") {
@@ -619,6 +660,85 @@ private String buildDashboardEmbedUrl() {
 
     String query = params.collect { key, value -> "${urlEncode(key)}=${urlEncode(value)}" }.join('&')
     return "/local/weather-dashboard-app.html?${query}"
+}
+
+private String buildDashboardLayoutTemplateJson() {
+    JsonOutput.prettyPrint(JsonOutput.toJson(buildDashboardLayoutTemplate()))
+}
+
+private Map buildDashboardLayoutTemplate() {
+    String deviceId = dashboardChildDeviceIdForLayout() ?: 'REPLACE_WITH_WEATHER_DASHBOARD_DEVICE_ID'
+    [
+        name     : settings?.dashboardDeviceLabel ?: 'Weather Dashboard',
+        cols     : 6,
+        rows     : 6,
+        colWidth : 170,
+        rowHeight: 170,
+        gap      : 8,
+        customCSS: buildDashboardLayoutCustomCss(),
+        tiles    : buildDashboardLayoutTiles(deviceId)
+    ]
+}
+
+private List<Map> buildDashboardLayoutTiles(String deviceId) {
+    List<Map> tiles = []
+    DASHBOARD_TILE_ATTRIBUTES.eachWithIndex { String attr, int index ->
+        Map tile = [
+            id           : index,
+            device       : deviceId,
+            template     : 'attribute',
+            templateExtra: attr,
+            name         : attr,
+            label        : attr
+        ]
+
+        if (index == 0) {
+            tile.row = 1
+            tile.col = 1
+            tile.rowSpan = 4
+            tile.colSpan = 6
+        } else {
+            tile.row = 5 + ((index - 1).intdiv(6))
+            tile.col = ((index - 1) % 6) + 1
+            tile.rowSpan = 1
+            tile.colSpan = 1
+        }
+
+        tiles << tile
+    }
+    tiles
+}
+
+private String buildDashboardLayoutCustomCss() {
+    String sourceTiles = (1..<DASHBOARD_TILE_ATTRIBUTES.size()).collect { index -> "#tile-${index}" }.join(',')
+    "${sourceTiles}{display:none!important;}#tile-0 .tile-primary{height:100%;}"
+}
+
+private String dashboardChildDeviceIdForLayout() {
+    def child = null
+    try {
+        child = getChildDevice(childDeviceDni())
+    } catch (Throwable ignored) {
+        child = null
+    }
+    if (!child) return null
+
+    def raw = null
+    try {
+        raw = child.id
+    } catch (Throwable ignored) {
+        raw = null
+    }
+    if (raw == null) {
+        try {
+            raw = child.getId()
+        } catch (Throwable ignored) {
+            raw = null
+        }
+    }
+
+    String value = raw?.toString()?.trim()
+    value ?: null
 }
 
 private List<String> makerApiDeviceIdList() {

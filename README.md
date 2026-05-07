@@ -110,6 +110,18 @@ After saving, the app creates or updates the Weather Dashboard virtual device. O
 
 The rendered dashboard uses one visible Attribute tile plus several hidden/source Attribute tiles from the same Weather Dashboard virtual device.
 
+The easiest setup path is the generated dashboard import template:
+
+1. Open **Apps -> Weather Dashboard App -> Dashboard Setup**.
+2. Copy the generated Hubitat Dashboard layout JSON.
+3. Create a new Hubitat Dashboard or export the JSON from an existing dashboard as a backup.
+4. Use the dashboard's layout import option to paste the generated JSON.
+5. Save the dashboard and refresh the browser page.
+
+The generated template creates one visible `dashboardScript` Attribute tile plus the required source Attribute tiles. The source tiles are hidden by dashboard CSS and by the renderer after it reads them.
+
+Manual setup is still supported:
+
 1. Open the target Hubitat dashboard.
 2. Add an **Attribute** tile for the Weather Dashboard virtual device and choose the `dashboardScript` attribute. Add this tile first so Hubitat gives it the `tile-0` DOM id. This is the tile where `weather-dashboard.js` renders the full dashboard.
 3. Add additional **Attribute** tiles for these same-device attributes:

@@ -27,6 +27,7 @@ binding.setVariable('addChildDevice', { String namespace, String typeName, Strin
         namespace  : namespace,
         typeName   : typeName,
         dni        : dni,
+        id         : '9001',
         label      : options?.label,
         displayName: options?.label ?: typeName
     ])
@@ -117,6 +118,35 @@ assert childDeviceCreations[0].dni == 'weather-dashboard-101'
 assert childDeviceCreations[0].options.label == 'Weather Dashboard'
 assert childDeviceCreations[0].options.isComponent == true
 assert runInCalls.empty
+
+// Scenario: dashboard setup JSON contains the required Attribute tiles for import.
+String layoutJson = invokePrivate(appScript, 'buildDashboardLayoutTemplateJson') as String
+Map layoutTemplate = new groovy.json.JsonSlurper().parseText(layoutJson) as Map
+assert layoutTemplate.tiles.size() == 12
+assert layoutTemplate.tiles[0].id == 0
+assert layoutTemplate.tiles[0].device == '9001'
+assert layoutTemplate.tiles[0].template == 'attribute'
+assert layoutTemplate.tiles[0].templateExtra == 'dashboardScript'
+assert layoutTemplate.tiles[0].row == 1
+assert layoutTemplate.tiles[0].col == 1
+assert layoutTemplate.tiles[0].rowSpan == 4
+assert layoutTemplate.tiles[0].colSpan == 6
+assert layoutTemplate.tiles*.templateExtra == [
+    'dashboardScript',
+    'segmentCore',
+    'segmentPrecip',
+    'segmentAirQuality',
+    'segmentMeta',
+    'segmentLayout',
+    'segmentAmbient1',
+    'segmentAmbient2',
+    'segmentAmbient3',
+    'segmentAmbient4',
+    'segmentAmbient5',
+    'segmentAmbient6'
+]
+assert layoutTemplate.customCSS.contains('#tile-1')
+assert layoutTemplate.customCSS.contains('#tile-11')
 
 // Scenario: uninstall removes the dashboard child device owned by the app.
 appScript.uninstalled()
