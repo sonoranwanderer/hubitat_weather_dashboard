@@ -6993,8 +6993,9 @@
       .wdash-metric-row--compact .wdash-metric-label { font-size: 0.56rem; letter-spacing: 0.12em; align-self: center; }
       .wdash-metric-row--compact .wdash-metric-value { font-size: 0.96rem; justify-self: end; align-self: center; }
       .wdash-metric-row--compact .wdash-metric-sub { grid-column: 1 / -1; justify-self: start; }
-      .wdash-air-metrics { grid-auto-rows: auto; }
-      .wdash-air-metrics .wdash-metric-label { white-space: normal; line-height: 1.3; overflow-wrap: anywhere; }
+      .wdash-air-metrics { grid-auto-rows: minmax(42px, 1fr); align-items: stretch; }
+      .wdash-air-metrics .wdash-metric { min-height: 42px; }
+      .wdash-air-metrics .wdash-metric-label { min-width: 0; min-height: 2.6em; white-space: normal; line-height: 1.3; overflow: visible; overflow-wrap: normal; }
       .wdash-air-metrics .wdash-metric-value { font-size: 1rem; white-space: nowrap; text-align: right; }
       .wdash-air-metrics .wdash-metric--placeholder { visibility: hidden; pointer-events: none; }
       .wdash-air-empty { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; min-height: 72px; padding: 14px; border-radius: 10px; background: rgba(255,255,255,0.04); font-size: 0.86rem; letter-spacing: 0.08em; text-transform: uppercase; color: #9badcf; opacity: 0.8; text-align: center; }
