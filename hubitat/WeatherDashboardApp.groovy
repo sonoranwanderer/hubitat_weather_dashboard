@@ -45,14 +45,10 @@ definition(
     'segmentPrecip',
     'segmentAirQuality',
     'segmentMeta',
-    'segmentLayout',
-    'segmentAmbient1',
-    'segmentAmbient2',
-    'segmentAmbient3',
-    'segmentAmbient4',
-    'segmentAmbient5',
-    'segmentAmbient6'
+    'segmentLayout'
 ]
+@Field final int DASHBOARD_AMBIENT_SENSORS_PER_TILE = 4
+@Field final int DASHBOARD_MAX_AMBIENT_TILES = 6
 // Future features that add operational settings or durable state must update
 // these backup allowlists, import validation, tests, and docs before release.
 @Field final List<String> BACKUP_SECRET_SETTING_NAMES = [
@@ -667,6 +663,7 @@ private String buildDashboardLayoutTemplateJson() {
 
 private Map buildDashboardLayoutTemplate() {
     String deviceId = dashboardChildDeviceIdForLayout() ?: 'REPLACE_WITH_WEATHER_DASHBOARD_DEVICE_ID'
+    List<String> tileAttributes = dashboardLayoutTileAttributes()
     [
         name        : 'Weather Dashboard',
         cols        : '6',
@@ -684,8 +681,27 @@ private Map buildDashboardLayoutTemplate() {
         lanRefresh  : 2,
         cloudRefresh: 5,
         hide3dot    : 'true',
-        tiles       : buildDashboardLayoutTiles(deviceId)
+        tiles       : buildDashboardLayoutTiles(deviceId, tileAttributes)
     ]
+}
+
+private List<String> dashboardLayoutTileAttributes() {
+    List<String> attributes = [] + DASHBOARD_TILE_ATTRIBUTES
+    int ambientCount = dashboardLayoutAmbientSensorCount()
+    if (ambientCount > 0) {
+        int ambientTiles = Math.min(DASHBOARD_MAX_AMBIENT_TILES, Math.max(1, Math.ceil(ambientCount / DASHBOARD_AMBIENT_SENSORS_PER_TILE) as int))
+        (1..ambientTiles).each { index ->
+            attributes << "segmentAmbient${index}"
+        }
+    }
+    attributes
+}
+
+private int dashboardLayoutAmbientSensorCount() {
+    def sensors = settings?.ambientSensors
+    if (!sensors) return 0
+    if (sensors instanceof Collection) return sensors.size()
+    return 1
 }
 
 private List<Map> buildDashboardLayoutCustomColors() {
@@ -698,9 +714,9 @@ private List<Map> buildDashboardLayoutCustomColors() {
     ]]
 }
 
-private List<Map> buildDashboardLayoutTiles(String deviceId) {
+private List<Map> buildDashboardLayoutTiles(String deviceId, List<String> tileAttributes = dashboardLayoutTileAttributes()) {
     List<Map> tiles = []
-    DASHBOARD_TILE_ATTRIBUTES.eachWithIndex { String attr, int index ->
+    tileAttributes.eachWithIndex { String attr, int index ->
         Map tile = [
             id           : index,
             device       : deviceId,
@@ -728,7 +744,7 @@ private List<Map> buildDashboardLayoutTiles(String deviceId) {
 }
 
 private String buildDashboardLayoutCustomCss() {
-    List<String> sourceTileSelectors = (1..<DASHBOARD_TILE_ATTRIBUTES.size()).collect { index -> "#tile-${index}" }
+    List<String> sourceTileSelectors = (1..<dashboardLayoutTileAttributes().size()).collect { index -> "#tile-${index}" }
     String sourceTiles = sourceTileSelectors.join(',')
     String innerSelectors = [
         '.tile-contents',

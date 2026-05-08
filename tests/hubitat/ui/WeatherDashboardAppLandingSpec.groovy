@@ -119,7 +119,7 @@ assert childDeviceCreations[0].options.label == 'Weather Dashboard'
 assert childDeviceCreations[0].options.isComponent == true
 assert runInCalls.empty
 
-// Scenario: dashboard setup JSON contains the required Attribute tiles for import.
+// Scenario: dashboard setup JSON contains only the required static Attribute tiles when no ambient sensors are configured.
 String layoutJson = invokePrivate(appScript, 'buildDashboardLayoutTemplateJson') as String
 Map layoutTemplate = new groovy.json.JsonSlurper().parseText(layoutJson) as Map
 assert layoutTemplate.name == 'Weather Dashboard'
@@ -135,7 +135,7 @@ assert layoutTemplate.gridGap == 8
 assert layoutTemplate.cols == '6'
 assert layoutTemplate.rows == '6'
 assert layoutTemplate.hide3dot == 'true'
-assert layoutTemplate.tiles.size() == 12
+assert layoutTemplate.tiles.size() == 6
 assert layoutTemplate.tiles[0].id == 0
 assert layoutTemplate.tiles[0].device == '9001'
 assert layoutTemplate.tiles[0].template == 'attribute'
@@ -150,21 +150,27 @@ assert layoutTemplate.tiles*.templateExtra == [
     'segmentPrecip',
     'segmentAirQuality',
     'segmentMeta',
-    'segmentLayout',
-    'segmentAmbient1',
-    'segmentAmbient2',
-    'segmentAmbient3',
-    'segmentAmbient4',
-    'segmentAmbient5',
-    'segmentAmbient6'
+    'segmentLayout'
 ]
 assert layoutTemplate.customCSS.contains('#tile-1')
-assert layoutTemplate.customCSS.contains('#tile-11')
+assert layoutTemplate.customCSS.contains('#tile-5')
+assert !layoutTemplate.customCSS.contains('#tile-6')
 assert layoutTemplate.customCSS.contains('#tile-1 .tile-primary')
 assert layoutTemplate.customCSS.contains('background:transparent!important')
 assert layoutTemplate.customCSS.contains('opacity:0!important')
 assert layoutTemplate.customCSS.contains('display:none!important')
 assert layoutTemplate.customCSS.contains('#tile-0 .tile-primary{height:100%;}')
+
+// Scenario: ambient source tiles scale to the configured sensor count instead of always creating six tiles.
+appScript.binding.setVariable('settings', [
+    ambientSensors: (1..9).collect { index -> [id: "${index}", displayName: "Ambient ${index}"] as Expando }
+])
+String ambientLayoutJson = invokePrivate(appScript, 'buildDashboardLayoutTemplateJson') as String
+Map ambientLayoutTemplate = new groovy.json.JsonSlurper().parseText(ambientLayoutJson) as Map
+assert ambientLayoutTemplate.tiles.size() == 9
+assert ambientLayoutTemplate.tiles*.templateExtra[-3..-1] == ['segmentAmbient1', 'segmentAmbient2', 'segmentAmbient3']
+assert ambientLayoutTemplate.customCSS.contains('#tile-8')
+assert !ambientLayoutTemplate.customCSS.contains('#tile-9')
 
 // Scenario: uninstall removes the dashboard child device owned by the app.
 appScript.uninstalled()
