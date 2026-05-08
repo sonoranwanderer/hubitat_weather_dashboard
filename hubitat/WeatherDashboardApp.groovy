@@ -669,16 +669,16 @@ private String buildDashboardLayoutTemplateJson() {
 private Map buildDashboardLayoutTemplate() {
     String deviceId = dashboardChildDeviceIdForLayout() ?: 'REPLACE_WITH_WEATHER_DASHBOARD_DEVICE_ID'
     [
-        name        : settings?.dashboardDeviceLabel ?: 'Weather Dashboard',
+        name        : 'Weather Dashboard',
         cols        : '6',
         rows        : '6',
         colWidth    : 170,
         rowHeight   : 170,
         gridGap     : 8,
         clockMode   : true,
-        bgColor     : null,
+        bgColor     : 'black',
         background  : '',
-        customColors: [],
+        customColors: buildDashboardLayoutCustomColors(),
         customCSS   : buildDashboardLayoutCustomCss(),
         fontSize    : '',
         readOnly    : false,
@@ -686,6 +686,16 @@ private Map buildDashboardLayoutTemplate() {
         cloudRefresh: 5,
         tiles       : buildDashboardLayoutTiles(deviceId)
     ]
+}
+
+private List<Map> buildDashboardLayoutCustomColors() {
+    [[
+        template  : 'attribute',
+        bgColor   : 'rgb(0,0,0)',
+        iconColor : '',
+        state     : 'default',
+        customIcon: ''
+    ]]
 }
 
 private List<Map> buildDashboardLayoutTiles(String deviceId) {
