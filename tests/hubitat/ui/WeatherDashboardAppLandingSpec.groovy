@@ -122,6 +122,10 @@ assert runInCalls.empty
 // Scenario: dashboard setup JSON contains the required Attribute tiles for import.
 String layoutJson = invokePrivate(appScript, 'buildDashboardLayoutTemplateJson') as String
 Map layoutTemplate = new groovy.json.JsonSlurper().parseText(layoutJson) as Map
+assert layoutTemplate.customColors == []
+assert layoutTemplate.gridGap == 8
+assert layoutTemplate.cols == '6'
+assert layoutTemplate.rows == '6'
 assert layoutTemplate.tiles.size() == 12
 assert layoutTemplate.tiles[0].id == 0
 assert layoutTemplate.tiles[0].device == '9001'

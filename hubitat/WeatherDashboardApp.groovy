@@ -669,14 +669,22 @@ private String buildDashboardLayoutTemplateJson() {
 private Map buildDashboardLayoutTemplate() {
     String deviceId = dashboardChildDeviceIdForLayout() ?: 'REPLACE_WITH_WEATHER_DASHBOARD_DEVICE_ID'
     [
-        name     : settings?.dashboardDeviceLabel ?: 'Weather Dashboard',
-        cols     : 6,
-        rows     : 6,
-        colWidth : 170,
-        rowHeight: 170,
-        gap      : 8,
-        customCSS: buildDashboardLayoutCustomCss(),
-        tiles    : buildDashboardLayoutTiles(deviceId)
+        name        : settings?.dashboardDeviceLabel ?: 'Weather Dashboard',
+        cols        : '6',
+        rows        : '6',
+        colWidth    : 170,
+        rowHeight   : 170,
+        gridGap     : 8,
+        clockMode   : true,
+        bgColor     : null,
+        background  : '',
+        customColors: [],
+        customCSS   : buildDashboardLayoutCustomCss(),
+        fontSize    : '',
+        readOnly    : false,
+        lanRefresh  : 2,
+        cloudRefresh: 5,
+        tiles       : buildDashboardLayoutTiles(deviceId)
     ]
 }
 
