@@ -683,6 +683,7 @@ private Map buildDashboardLayoutTemplate() {
         readOnly    : false,
         lanRefresh  : 2,
         cloudRefresh: 5,
+        hide3dot    : 'true',
         tiles       : buildDashboardLayoutTiles(deviceId)
     ]
 }
