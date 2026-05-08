@@ -715,30 +715,13 @@ private String buildDashboardLayoutCustomCss() {
 }
 
 private String dashboardChildDeviceIdForLayout() {
-    def child = null
     try {
-        child = getChildDevice(childDeviceDni())
-    } catch (Throwable ignored) {
-        child = null
+        def child = getChildDevice(childDeviceDni())
+        String value = child?.id?.toString()?.trim()
+        return value ?: null
+    } catch (Exception ignored) {
+        return null
     }
-    if (!child) return null
-
-    def raw = null
-    try {
-        raw = child.id
-    } catch (Throwable ignored) {
-        raw = null
-    }
-    if (raw == null) {
-        try {
-            raw = child.getId()
-        } catch (Throwable ignored) {
-            raw = null
-        }
-    }
-
-    String value = raw?.toString()?.trim()
-    value ?: null
 }
 
 private List<String> makerApiDeviceIdList() {
