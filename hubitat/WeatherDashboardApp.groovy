@@ -545,7 +545,20 @@ def dashboardSetupPage() {
     dynamicPage(name: "dashboardSetupPage", title: "Dashboard Setup", install: false, uninstall: false) {
         String childDeviceId = dashboardChildDeviceIdForLayout()
         section("Dashboard import") {
-            paragraph "Create Hubitat Dashboard, add the Weather Dashboard Device, then use the dashboard's Advanced layout import option to paste the JSON below."
+            paragraph """<ul>
+<li>Add Dashboard -&gt; Hubitat Dashboard.</li>
+<li>Give the dashboard a name, for example <b>Weather Dashboard</b>.</li>
+<li>Click <b>Add / Remove</b>.</li>
+<li>Add the <b>Weather Dashboard Device</b>.</li>
+<li>Click <b>Save</b>.</li>
+<li>Click <b>Create Dashboard</b>.</li>
+<li>Open the new dashboard and click the <b>X</b> in the upper right corner to dismiss both dialog boxes.</li>
+<li>Click the gear icon in the upper right of the dashboard.</li>
+<li>Click <b>Advanced</b>.</li>
+<li>Replace all of the existing Layout JSON with the Import JSON below.</li>
+<li>Click <b>Save Layout JSON</b>.</li>
+<li>Click the <b>X</b> in the upper right of the dialog box.</li>
+</ul>"""
             if (childDeviceId) {
                 paragraph "This template is using Weather Dashboard device ID <b>${htmlEncode(childDeviceId)}</b>."
             } else {
