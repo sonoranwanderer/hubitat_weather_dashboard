@@ -667,7 +667,7 @@ private Map buildDashboardLayoutTemplate() {
     [
         name        : 'Weather Dashboard',
         cols        : '6',
-        rows        : '6',
+        rows        : '4',
         colWidth    : 170,
         rowHeight   : 170,
         gridGap     : 8,

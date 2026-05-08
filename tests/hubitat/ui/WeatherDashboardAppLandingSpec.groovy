@@ -133,7 +133,7 @@ assert layoutTemplate.customColors == [[
 ]]
 assert layoutTemplate.gridGap == 8
 assert layoutTemplate.cols == '6'
-assert layoutTemplate.rows == '6'
+assert layoutTemplate.rows == '4'
 assert layoutTemplate.hide3dot == 'true'
 assert layoutTemplate.tiles.size() == 6
 assert layoutTemplate.tiles[0].id == 0
