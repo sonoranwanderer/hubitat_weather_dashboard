@@ -46,7 +46,7 @@ The dashboard has two setup parts:
 
 Hubitat Package Manager can install the app, driver, and all three File Manager assets from this package manifest:
 
-* [packageManifest.json](https://raw.githubusercontent.com/sonoranwanderer/hubitat_weather_dashboard/main/packageManifest.json)
+* [https://raw.githubusercontent.com/sonoranwanderer/hubitat_weather_dashboard/main/packageManifest.json](https://raw.githubusercontent.com/sonoranwanderer/hubitat_weather_dashboard/main/packageManifest.json)
 
 After HPM finishes, continue with **Create And Configure The Weather Dashboard App** below.
 
