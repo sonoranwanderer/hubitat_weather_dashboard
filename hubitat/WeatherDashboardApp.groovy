@@ -728,8 +728,22 @@ private List<Map> buildDashboardLayoutTiles(String deviceId) {
 }
 
 private String buildDashboardLayoutCustomCss() {
-    String sourceTiles = (1..<DASHBOARD_TILE_ATTRIBUTES.size()).collect { index -> "#tile-${index}" }.join(',')
-    "${sourceTiles}{display:none!important;}#tile-0 .tile-primary{height:100%;}"
+    List<String> sourceTileSelectors = (1..<DASHBOARD_TILE_ATTRIBUTES.size()).collect { index -> "#tile-${index}" }
+    String sourceTiles = sourceTileSelectors.join(',')
+    String innerSelectors = [
+        '.tile-contents',
+        '.tile-primary',
+        '.tile-title',
+        '.tile-secondary',
+        '.material-icons',
+        '.tile-edit'
+    ].collectMany { selector ->
+        sourceTileSelectors.collect { tileSelector -> "${tileSelector} ${selector}" }
+    }.join(',')
+
+    "${sourceTiles}{background:transparent!important;box-shadow:none!important;border:0!important;pointer-events:none!important;opacity:0!important;}" +
+        "${innerSelectors}{display:none!important;visibility:hidden!important;color:rgba(0,0,0,0)!important;text-shadow:none!important;}" +
+        "#tile-0 .tile-primary{height:100%;}"
 }
 
 private String dashboardChildDeviceIdForLayout() {

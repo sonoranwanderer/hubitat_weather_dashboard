@@ -160,6 +160,11 @@ assert layoutTemplate.tiles*.templateExtra == [
 ]
 assert layoutTemplate.customCSS.contains('#tile-1')
 assert layoutTemplate.customCSS.contains('#tile-11')
+assert layoutTemplate.customCSS.contains('#tile-1 .tile-primary')
+assert layoutTemplate.customCSS.contains('background:transparent!important')
+assert layoutTemplate.customCSS.contains('opacity:0!important')
+assert layoutTemplate.customCSS.contains('display:none!important')
+assert layoutTemplate.customCSS.contains('#tile-0 .tile-primary{height:100%;}')
 
 // Scenario: uninstall removes the dashboard child device owned by the app.
 appScript.uninstalled()
