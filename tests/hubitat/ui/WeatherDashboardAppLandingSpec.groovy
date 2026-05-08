@@ -144,6 +144,12 @@ assert layoutTemplate.tiles[0].row == 1
 assert layoutTemplate.tiles[0].col == 1
 assert layoutTemplate.tiles[0].rowSpan == 4
 assert layoutTemplate.tiles[0].colSpan == 6
+layoutTemplate.tiles.drop(1).each { tile ->
+    assert tile.row == 1
+    assert tile.col == 2
+    assert tile.rowSpan == 1
+    assert tile.colSpan == 1
+}
 assert layoutTemplate.tiles*.templateExtra == [
     'dashboardScript',
     'segmentCore',
@@ -169,6 +175,12 @@ String ambientLayoutJson = invokePrivate(appScript, 'buildDashboardLayoutTemplat
 Map ambientLayoutTemplate = new groovy.json.JsonSlurper().parseText(ambientLayoutJson) as Map
 assert ambientLayoutTemplate.tiles.size() == 9
 assert ambientLayoutTemplate.tiles*.templateExtra[-3..-1] == ['segmentAmbient1', 'segmentAmbient2', 'segmentAmbient3']
+ambientLayoutTemplate.tiles.drop(1).each { tile ->
+    assert tile.row == 1
+    assert tile.col == 2
+    assert tile.rowSpan == 1
+    assert tile.colSpan == 1
+}
 assert ambientLayoutTemplate.customCSS.contains('#tile-8')
 assert !ambientLayoutTemplate.customCSS.contains('#tile-9')
 

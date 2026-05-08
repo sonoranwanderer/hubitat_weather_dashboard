@@ -732,8 +732,8 @@ private List<Map> buildDashboardLayoutTiles(String deviceId, List<String> tileAt
             tile.rowSpan = 4
             tile.colSpan = 6
         } else {
-            tile.row = 5 + ((index - 1).intdiv(6))
-            tile.col = ((index - 1) % 6) + 1
+            tile.row = 1
+            tile.col = 2
             tile.rowSpan = 1
             tile.colSpan = 1
         }
