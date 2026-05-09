@@ -299,10 +299,13 @@
     }
 
     const widthLimit = Math.max(1, hostWidth - paddingLeft - paddingRight);
-    const widthScale = widthLimit / DEFAULT_RENDER_BASE_WIDTH;
+    const configuredDimensions = configuredRenderDimensions();
+    const baseWidth = configuredDimensions ? configuredDimensions.width : DEFAULT_RENDER_BASE_WIDTH;
+    const baseHeight = configuredDimensions ? configuredDimensions.height : DEFAULT_RENDER_BASE_HEIGHT;
+    const widthScale = widthLimit / baseWidth;
     const scale = Math.max(0.1, Math.min(widthScale, HTML_APP_MAX_SCALE));
-    const width = Math.max(1, Math.floor(DEFAULT_RENDER_BASE_WIDTH * scale));
-    const height = Math.max(1, Math.floor(DEFAULT_RENDER_BASE_HEIGHT * scale));
+    const width = Math.max(1, Math.floor(baseWidth * scale));
+    const height = Math.max(1, Math.floor(baseHeight * scale));
     const widthPx = `${width}px`;
     const heightPx = `${height}px`;
 
@@ -1030,6 +1033,8 @@
     config.deviceIds = normalizeDeviceList(pickValue(source, ['deviceIds']));
     config.pollIntervalMs = normalizeDuration(pickValue(source, ['pollIntervalMs', 'pollInterval', 'interval', 'refresh', 'refreshInterval']));
     config.maxBackoffMs = normalizeDuration(pickValue(source, ['maxBackoffMs', 'maxBackoff', 'backoff', 'backoffMs']));
+    config.renderWidth = coercePositiveDimension(pickValue(source, ['width']));
+    config.renderHeight = coercePositiveDimension(pickValue(source, ['height']));
 
     return config;
   }
@@ -1147,12 +1152,15 @@
 
     const makerPayload = convertMakerApiResponse(response, state.config);
     if (makerPayload) {
-      ensureDefaultLayoutMetadata(makerPayload);
+      applyConfiguredLayoutMetadata(makerPayload);
       return { payload: makerPayload, text: JSON.stringify(makerPayload) };
     }
 
-    ensureDefaultLayoutMetadata(response);
-    return { payload: response, text: originalText };
+    applyConfiguredLayoutMetadata(response);
+    return {
+      payload: response,
+      text: response && typeof response === 'object' ? JSON.stringify(response) : originalText
+    };
   }
 
   function convertMakerApiResponse(response, config) {
@@ -1243,14 +1251,18 @@
     return null;
   }
 
+  function isObjectRecord(value) {
+    return value && typeof value === 'object' && !Array.isArray(value);
+  }
+
   function ensureDefaultLayoutMetadata(payload) {
-    if (!payload || typeof payload !== 'object') {
+    if (!isObjectRecord(payload)) {
       return;
     }
-    const meta = payload.metadata && typeof payload.metadata === 'object'
+    const meta = isObjectRecord(payload.metadata)
       ? payload.metadata
       : (payload.metadata = {});
-    const layout = meta.layout && typeof meta.layout === 'object'
+    const layout = isObjectRecord(meta.layout)
       ? meta.layout
       : (meta.layout = {});
 
@@ -1260,6 +1272,32 @@
     if (coercePositiveDimension(layout.baseHeight) == null) {
       layout.baseHeight = DEFAULT_RENDER_BASE_HEIGHT;
     }
+  }
+
+  function configuredRenderDimensions() {
+    const width = state.config?.renderWidth;
+    const height = state.config?.renderHeight;
+    if (width == null || height == null) {
+      return null;
+    }
+    return { width, height };
+  }
+
+  function applyConfiguredLayoutMetadata(payload) {
+    const dimensions = configuredRenderDimensions();
+    if (!dimensions || !isObjectRecord(payload)) {
+      return;
+    }
+    ensureDefaultLayoutMetadata(payload);
+    const layout = payload.metadata.layout;
+    layout.baseWidth = dimensions.width;
+    layout.baseHeight = dimensions.height;
+    ['desktop', 'tablet', 'mobile'].forEach(breakpoint => {
+      if (isObjectRecord(layout[breakpoint])) {
+        layout[breakpoint].baseWidth = dimensions.width;
+        layout[breakpoint].baseHeight = dimensions.height;
+      }
+    });
   }
 
   function buildPayloadFromDevice(device) {

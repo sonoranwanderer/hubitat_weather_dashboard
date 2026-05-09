@@ -17,6 +17,7 @@ docs/
   screenshots/                 README screenshot assets
   build-and-test.md            Local build, dependency, and verification guide
   dashboard-layout.md          Layout configuration JSON guide
+  standalone-html-page.md      Direct standalone page usage guide
 hubitat/
   WeatherDashboardApp.groovy   Hubitat app that builds the JSON payload
   WeatherDashboardDevice.groovy Virtual device driver that exposes payload segments
@@ -154,6 +155,7 @@ Maker API is only needed for the embedded preview on the Weather Dashboard app l
 7. Click **Save & Refresh**.
 
 For the detailed Maker API walkthrough and troubleshooting, see [docs/setup-maker-api.md](docs/setup-maker-api.md).
+For opening `weather-dashboard-app.html` directly as a standalone page, including supported URL parameters and custom width/height sizing, see [docs/standalone-html-page.md](docs/standalone-html-page.md).
 
 ### Validation Checklist
 

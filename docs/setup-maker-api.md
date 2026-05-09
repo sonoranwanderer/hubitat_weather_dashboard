@@ -45,6 +45,8 @@ The same canonical parameters support opening the File Manager page directly:
 /local/weather-dashboard-app.html?hubBaseUrl=http://192.168.1.10&appId=123&makerToken=YOUR_TOKEN&deviceIds=45,46
 ```
 
+For full standalone page usage, including supported display size parameters such as `width` and `height`, see [Standalone HTML Page](standalone-html-page.md).
+
 Older alias names such as `hub`, `token`, `makerApiToken`, and `devices` are intentionally not generated or supported.
 
 ## 4. Confirm the integration
