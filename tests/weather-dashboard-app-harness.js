@@ -88,7 +88,9 @@ function setupAppEnvironment(options = {}) {
   };
   window.createLegacyWeatherDashboardRenderer = () => ({
     safeRenderFromData() {
-      renderCalls.push(window.document.querySelector('#tile-1 .tile-primary')?.textContent || '');
+      const dataTile = window.document.getElementById('tile-1');
+      const primary = dataTile && Array.from(dataTile.children || []).find(child => child.classList?.contains('tile-primary'));
+      renderCalls.push(primary?.textContent || '');
     }
   });
 
@@ -196,6 +198,38 @@ async function flushMicrotasks() {
   }
   assert(env.timers.length >= initialTimerCount, 'resize processing should keep timer queue stable or grow');
   assert(env.postedMessages.some(message => message && message.type === 'weather-dashboard-app:resize'), 'resize should post preview height');
+
+  delete global.window;
+  delete global.document;
+  delete global.location;
+
+  const dimensionEnv = setupAppEnvironment({
+    search: '?hubBaseUrl=http%3A%2F%2Fhubitat.local&appId=123&makerToken=token&deviceIds=10&width=1000&height=700',
+    responses: [
+      { ok: true, text: JSON.stringify(makePayload(77.7)) }
+    ]
+  });
+  dimensionEnv.window.__WEATHER_DASHBOARD_APP__.refreshNow();
+  await flushMicrotasks();
+  assert(dimensionEnv.fetchCalls.length > 0, 'dimension scenario should fetch Maker API payload');
+  assert.strictEqual(dimensionEnv.window.__WEATHER_DASHBOARD_APP__.state.status.level, 'success', JSON.stringify(dimensionEnv.window.__WEATHER_DASHBOARD_APP__.state.status));
+  assert.strictEqual(dimensionEnv.window.__WEATHER_DASHBOARD_APP__.state.config.renderWidth, 1000, 'width query parameter should be normalized');
+  assert.strictEqual(dimensionEnv.window.__WEATHER_DASHBOARD_APP__.state.config.renderHeight, 700, 'height query parameter should be normalized');
+
+  delete global.window;
+  delete global.document;
+  delete global.location;
+
+  const invalidDimensionEnv = setupAppEnvironment({
+    search: '?hubBaseUrl=http%3A%2F%2Fhubitat.local&appId=123&makerToken=token&deviceIds=10&width=0&height=wide',
+    responses: [
+      { ok: true, text: JSON.stringify(makePayload(78.4)) }
+    ]
+  });
+  invalidDimensionEnv.window.__WEATHER_DASHBOARD_APP__.refreshNow();
+  await flushMicrotasks();
+  assert.strictEqual(invalidDimensionEnv.window.__WEATHER_DASHBOARD_APP__.state.config.renderWidth, null, 'invalid width should be ignored');
+  assert.strictEqual(invalidDimensionEnv.window.__WEATHER_DASHBOARD_APP__.state.config.renderHeight, null, 'invalid height should be ignored');
 
   delete global.window;
   delete global.document;
