@@ -49,16 +49,29 @@ Both values must be positive numbers. If either value is missing or invalid, the
 
 These URL dimensions affect the standalone HTML page only. Layout JSON configured in the Hubitat app still controls the Hubitat dashboard tile unless the standalone URL provides valid `width` and `height` values.
 
-## Optional page parameters
+## Supported page parameters
 
 | Parameter | Description |
 | --- | --- |
+| `hubBaseUrl` | Hub base URL, such as `http://192.168.1.10`. Required for Maker API fetches. |
+| `appId` | Maker API application ID. Required for Maker API fetches. |
+| `makerToken` | Maker API access token. Required for Maker API fetches. |
+| `deviceIds` | Comma-separated Weather Dashboard virtual device IDs authorized in Maker API. Recommended. |
+| `width` | Standalone dashboard design canvas width in pixels. Must be a positive number and is used only when `height` is also valid. |
+| `height` | Standalone dashboard design canvas height in pixels. Must be a positive number and is used only when `width` is also valid. |
 | `statusBar` | Use `yes` or `no` to force the connection/status panel visible or hidden after successful renders. |
 | `pollIntervalMs` | Refresh interval in milliseconds. The page enforces the supported minimum. |
 | `maxBackoffMs` | Maximum retry backoff after failed Maker API requests. |
 | `bundleBase` | Base path for `weather-dashboard.js` and `weather-dashboard-app.js` when they are hosted outside `/local/`. |
 | `rendererScript` | Full URL/path override for `weather-dashboard.js`. |
 | `appScript` | Full URL/path override for `weather-dashboard-app.js`. |
+
+The canonical refresh parameters are `pollIntervalMs` and `maxBackoffMs`. The page also accepts these aliases:
+
+- `pollInterval`, `interval`, `refresh`, and `refreshInterval` for `pollIntervalMs`
+- `maxBackoff`, `backoff`, and `backoffMs` for `maxBackoffMs`
+
+The standalone JavaScript also supports the same configuration values through an inline JSON script with `id="weather-dashboard-config"` or `data-weather-dashboard-config`. Query string values override inline JSON values.
 
 ## Troubleshooting
 
