@@ -1251,14 +1251,18 @@
     return null;
   }
 
+  function isObjectRecord(value) {
+    return value && typeof value === 'object' && !Array.isArray(value);
+  }
+
   function ensureDefaultLayoutMetadata(payload) {
-    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    if (!isObjectRecord(payload)) {
       return;
     }
-    const meta = payload.metadata && typeof payload.metadata === 'object'
+    const meta = isObjectRecord(payload.metadata)
       ? payload.metadata
       : (payload.metadata = {});
-    const layout = meta.layout && typeof meta.layout === 'object'
+    const layout = isObjectRecord(meta.layout)
       ? meta.layout
       : (meta.layout = {});
 
@@ -1281,12 +1285,19 @@
 
   function applyConfiguredLayoutMetadata(payload) {
     const dimensions = configuredRenderDimensions();
-    if (!dimensions || !payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    if (!dimensions || !isObjectRecord(payload)) {
       return;
     }
     ensureDefaultLayoutMetadata(payload);
-    payload.metadata.layout.baseWidth = dimensions.width;
-    payload.metadata.layout.baseHeight = dimensions.height;
+    const layout = payload.metadata.layout;
+    layout.baseWidth = dimensions.width;
+    layout.baseHeight = dimensions.height;
+    ['desktop', 'tablet', 'mobile'].forEach(breakpoint => {
+      if (isObjectRecord(layout[breakpoint])) {
+        layout[breakpoint].baseWidth = dimensions.width;
+        layout[breakpoint].baseHeight = dimensions.height;
+      }
+    });
   }
 
   function buildPayloadFromDevice(device) {

@@ -88,9 +88,21 @@ function setupAppEnvironment(options = {}) {
   };
   window.createLegacyWeatherDashboardRenderer = () => ({
     safeRenderFromData() {
-      const dataTile = window.document.getElementById('tile-1');
-      const primary = dataTile && Array.from(dataTile.children || []).find(child => child.classList?.contains('tile-primary'));
-      renderCalls.push(primary?.textContent || '');
+      const findById = (node, id) => {
+        if (!node) return null;
+        if (node.id === id) return node;
+        for (const child of Array.from(node.children || [])) {
+          const found = findById(child, id);
+          if (found) return found;
+        }
+        return null;
+      };
+      const dataTile = window.document.getElementById('tile-1') || findById(window.document.body, 'tile-1');
+      const primary = dataTile && Array.from(dataTile.children || []).find(child => (
+        child.classList?.contains('tile-primary')
+        || String(child.className || '').split(/\s+/).includes('tile-primary')
+      ));
+      renderCalls.push(primary?.textContent || dataTile?.textContent || '');
     }
   });
 
@@ -115,6 +127,12 @@ async function flushMicrotasks() {
   await Promise.resolve();
   await Promise.resolve();
   await new Promise(resolve => setImmediate(resolve));
+}
+
+function lastRenderedPayload(renderCalls) {
+  const rendered = renderCalls.filter(text => text && String(text).trim());
+  assert(rendered.length > 0, 'expected a rendered payload');
+  return JSON.parse(rendered[rendered.length - 1]);
 }
 
 (async () => {
@@ -206,7 +224,21 @@ async function flushMicrotasks() {
   const dimensionEnv = setupAppEnvironment({
     search: '?hubBaseUrl=http%3A%2F%2Fhubitat.local&appId=123&makerToken=token&deviceIds=10&width=1000&height=700',
     responses: [
-      { ok: true, text: JSON.stringify(makePayload(77.7)) }
+      {
+        ok: true,
+        text: JSON.stringify({
+          ...makePayload(77.7),
+          metadata: {
+            layout: {
+              baseWidth: 1200,
+              baseHeight: 900,
+              desktop: { baseWidth: 1300, baseHeight: 950 },
+              tablet: { baseWidth: 900, baseHeight: 800 },
+              mobile: { baseWidth: 480, baseHeight: 900 }
+            }
+          }
+        })
+      }
     ]
   });
   dimensionEnv.window.__WEATHER_DASHBOARD_APP__.refreshNow();
@@ -215,6 +247,15 @@ async function flushMicrotasks() {
   assert.strictEqual(dimensionEnv.window.__WEATHER_DASHBOARD_APP__.state.status.level, 'success', JSON.stringify(dimensionEnv.window.__WEATHER_DASHBOARD_APP__.state.status));
   assert.strictEqual(dimensionEnv.window.__WEATHER_DASHBOARD_APP__.state.config.renderWidth, 1000, 'width query parameter should be normalized');
   assert.strictEqual(dimensionEnv.window.__WEATHER_DASHBOARD_APP__.state.config.renderHeight, 700, 'height query parameter should be normalized');
+  const dimensionPayload = lastRenderedPayload(dimensionEnv.renderCalls);
+  assert.strictEqual(dimensionPayload.metadata.layout.baseWidth, 1000, 'width query parameter should override baseWidth');
+  assert.strictEqual(dimensionPayload.metadata.layout.baseHeight, 700, 'height query parameter should override baseHeight');
+  assert.strictEqual(dimensionPayload.metadata.layout.desktop.baseWidth, 1000, 'width query parameter should override desktop baseWidth');
+  assert.strictEqual(dimensionPayload.metadata.layout.desktop.baseHeight, 700, 'height query parameter should override desktop baseHeight');
+  assert.strictEqual(dimensionPayload.metadata.layout.tablet.baseWidth, 1000, 'width query parameter should override tablet baseWidth');
+  assert.strictEqual(dimensionPayload.metadata.layout.tablet.baseHeight, 700, 'height query parameter should override tablet baseHeight');
+  assert.strictEqual(dimensionPayload.metadata.layout.mobile.baseWidth, 1000, 'width query parameter should override mobile baseWidth');
+  assert.strictEqual(dimensionPayload.metadata.layout.mobile.baseHeight, 700, 'height query parameter should override mobile baseHeight');
 
   delete global.window;
   delete global.document;
