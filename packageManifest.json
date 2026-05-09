@@ -1,7 +1,7 @@
 {
   "packageName": "Hubitat Weather Dashboard",
   "author": "Gatewood Green",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "id": "61deb191-7a0b-4a29-93f2-733f56bd4039",
   "minimumHEVersion": "2.3.0",
   "dateReleased": "2026-05-07",
