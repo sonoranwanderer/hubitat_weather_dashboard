@@ -1252,7 +1252,7 @@
   }
 
   function ensureDefaultLayoutMetadata(payload) {
-    if (!payload || typeof payload !== 'object') {
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
       return;
     }
     const meta = payload.metadata && typeof payload.metadata === 'object'
@@ -1271,8 +1271,8 @@
   }
 
   function configuredRenderDimensions() {
-    const width = coercePositiveDimension(state.config?.renderWidth);
-    const height = coercePositiveDimension(state.config?.renderHeight);
+    const width = state.config?.renderWidth;
+    const height = state.config?.renderHeight;
     if (width == null || height == null) {
       return null;
     }
@@ -1280,11 +1280,11 @@
   }
 
   function applyConfiguredLayoutMetadata(payload) {
-    ensureDefaultLayoutMetadata(payload);
     const dimensions = configuredRenderDimensions();
-    if (!dimensions || !payload || typeof payload !== 'object') {
+    if (!dimensions || !payload || typeof payload !== 'object' || Array.isArray(payload)) {
       return;
     }
+    ensureDefaultLayoutMetadata(payload);
     payload.metadata.layout.baseWidth = dimensions.width;
     payload.metadata.layout.baseHeight = dimensions.height;
   }
