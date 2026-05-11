@@ -543,7 +543,7 @@ def dashboardSetupPage() {
             paragraph "Set `baseWidth` and `baseHeight` (in pixels) to control the renderer canvas size. Set `trackUnit` to `percent` when numeric rows and columns should adapt to the measured tile size."
             paragraph "Rows accept objects like `{ \"height\": 360, \"columns\": [\"temp-wind\", \"ambient\"] }`. Repeat a card name in adjacent cells to span space, and use `\".\"` as an empty placeholder."
             paragraph "Example:<br><code>{\n  \"trackUnit\": \"percent\",\n  \"mobile\": {\n    \"columns\": [100],\n    \"gap\": \"6px\",\n    \"rows\": [\n      { \"height\": 32, \"columns\": [\"temp-wind\"] },\n      { \"height\": 20, \"columns\": [\"ambient\"] },\n      { \"height\": 18, \"columns\": [\"rain\"] }\n    ]\n  }\n}</code>"
-            input name: "layoutOverrideJson", type: "textarea", title: "Layout configuration JSON", required: false
+            input name: "layoutOverrideJson", type: "textarea", title: "Layout configuration JSON", required: false, submitOnChange: true
         }
 
         section("Actions") {
@@ -745,17 +745,10 @@ private List<Map> buildDashboardLayoutTiles(String deviceId, List<String> tileAt
             label        : attr
         ]
 
-        if (index == 0) {
-            tile.row = 1
-            tile.col = 1
-            tile.rowSpan = 1
-            tile.colSpan = 1
-        } else {
-            tile.row = 1
-            tile.col = 1
-            tile.rowSpan = 1
-            tile.colSpan = 1
-        }
+        tile.row = 1
+        tile.col = 1
+        tile.rowSpan = 1
+        tile.colSpan = 1
 
         tiles << tile
     }

@@ -225,7 +225,7 @@ assert dashboardSetupRender.sections*.title.contains('Weather Dashboard Layout S
 assert dashboardSetupRender.sections*.title.contains('Hubitat Dashboard Import')
 assert !dashboardSetupRender.sections*.title.contains('JavaScript layout configuration')
 assert !dashboardSetupRender.sections*.title.contains('Dashboard import')
-assert dashboardSetupRender.inputs.any { it.name == 'layoutOverrideJson' && it.type == 'textarea' }
+assert dashboardSetupRender.inputs.any { it.name == 'layoutOverrideJson' && it.type == 'textarea' && it.submitOnChange == true }
 assert dashboardSetupRender.inputs.any { it.name == 'saveAndPreview' && it.type == 'button' }
 assert dashboardSetupRender.inputs.any { it.name == 'refreshNow' && it.type == 'button' }
 assert dashboardSetupRender.paragraphs.any { it.contains('Controls the JavaScript renderer inside tile-0') }
