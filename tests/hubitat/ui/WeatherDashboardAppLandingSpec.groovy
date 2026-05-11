@@ -12,6 +12,45 @@ binding.setVariable('definition', { Map config -> config })
 binding.setVariable('preferences', { Closure<?> handler -> })
 binding.setVariable('mappings', { Closure<?> handler -> })
 binding.setVariable('state', [:])
+List<Map> renderedPages = []
+Map activePage = null
+binding.setVariable('dynamicPage', { Map config, Closure<?> handler ->
+    Map page = [name: config?.name, sections: [], inputs: [], paragraphs: [], hrefs: []]
+    renderedPages << page
+    Map previousPage = activePage
+    activePage = page
+    handler?.call()
+    activePage = previousPage
+    page
+})
+binding.setVariable('section', { Object... args ->
+    Closure<?> handler = args.find { it instanceof Closure } as Closure
+    String title = args.find { it instanceof CharSequence }?.toString()
+    if (activePage != null) {
+        activePage.sections << [title: title]
+    }
+    handler?.call()
+})
+binding.setVariable('paragraph', { Object value ->
+    if (activePage != null) {
+        activePage.paragraphs << value?.toString()
+    }
+})
+binding.setVariable('input', { Map config ->
+    if (activePage != null) {
+        activePage.inputs << config
+    }
+})
+binding.setVariable('href', { Object... args ->
+    if (activePage != null) {
+        Map config = args.find { it instanceof Map } as Map ?: [:]
+        def target = args.find { it instanceof CharSequence }
+        if (target != null && !config.containsKey('name')) {
+            config = [name: target.toString()] + config
+        }
+        activePage.hrefs << config
+    }
+})
 binding.setVariable('createAccessToken', { -> 'generated-dashboard-token' })
 binding.setVariable('now', { -> 1778103354260L })
 binding.setVariable('unschedule', { Object... args -> })
@@ -132,8 +171,10 @@ assert layoutTemplate.customColors == [[
     customIcon: ''
 ]]
 assert layoutTemplate.gridGap == 8
-assert layoutTemplate.cols == '6'
-assert layoutTemplate.rows == '4'
+assert layoutTemplate.cols == '1'
+assert layoutTemplate.rows == '1'
+assert layoutTemplate.colWidth == ''
+assert layoutTemplate.rowHeight == ''
 assert layoutTemplate.hide3dot == 'true'
 assert layoutTemplate.tiles.size() == 6
 assert layoutTemplate.tiles[0].id == 0
@@ -142,11 +183,11 @@ assert layoutTemplate.tiles[0].template == 'attribute'
 assert layoutTemplate.tiles[0].templateExtra == 'dashboardScript'
 assert layoutTemplate.tiles[0].row == 1
 assert layoutTemplate.tiles[0].col == 1
-assert layoutTemplate.tiles[0].rowSpan == 4
-assert layoutTemplate.tiles[0].colSpan == 6
+assert layoutTemplate.tiles[0].rowSpan == 1
+assert layoutTemplate.tiles[0].colSpan == 1
 layoutTemplate.tiles.drop(1).each { tile ->
     assert tile.row == 1
-    assert tile.col == 2
+    assert tile.col == 1
     assert tile.rowSpan == 1
     assert tile.colSpan == 1
 }
@@ -167,6 +208,38 @@ assert layoutTemplate.customCSS.contains('opacity:0!important')
 assert layoutTemplate.customCSS.contains('display:none!important')
 assert layoutTemplate.customCSS.contains('#tile-0 .tile-primary{height:100%;}')
 
+// Scenario: renderer layout JSON lives on Dashboard Setup, not Configure data sources.
+renderedPages.clear()
+appScript.binding.setVariable('settings', [:])
+appScript.configurationPage()
+Map configurationRender = renderedPages.find { it.name == 'configurationPage' }
+assert configurationRender
+assert !configurationRender.inputs.any { it.name == 'layoutOverrideJson' }
+assert !configurationRender.sections.any { it.title == 'Layout overrides (optional)' }
+
+renderedPages.clear()
+appScript.dashboardSetupPage()
+Map dashboardSetupRender = renderedPages.find { it.name == 'dashboardSetupPage' }
+assert dashboardSetupRender
+assert dashboardSetupRender.sections*.title.contains('Weather Dashboard Layout Setup')
+assert dashboardSetupRender.sections*.title.contains('Hubitat Dashboard Import')
+assert !dashboardSetupRender.sections*.title.contains('JavaScript layout configuration')
+assert !dashboardSetupRender.sections*.title.contains('Dashboard import')
+Map layoutJsonInput = dashboardSetupRender.inputs.find { it.name == 'layoutOverrideJson' }
+assert layoutJsonInput
+assert layoutJsonInput.type == 'textarea'
+assert layoutJsonInput.submitOnChange == true
+assert layoutJsonInput.defaultValue.contains('"desktop"')
+assert layoutJsonInput.defaultValue.contains('"mobile"')
+assert layoutJsonInput.defaultValue.contains('"lightning"')
+assert dashboardSetupRender.inputs.any { it.name == 'saveAndPreview' && it.type == 'button' }
+assert dashboardSetupRender.inputs.any { it.name == 'refreshNow' && it.type == 'button' }
+assert dashboardSetupRender.paragraphs.any { it.contains('Controls the JavaScript renderer inside tile-0') }
+assert dashboardSetupRender.paragraphs.any { it.contains('does not change Hubitat') }
+assert dashboardSetupRender.paragraphs.any { it.contains('default JSON includes the desktop layout and an additive mobile breakpoint') }
+assert dashboardSetupRender.paragraphs.any { it.contains('Controls the Hubitat dashboard grid and tile placement') }
+assert dashboardSetupRender.paragraphs.any { it.contains('does not control card placement inside the weather dashboard') }
+
 // Scenario: ambient source tiles scale to the configured sensor count instead of always creating six tiles.
 appScript.binding.setVariable('settings', [
     ambientSensors: (1..9).collect { index -> [id: "${index}", displayName: "Ambient ${index}"] as Expando }
@@ -177,7 +250,7 @@ assert ambientLayoutTemplate.tiles.size() == 9
 assert ambientLayoutTemplate.tiles*.templateExtra[-3..-1] == ['segmentAmbient1', 'segmentAmbient2', 'segmentAmbient3']
 ambientLayoutTemplate.tiles.drop(1).each { tile ->
     assert tile.row == 1
-    assert tile.col == 2
+    assert tile.col == 1
     assert tile.rowSpan == 1
     assert tile.colSpan == 1
 }
@@ -428,6 +501,13 @@ assert baselineForLimit.history*.day == ['2026-05-05', '2026-05-06']
 assert historyState.metrics.histories.wind.totalPruned == 1L
 assert historyState.metrics.histories.pressure.totalPruned == 1L
 assert historyState.metrics.histories.temperature.totalPruned == 1L
+
+// Scenario: the textarea has a default starter layout, but blank runtime settings mean no override.
+appScript.binding.setVariable('settings', [:])
+assert invokePrivate(appScript, 'currentLayoutOverrideText') == null
+appScript.binding.setVariable('settings', [layoutOverrideJson: '   '])
+assert invokePrivate(appScript, 'currentLayoutOverrideText') == null
+appScript.binding.setVariable('settings', [:])
 
 // Scenario: payload metadata and forecast helpers handle explicit layout and pressure inputs.
 Map layoutOverride = invokePrivate(appScript, 'parseLayoutOverrideSetting', [String] as Class<?>[], '{"baseWidth":1000,"desktop":{"gap":"4px"}}') as Map

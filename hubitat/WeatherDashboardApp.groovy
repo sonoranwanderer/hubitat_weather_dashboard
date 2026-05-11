@@ -49,6 +49,32 @@ definition(
 ]
 @Field final int DASHBOARD_AMBIENT_SENSORS_PER_TILE = 4
 @Field final int DASHBOARD_MAX_AMBIENT_TILES = 6
+@Field final String DEFAULT_LAYOUT_OVERRIDE_JSON = '''{
+  "trackUnit": "percent",
+  "desktop": {
+    "columns": [50, 36, 14],
+    "gap": "6px",
+    "rows": [
+      { "height": 32, "columns": ["temp-wind", "ambient", "lightning"] },
+      { "height": 24, "columns": ["temp-wind", "rain", "rain"] },
+      { "height": 2, "columns": ["solar", "rain", "rain"] },
+      { "height": 27, "columns": ["solar", "pressure", "pressure"] },
+      { "height": 16, "columns": ["air", "air", "air"] }
+    ]
+  },
+  "mobile": {
+    "columns": [76, 14],
+    "gap": "6px",
+    "rows": [
+      { "height": 32, "columns": ["temp-wind", "temp-wind"] },
+      { "height": 26, "columns": ["ambient", "lightning"] },
+      { "height": 26, "columns": ["rain", "rain"] },
+      { "height": 26, "columns": ["pressure", "pressure"] },
+      { "height": 26, "columns": ["solar", "solar"] },
+      { "height": 15, "columns": ["air", "air"] }
+    ]
+  }
+}'''
 // Future features that add operational settings or durable state must update
 // these backup allowlists, import validation, tests, and docs before release.
 @Field final List<String> BACKUP_SECRET_SETTING_NAMES = [
@@ -516,14 +542,6 @@ def configurationPage() {
             input name: "pressureBaselineDays", type: "number", title: "Pressure baseline window (days)", defaultValue: 30, range: "7..60"
         }
 
-        section("Layout overrides (optional)") {
-            paragraph "Provide JSON to fine-tune the dashboard canvas size and grid rows/columns. Leave blank to use the built-in defaults."
-            paragraph "Set `baseWidth` and `baseHeight` (in pixels) to control the canvas size. Rows accept objects like `{ \"height\": 360, \"columns\": [\"temp-wind\", \"ambient\"] }`."
-            paragraph "Repeat a card name in consecutive rows to make it span multiple heights, and use `\".\"` as a placeholder when you want the other column to stay empty so the next card can start higher."
-            paragraph "Example:<br><code>{\n  \"baseWidth\": 1200,\n  \"baseHeight\": 900,\n  \"desktop\": {\n    \"rows\": [\n      { \"height\": 220, \"columns\": [\"temp-wind\", \"ambient\"] },\n      { \"height\": 200, \"columns\": [\"temp-wind\", \".\"] },\n      { \"height\": 180, \"columns\": [\"air\", \"rain\"] }\n    ]\n  }\n}</code>"
-            input name: "layoutOverrideJson", type: "textarea", title: "Layout configuration JSON", required: false
-        }
-
         section("Dashboard device") {
             input name: "dashboardDeviceLabel", type: "text", title: "Dashboard device label", defaultValue: "Weather Dashboard"
         }
@@ -544,7 +562,24 @@ def configurationPage() {
 def dashboardSetupPage() {
     dynamicPage(name: "dashboardSetupPage", title: "Dashboard Setup", install: false, uninstall: false) {
         String childDeviceId = dashboardChildDeviceIdForLayout()
-        section("Dashboard import") {
+        section("Weather Dashboard Layout Setup") {
+            paragraph "<b>Controls the JavaScript renderer inside tile-0.</b> This JSON changes the weather cards, canvas, breakpoints, rows, and columns after Hubitat has loaded the dashboard tile."
+            paragraph "It does not change Hubitat's dashboard grid, tile size, tile order, or hidden source tile placement. Use the Hubitat Dashboard Import section below for that."
+            paragraph "Use it to fine-tune the dashboard canvas size, percent or pixel tracks, breakpoints, and card placement. The default JSON includes the desktop layout and an additive mobile breakpoint."
+            paragraph "Set `baseWidth` and `baseHeight` (in pixels) to control the renderer canvas size. Set `trackUnit` to `percent` when numeric rows and columns should adapt to the measured tile size."
+            paragraph "Rows accept objects like `{ \"height\": 360, \"columns\": [\"temp-wind\", \"ambient\"] }`. Repeat a card name in adjacent cells to span space, and use `\".\"` as an empty placeholder."
+            paragraph "Default:<br><code>${htmlEncode(DEFAULT_LAYOUT_OVERRIDE_JSON)}</code>"
+            input name: "layoutOverrideJson", type: "textarea", title: "Layout configuration JSON", required: false, submitOnChange: true, defaultValue: DEFAULT_LAYOUT_OVERRIDE_JSON
+        }
+
+        section("Actions") {
+            input name: "saveAndPreview", type: "button", title: "Save & Refresh"
+            input name: "refreshNow", type: "button", title: "Refresh"
+        }
+
+        section("Hubitat Dashboard Import") {
+            paragraph "<b>Controls the Hubitat dashboard grid and tile placement.</b> This generated JSON creates the visible dashboardScript tile plus hidden source tiles that feed data to the renderer."
+            paragraph "It does not control card placement inside the weather dashboard. Use the Weather Dashboard Layout Setup section above for card layout."
             paragraph """<ul>
 <li>Add Dashboard -&gt; Hubitat Dashboard.</li>
 <li>Give the dashboard a name, for example <b>Weather Dashboard</b>.</li>
@@ -564,11 +599,8 @@ def dashboardSetupPage() {
             } else {
                 paragraph "<b>Weather Dashboard device ID not available yet.</b> Click Save & Refresh on Configure data sources, then return to this page. If you still see this message, replace <code>REPLACE_WITH_WEATHER_DASHBOARD_DEVICE_ID</code> in the JSON with the virtual device ID from Hubitat Devices."
             }
-        }
-
-        section("Import JSON") {
             String json = buildDashboardLayoutTemplateJson()
-            paragraph "<textarea readonly style='width:100%; min-height:520px; font-family:monospace; white-space:pre; box-sizing:border-box;'>${htmlEncode(json)}</textarea>"
+            paragraph "<textarea readonly title='Hubitat Dashboard Import JSON' style='width:100%; min-height:520px; font-family:monospace; white-space:pre; box-sizing:border-box;'>${htmlEncode(json)}</textarea>"
         }
 
         section("After importing") {
@@ -679,10 +711,10 @@ private Map buildDashboardLayoutTemplate() {
     List<String> tileAttributes = dashboardLayoutTileAttributes()
     [
         name        : 'Weather Dashboard',
-        cols        : '6',
-        rows        : '4',
-        colWidth    : 170,
-        rowHeight   : 170,
+        cols        : '1',
+        rows        : '1',
+        colWidth    : '',
+        rowHeight   : '',
         gridGap     : 8,
         clockMode   : true,
         bgColor     : 'black',
@@ -739,17 +771,10 @@ private List<Map> buildDashboardLayoutTiles(String deviceId, List<String> tileAt
             label        : attr
         ]
 
-        if (index == 0) {
-            tile.row = 1
-            tile.col = 1
-            tile.rowSpan = 4
-            tile.colSpan = 6
-        } else {
-            tile.row = 1
-            tile.col = 2
-            tile.rowSpan = 1
-            tile.colSpan = 1
-        }
+        tile.row = 1
+        tile.col = 1
+        tile.rowSpan = 1
+        tile.colSpan = 1
 
         tiles << tile
     }

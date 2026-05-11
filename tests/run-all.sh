@@ -22,6 +22,7 @@ node "$(dirname "$0")/air-quality-rotation-harness.js"
 node "$(dirname "$0")/timer-stub-harness.js"
 node "$(dirname "$0")/jest-async-error-harness.js"
 node "$(dirname "$0")/hubitat-tiles-adapter-harness.js"
+node "$(dirname "$0")/hubitat-bundle-harness.js"
 node "$(dirname "$0")/weather-dashboard-app-harness.js"
 node "$(dirname "$0")/maker-endpoint-simulation.js"
 node "$(dirname "$0")/e2e/playwright-refresh.spec.js"
@@ -36,3 +37,6 @@ fi
 
 echo "Running Jest unit tests..."
 npm run test:unit
+
+echo "Verifying Hubitat dashboard bundle..."
+npm run verify:hubitat

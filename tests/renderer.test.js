@@ -203,6 +203,58 @@ describe('Renderer payload and layout branches', () => {
     expect(hooks.layoutState.baseHeight).toBe(900);
   });
 
+  it('renders full-capability cards with the mobile percent layout including lightning', () => {
+    const { hooks, window: dashboardWindow, grid, wrapper } = bootstrapRenderer({
+      displayRect: { width: 390, height: 844 }
+    });
+    dashboardWindow.matchMedia = query => ({
+      matches: query === '(max-width: 720px)' || query === '(max-width: 1100px)',
+      media: query,
+      addListener() {},
+      removeListener() {},
+      addEventListener() {},
+      removeEventListener() {},
+      dispatchEvent() {
+        return false;
+      }
+    });
+
+    const fixturePath = path.resolve(__dirname, 'fixtures/full-capabilities.json');
+    const payload = JSON.parse(fs.readFileSync(fixturePath, 'utf8'));
+    payload.metadata = {
+      ...(payload.metadata || {}),
+      layout: {
+        trackUnit: 'percent',
+        mobile: {
+          columns: [76, 14],
+          gap: '6px',
+          rows: [
+            { height: 32, columns: ['temp-wind', 'temp-wind'] },
+            { height: 26, columns: ['ambient', 'lightning'] },
+            { height: 26, columns: ['rain', 'rain'] },
+            { height: 26, columns: ['pressure', 'pressure'] },
+            { height: 26, columns: ['solar', 'solar'] },
+            { height: 15, columns: ['air', 'air'] }
+          ]
+        }
+      }
+    };
+
+    hooks.render(payload, grid);
+    hooks.applyLayoutOverrides(payload.metadata);
+
+    expect(grid.querySelector('.wdash-card--temp-wind')).not.toBeNull();
+    expect(grid.querySelector('.wdash-card--ambient')).not.toBeNull();
+    expect(grid.querySelector('.wdash-card--lightning')).not.toBeNull();
+    expect(grid.querySelector('.wdash-card--rain')).not.toBeNull();
+    expect(grid.querySelector('.wdash-card--pressure')).not.toBeNull();
+    expect(grid.querySelector('.wdash-card--solar')).not.toBeNull();
+    expect(grid.querySelector('.wdash-card--air')).not.toBeNull();
+    expect(wrapper.dataset.layoutHasLightning).toBe('true');
+    expect(wrapper.style.getPropertyValue('--wdash-grid-areas-mobile')).toContain('"ambient lightning"');
+    expect(hooks.layoutState.lastDiagnostics.base.activeBreakpoint).toBe('mobile');
+  });
+
   it('applies metadata unit defaults and preserves user overrides', () => {
     const { hooks } = bootstrapRenderer();
     hooks.applyTemperatureUnitsFromMetadata({ temperatureDisplayUnit: 'C', temperatureInputUnit: 'F' });

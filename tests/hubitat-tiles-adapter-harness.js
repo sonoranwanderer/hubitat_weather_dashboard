@@ -55,7 +55,10 @@ const { window, document, hooks, dom } = bootstrapRenderer({
   dataTiles: [
     { id: 'tile-1', textContent: `Weather Dashboard ${JSON.stringify(segmentOne)} ` },
     { id: 'tile-2', textContent: `Segment payload ${JSON.stringify(segmentTwo)}` },
-    { id: 'tile-3', textContent: noiseTileText }
+    { id: 'tile-3', textContent: noiseTileText },
+    { id: 'tile-4', textContent: noiseTileText },
+    { id: 'tile-5', textContent: noiseTileText },
+    { id: 'tile-6', textContent: noiseTileText }
   ]
 });
 
@@ -114,7 +117,7 @@ try {
   assert(!incompleteMerged.pressure, 'Missing segment data should stay absent');
   assert.strictEqual(hooks.mergePayloads([{ segmentIndex: 0, segmentSize: 2 }]), null, 'Empty segment envelope should not create a payload');
 
-  document.getElementById('tile-3').querySelector('.tile-primary').textContent = '{"segmentIndex":0,"segmentSize":2}';
+  document.getElementById('tile-3').querySelector('.tile-primary').textContent = '{}';
   const payloadsWithEmptyEnvelope = adapter.readPayloads();
   assert.strictEqual(payloadsWithEmptyEnvelope.length, 3, 'Recognized segment envelope should be returned for merge handling');
   assert.strictEqual(hooks.mergePayloads([payloadsWithEmptyEnvelope[2]]), null, 'Malformed/missing chunk envelope should merge to null');
@@ -122,15 +125,28 @@ try {
   adapter.toggleSourceTileMask(true);
   assert(document.getElementById('tile-1').classList.contains('wdash-source-tile'), 'Expected tile-1 to be masked');
   assert(document.getElementById('tile-2').classList.contains('wdash-source-tile'), 'Expected tile-2 to be masked');
-  assert(document.getElementById('tile-3').classList.contains('wdash-source-tile'), 'Recognized empty envelope should be tracked as a source');
+  assert(document.getElementById('tile-3').classList.contains('wdash-source-tile'), 'Empty JSON source tile should be tracked as a source');
 
   document.getElementById('tile-2').querySelector('.tile-primary').textContent = noiseTileText;
   const payloadsAfterTileTwoWentStale = adapter.readPayloads();
-  assert.strictEqual(payloadsAfterTileTwoWentStale.length, 2, 'Tile-1 and the empty envelope should remain as valid payload sources');
+  assert.strictEqual(payloadsAfterTileTwoWentStale.length, 2, 'Tile-1 and the empty JSON source tile should remain as valid payload sources');
   adapter.toggleSourceTileMask(true);
   assert(document.getElementById('tile-1').classList.contains('wdash-source-tile'), 'Current source tile should stay masked');
   assert(!document.getElementById('tile-2').classList.contains('wdash-source-tile'), 'Stale source tile mask should be removed');
   assert(document.getElementById('tile-3').classList.contains('wdash-source-tile'), 'Remaining source tile should stay masked');
+
+  document.getElementById('tile-1').querySelector('.tile-primary').textContent = '{}';
+  document.getElementById('tile-2').querySelector('.tile-primary').textContent = '{}';
+  document.getElementById('tile-4').querySelector('.tile-primary').textContent = '{}';
+  document.getElementById('tile-5').querySelector('.tile-primary').textContent = '{}';
+  document.getElementById('tile-6').querySelector('.tile-primary').textContent = '{}';
+  const allEmptyPayloads = adapter.readPayloads();
+  assert.strictEqual(allEmptyPayloads.length, 6, 'All generated data tiles should remain source tiles when their payloads are empty JSON');
+  assert.strictEqual(hooks.mergePayloads(allEmptyPayloads), null, 'Empty JSON data tiles should not create dashboard data');
+  adapter.toggleSourceTileMask(true);
+  for (const id of ['tile-1', 'tile-2', 'tile-3', 'tile-4', 'tile-5', 'tile-6']) {
+    assert(document.getElementById(id).classList.contains('wdash-source-tile'), `${id} should be hidden even when empty`);
+  }
 
   adapter.toggleSourceTileMask(false);
   assert(!document.getElementById('tile-1').classList.contains('wdash-source-tile'), 'Tile-1 mask should be cleared');

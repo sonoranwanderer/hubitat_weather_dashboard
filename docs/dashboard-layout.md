@@ -1,6 +1,6 @@
 # Dashboard Layout Configuration
 
-The Weather Dashboard app includes a **Layout configuration JSON** setting. Use it to change the size and placement of dashboard cards without editing `dashboard/weather-dashboard.js`.
+The Weather Dashboard app includes a **Layout configuration JSON** setting under **Weather Dashboard Layout Setup** on **Dashboard Setup**. Use it to change the size and placement of dashboard cards without editing `dashboard/weather-dashboard.js`. This setting controls the JavaScript renderer inside `tile-0`; **Hubitat Dashboard Import** on the same page controls Hubitat's grid and tile placement.
 
 The renderer builds one CSS grid inside the visible Hubitat Dashboard tile. Each row in the JSON defines one grid row, and each item in that row's `columns` array names the card that should occupy that column.
 
@@ -68,53 +68,42 @@ This is the default layout as JSON you can paste into the app setting:
 
 ```json
 {
-  "baseWidth": 1200,
-  "baseHeight": 900,
-  "trackUnit": "px",
+  "trackUnit": "percent",
   "desktop": {
-    "columns": "repeat(2, minmax(0, 1fr))",
-    "gap": "14px",
+    "columns": [50, 36, 14],
+    "gap": "6px",
     "rows": [
-      { "columns": ["temp-wind", "ambient"], "height": 450 },
-      { "columns": ["air", "rain"], "height": 140 },
-      { "columns": ["solar", "rain"], "height": 180 },
-      { "columns": ["solar", "pressure"], "height": 110 }
-    ]
-  },
-  "tablet": {
-    "columns": "repeat(2, minmax(0, 1fr))",
-    "gap": "14px",
-    "rows": [
-      { "columns": ["temp-wind", "ambient"], "height": 450 },
-      { "columns": ["air", "rain"], "height": 140 },
-      { "columns": ["solar", "rain"], "height": 180 },
-      { "columns": ["solar", "pressure"], "height": 110 }
+      { "height": 32, "columns": ["temp-wind", "ambient", "lightning"] },
+      { "height": 24, "columns": ["temp-wind", "rain", "rain"] },
+      { "height": 2, "columns": ["solar", "rain", "rain"] },
+      { "height": 27, "columns": ["solar", "pressure", "pressure"] },
+      { "height": 16, "columns": ["air", "air", "air"] }
     ]
   },
   "mobile": {
-    "columns": "repeat(2, minmax(0, 1fr))",
-    "gap": "14px",
+    "columns": [76, 14],
+    "gap": "6px",
     "rows": [
-      { "columns": ["temp-wind", "ambient"], "height": 450 },
-      { "columns": ["air", "rain"], "height": 140 },
-      { "columns": ["solar", "rain"], "height": 180 },
-      { "columns": ["solar", "pressure"], "height": 110 }
+      { "height": 32, "columns": ["temp-wind", "temp-wind"] },
+      { "height": 26, "columns": ["ambient", "lightning"] },
+      { "height": 26, "columns": ["rain", "rain"] },
+      { "height": 26, "columns": ["pressure", "pressure"] },
+      { "height": 26, "columns": ["solar", "solar"] },
+      { "height": 15, "columns": ["air", "air"] }
     ]
   }
 }
 ```
 
-The compiled CSS grid is:
+The desktop grid areas are:
 
 ```css
-grid-template-columns: repeat(2, minmax(0, 1fr));
-grid-template-rows: 450px 140px 180px 110px;
 grid-template-areas:
-  "temp-wind ambient"
-  "air rain"
-  "solar rain"
-  "solar pressure";
-gap: 14px;
+  "temp-wind ambient lightning"
+  "temp-wind rain rain"
+  "solar rain rain"
+  "solar pressure pressure"
+  "air air air";
 ```
 
 ## Pixel Layouts

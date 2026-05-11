@@ -115,12 +115,13 @@ The rendered dashboard uses one visible Attribute tile plus several hidden/sourc
 The easiest setup path is the generated dashboard import template:
 
 1. Open **Apps -> Weather Dashboard App -> Dashboard Setup**.
-2. Copy the generated Hubitat Dashboard layout JSON.
-3. Create a new Hubitat Dashboard or export the JSON from an existing dashboard as a backup.
-4. Use the dashboard's layout import option to paste the generated JSON.
-5. Save the dashboard and refresh the browser page.
+2. Review **Weather Dashboard Layout Setup** only if you want to customize the JavaScript renderer inside the main weather tile. Click **Save & Refresh** on that page after changing it.
+3. Copy the generated JSON from **Hubitat Dashboard Import**.
+4. Create a new Hubitat Dashboard or export the JSON from an existing dashboard as a backup.
+5. Use the dashboard's layout import option to paste the generated JSON.
+6. Save the dashboard and refresh the browser page.
 
-The generated template creates one visible `dashboardScript` Attribute tile plus the required source Attribute tiles. The source tiles are hidden by dashboard CSS and by the renderer after it reads them.
+The Dashboard Setup page contains two different JSON controls. **Weather Dashboard Layout Setup** controls the JavaScript renderer's canvas, breakpoints, rows, columns, and card placement inside `tile-0`. **Hubitat Dashboard Import** controls Hubitat's dashboard grid and tile placement. The generated template creates one visible `dashboardScript` Attribute tile plus the required source Attribute tiles. The source tiles are hidden by dashboard CSS and by the renderer after it reads them.
 
 Manual setup is still supported:
 
@@ -171,7 +172,7 @@ The device driver keeps each segment under Hubitat's attribute-size limit, which
 
 ## Runtime Layout Overrides
 
-The app exposes an optional **Layout configuration JSON** textarea that lets you change the dashboard canvas size and grid without editing the JavaScript. For the complete schema, examples, percent layouts, breakpoint behavior, spanning rules, and diagnostics, see [docs/dashboard-layout.md](docs/dashboard-layout.md).
+The app exposes an optional **Layout configuration JSON** textarea under **Weather Dashboard Layout Setup** that lets you change the JavaScript renderer's canvas size and grid without editing the JavaScript. This is separate from **Hubitat Dashboard Import** on the same page. For the complete schema, examples, percent layouts, breakpoint behavior, spanning rules, and diagnostics, see [docs/dashboard-layout.md](docs/dashboard-layout.md).
 
 Common keys:
 
@@ -184,17 +185,28 @@ Example:
 
 ```json
 {
-  "baseWidth": 1200,
-  "baseHeight": 900,
-  "trackUnit": "px",
+  "trackUnit": "percent",
   "desktop": {
-    "columns": "repeat(2, minmax(0, 1fr))",
-    "gap": "14px",
+    "columns": [50, 36, 14],
+    "gap": "6px",
     "rows": [
-      { "height": 450, "columns": ["temp-wind", "ambient"] },
-      { "height": 140, "columns": ["air", "rain"] },
-      { "height": 180, "columns": ["solar", "rain"] },
-      { "height": 110, "columns": ["solar", "pressure"] }
+      { "height": 32, "columns": ["temp-wind", "ambient", "lightning"] },
+      { "height": 24, "columns": ["temp-wind", "rain", "rain"] },
+      { "height": 2, "columns": ["solar", "rain", "rain"] },
+      { "height": 27, "columns": ["solar", "pressure", "pressure"] },
+      { "height": 16, "columns": ["air", "air", "air"] }
+    ]
+  },
+  "mobile": {
+    "columns": [76, 14],
+    "gap": "6px",
+    "rows": [
+      { "height": 32, "columns": ["temp-wind", "temp-wind"] },
+      { "height": 26, "columns": ["ambient", "lightning"] },
+      { "height": 26, "columns": ["rain", "rain"] },
+      { "height": 26, "columns": ["pressure", "pressure"] },
+      { "height": 26, "columns": ["solar", "solar"] },
+      { "height": 15, "columns": ["air", "air"] }
     ]
   }
 }
