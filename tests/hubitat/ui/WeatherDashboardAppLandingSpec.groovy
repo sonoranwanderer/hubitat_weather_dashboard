@@ -502,13 +502,14 @@ assert historyState.metrics.histories.wind.totalPruned == 1L
 assert historyState.metrics.histories.pressure.totalPruned == 1L
 assert historyState.metrics.histories.temperature.totalPruned == 1L
 
+// Scenario: the textarea has a default starter layout, but blank runtime settings mean no override.
+appScript.binding.setVariable('settings', [:])
+assert invokePrivate(appScript, 'currentLayoutOverrideText') == null
+appScript.binding.setVariable('settings', [layoutOverrideJson: '   '])
+assert invokePrivate(appScript, 'currentLayoutOverrideText') == null
+appScript.binding.setVariable('settings', [:])
+
 // Scenario: payload metadata and forecast helpers handle explicit layout and pressure inputs.
-String defaultLayoutText = invokePrivate(appScript, 'currentLayoutOverrideText') as String
-Map defaultLayout = new groovy.json.JsonSlurper().parseText(defaultLayoutText) as Map
-assert defaultLayout.trackUnit == 'percent'
-assert defaultLayout.desktop.columns == [50, 36, 14]
-assert defaultLayout.desktop.rows[0].columns == ['temp-wind', 'ambient', 'lightning']
-assert defaultLayout.mobile.rows[1].columns == ['ambient', 'lightning']
 Map layoutOverride = invokePrivate(appScript, 'parseLayoutOverrideSetting', [String] as Class<?>[], '{"baseWidth":1000,"desktop":{"gap":"4px"}}') as Map
 Map metadata = invokePrivate(appScript, 'buildMetadata', [Date, TimeZone, String, Map] as Class<?>[], new Date(baseTs), TimeZone.getTimeZone('UTC'), 'station-time', layoutOverride) as Map
 assert metadata.layout.baseWidth == 1000

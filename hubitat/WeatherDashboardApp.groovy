@@ -3214,10 +3214,10 @@ private String normalizeStationTimestamp(Object raw) {
 private String currentLayoutOverrideText() {
     def raw = settings.layoutOverrideJson
     if (!(raw instanceof CharSequence)) {
-        return DEFAULT_LAYOUT_OVERRIDE_JSON
+        return null
     }
     String text = raw.toString().trim()
-    return text ? text : DEFAULT_LAYOUT_OVERRIDE_JSON
+    return text ? text : null
 }
 
 def handleWeatherEvent(evt) {
