@@ -11,16 +11,17 @@ Engineering expectations for this repository:
 When the user requests a code change in this git repository:
 
 1. Create a new branch before making changes.
-2. Create a concise plan before editing. Include the design approach, affected files or components, expected behavior changes, performance considerations, and regression risk.
+2. Create a concise plan before editing. Include the design approach, affected files or components, expected behavior changes, performance considerations, regression risk, and residual risk.
 3. Implement the requested change with tight, performant code.
 4. Add or update tests for the change. Any defect, quality failure, or regression fix must include a regression test in the relevant test harness.
 5. Run relevant tests or checks.
-6. Commit the changes with a clear signed commit message. Do not create unsigned commits.
-7. Push the branch.
-8. Open a pull request that summarizes the plan, impact, test coverage, and residual risk.
-9. Monitor the pull request for code review comments and CI failures.
-10. Address all PR code review comments.
-11. Resolve every PR review thread whether code changes were made or not.
-12. Use follow-up signed commits for comments that require code changes.
-13. Re-run relevant checks after fixes.
-14. Do not merge the PR unless explicitly asked.
+6. Commit the changes with a clear commit message.
+7. Ensure all commits are signed. Do not create unsigned commits.
+8. Push the branch.
+9. Open a pull request that summarizes the plan, impact, test coverage, and residual risk.
+10. Monitor the pull request for code review comments and CI failures.
+11. Address all PR code review comments.
+12. Resolve every PR review thread whether code changes were made or not.
+13. Use follow-up signed commits for comments that require code changes.
+14. Re-run relevant checks after fixes.
+15. Do not merge the PR unless explicitly asked.
