@@ -86,11 +86,11 @@ This is the default layout as JSON you can paste into the app setting:
     "columns": [68, 22],
     "gap": "6px",
     "rows": [
-      { "height": 25, "columns": ["temp-wind", "temp-wind"] },
+      { "height": 27, "columns": ["temp-wind", "temp-wind"] },
       { "height": 17, "columns": ["ambient", "lightning"] },
       { "height": 20, "columns": ["rain", "rain"] },
       { "height": 15, "columns": ["pressure", "pressure"] },
-      { "height": 15, "columns": ["solar", "solar"] },
+      { "height": 13, "columns": ["solar", "solar"] },
       { "height": 8, "columns": ["air", "air"] }
     ]
   }

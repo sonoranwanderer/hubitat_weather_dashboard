@@ -61,11 +61,11 @@ function assertMobileDefault(layout) {
     columns: [68, 22],
     gap: '6px',
     rows: [
-      { height: 25, columns: ['temp-wind', 'temp-wind'] },
+      { height: 27, columns: ['temp-wind', 'temp-wind'] },
       { height: 17, columns: ['ambient', 'lightning'] },
       { height: 20, columns: ['rain', 'rain'] },
       { height: 15, columns: ['pressure', 'pressure'] },
-      { height: 15, columns: ['solar', 'solar'] },
+      { height: 13, columns: ['solar', 'solar'] },
       { height: 8, columns: ['air', 'air'] }
     ]
   }, 'mobile default layout should use the Pro Max scaled canvas');
@@ -81,6 +81,8 @@ function assertMobileCssScoped(document) {
   const mobileCss = css.slice(mediaStart);
   assert(mobileCss.includes('.wdash-card { padding: 9px 10px;'), 'mobile card compaction should be present');
   assert(mobileCss.includes('.wdash-card:not(.wdash-card--ambient) { overflow: hidden; }'), 'mobile overflow clipping should exclude ambient controls');
+  assert(mobileCss.includes('.wdash-card--temp-wind { display: grid;'), 'mobile temp/wind should use a card-local grid');
+  assert(mobileCss.includes('.wdash-temp-wind-details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));'), 'mobile temp/wind metrics should use a 2 by 3 grid');
   assert(mobileCss.includes('.wdash-lightning-data { grid-template-columns: minmax(0, 1fr);'), 'mobile lightning compaction should be present');
   assert(mobileCss.includes('.wdash-air-metrics { --wdash-columns: 4 !important; grid-auto-rows: minmax(30px, 1fr);'), 'mobile air quality compaction should be present');
   assert(css.includes('@media (max-width: 980px) and (max-height: 520px)'), 'phone landscape compact rules should be scoped by width and height');
@@ -154,7 +156,7 @@ function assertLandscapeLayoutStyle(document) {
   const mobileDiagnostics = hooks.layoutState.lastDiagnostics;
   const percentRowMobile = mobileDiagnostics.percentTracks.rows.find(entry => entry.breakpoint === 'mobile');
   assert(percentRowMobile, 'mobile percent row diagnostics should be present');
-  assert.deepStrictEqual(percentRowMobile.percents, [25, 17, 20, 15, 15, 8], 'mobile row weights should match the default');
+  assert.deepStrictEqual(percentRowMobile.percents, [27, 17, 20, 15, 13, 8], 'mobile row weights should match the default');
   assertApprox(percentRowMobile.finalPixels, percentRowMobile.available, 0.1, 'mobile row pixels should fill the mobile canvas');
 
   const percentColumnMobile = mobileDiagnostics.percentTracks.columns.find(entry => entry.breakpoint === 'mobile');
