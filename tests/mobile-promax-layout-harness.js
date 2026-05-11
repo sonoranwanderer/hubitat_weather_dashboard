@@ -81,7 +81,18 @@ function assertMobileCssScoped(document) {
   const mobileCss = css.slice(mediaStart);
   assert(mobileCss.includes('.wdash-card { padding: 9px 10px;'), 'mobile card compaction should be present');
   assert(mobileCss.includes('.wdash-lightning-data { grid-template-columns: minmax(0, 1fr);'), 'mobile lightning compaction should be present');
-  assert(mobileCss.includes('.wdash-air-metrics { grid-auto-rows: minmax(30px, 1fr);'), 'mobile air quality compaction should be present');
+  assert(mobileCss.includes('.wdash-air-metrics { --wdash-columns: 4 !important; grid-auto-rows: minmax(30px, 1fr);'), 'mobile air quality compaction should be present');
+  assert(css.includes('@media (max-width: 980px) and (max-height: 520px)'), 'phone landscape compact rules should be scoped by width and height');
+  assert(css.includes('.wdash-air-metrics { --wdash-columns: 4 !important; grid-auto-rows: minmax(24px, 1fr);'), 'phone landscape air quality compaction should be present');
+}
+
+function assertLandscapeLayoutStyle(document) {
+  const style = document.getElementById('weather-dashboard-layout-style');
+  const css = style
+    ? style.textContent || ''
+    : fs.readFileSync(path.join(REPO_ROOT, 'src/render/index.js'), 'utf8');
+  assert(css.includes('@media (max-width:980px) and (max-height:520px)'), 'phone landscape grid override should be generated');
+  assert(css.includes('grid-template-areas:"temp-wind ambient lightning" "solar rain rain" "air pressure pressure"'), 'phone landscape grid should reduce the default to three rows');
 }
 
 (function main() {
@@ -159,6 +170,38 @@ function assertMobileCssScoped(document) {
     hooks.stopAirQualityRotationTimer();
   }
   dom.window.close();
+
+  const landscape = bootstrapRenderer({
+    displayRect: { width: 932, height: 430 }
+  });
+  landscape.window.matchMedia = query => ({
+    matches: query === '(max-width: 1100px)',
+    media: query,
+    addListener() {},
+    removeListener() {},
+    addEventListener() {},
+    removeEventListener() {},
+    dispatchEvent() {
+      return false;
+    }
+  });
+  const landscapePayload = JSON.parse(fs.readFileSync(FULL_FIXTURE_PATH, 'utf8'));
+  landscapePayload.metadata = {
+    ...(landscapePayload.metadata || {}),
+    layout: defaultLayout
+  };
+  landscape.hooks.render(landscapePayload, landscape.grid);
+  landscape.hooks.applyLayoutOverrides(landscapePayload.metadata);
+  assertLandscapeLayoutStyle(landscape.document);
+  assert(landscape.grid.querySelector('.wdash-card--air'), 'phone landscape should still render air quality');
+  assert(landscape.grid.querySelector('.wdash-card--pressure'), 'phone landscape should still render pressure');
+  if (typeof landscape.hooks.stopAmbientRotationTimer === 'function') {
+    landscape.hooks.stopAmbientRotationTimer();
+  }
+  if (typeof landscape.hooks.stopAirQualityRotationTimer === 'function') {
+    landscape.hooks.stopAirQualityRotationTimer();
+  }
+  landscape.dom.window.close();
 
   console.log('Mobile Pro Max layout harness passed');
 })();

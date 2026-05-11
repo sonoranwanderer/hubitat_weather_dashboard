@@ -6331,7 +6331,8 @@
             `${rootSelector} { --wdash-base-width:${baseWidth}px; --wdash-base-height:${baseHeight}px; }`,
             `${gridSelector} { grid-template-columns:${desktopColumns}; grid-template-rows:${desktopRows}; grid-template-areas:${desktopAreas}; gap:${desktopGap}; }`,
             `@media (max-width:1100px) { ${gridSelector} { grid-template-columns:${tabletColumns}; grid-template-rows:${tabletRows}; grid-template-areas:${tabletAreas}; gap:${tabletGap}; } }`,
-            `@media (max-width:720px) { ${gridSelector} { grid-template-columns:${mobileColumns}; grid-template-rows:${mobileRows}; grid-template-areas:${mobileAreas}; gap:${mobileGap}; } }`
+            `@media (max-width:720px) { ${gridSelector} { grid-template-columns:${mobileColumns}; grid-template-rows:${mobileRows}; grid-template-areas:${mobileAreas}; gap:${mobileGap}; } }`,
+            `@media (max-width:980px) and (max-height:520px) { ${gridSelector} { grid-template-columns:minmax(0,45fr) minmax(0,38fr) minmax(0,17fr); grid-template-rows:minmax(0,42fr) minmax(0,42fr) minmax(0,16fr); grid-template-areas:"temp-wind ambient lightning" "solar rain rain" "air pressure pressure"; gap:6px; } }`
           ].join('\n');
         }
       
@@ -7035,8 +7036,8 @@
         .wdash-ambient-header-meta { gap: 5px; min-width: 0; }
         .wdash-ambient-rotation { font-size: 0.56rem; white-space: nowrap; }
         .wdash-ambient-circles { gap: 8px; align-items: center; min-height: 0; }
-        .wdash-ambient-circle { flex-basis: min(108px, calc((100% - 8px) / 2)); width: min(108px, calc((100% - 8px) / 2)); padding: 9px; gap: 3px; }
-        .wdash-ambient-reading { font-size: 1.38rem; line-height: 1; }
+        .wdash-ambient-circle { flex-basis: min(94px, calc((100% - 8px) / 2)); width: min(94px, calc((100% - 8px) / 2)); padding: 8px; gap: 3px; }
+        .wdash-ambient-reading { font-size: 1.24rem; line-height: 1; }
         .wdash-ambient-label { font-size: 0.5rem; line-height: 1.1; }
         .wdash-ambient-next,
         .wdash-ambient-timer { top: auto; bottom: 0; width: 30px; height: 30px; }
@@ -7085,11 +7086,97 @@
         .wdash-card--air { gap: 4px; }
         .wdash-card-header--air .wdash-card-header-main { gap: 5px; }
         .wdash-air-source { font-size: 0.5rem; }
-        .wdash-air-metrics { grid-auto-rows: minmax(30px, 1fr); gap: 3px 5px; min-height: 0; }
+        .wdash-air-metrics { --wdash-columns: 4 !important; grid-auto-rows: minmax(30px, 1fr); gap: 3px 5px; min-height: 0; }
         .wdash-air-metrics .wdash-metric { min-height: 30px; padding: 3px 5px; }
-        .wdash-air-metrics .wdash-metric-label { min-height: 0; font-size: 0.46rem; line-height: 1.08; letter-spacing: 0.07em; }
-        .wdash-air-metrics .wdash-metric-value { font-size: 0.74rem; line-height: 1.05; }
+        .wdash-air-metrics .wdash-metric-label { min-height: 0; font-size: 0.42rem; line-height: 1.05; letter-spacing: 0.05em; }
+        .wdash-air-metrics .wdash-metric-value { font-size: 0.66rem; line-height: 1.05; }
         .wdash-battery { --wdash-battery-width: 15px; --wdash-battery-height: 28px; --wdash-battery-border: 2px; --wdash-battery-tip-length: 4px; }
+      }
+      @media (max-width: 980px) and (max-height: 520px) {
+        .wdash { --wdash-frame-gap: 6px; }
+        .wdash-card { padding: 7px 8px; gap: 4px; overflow: hidden; border-radius: 10px; }
+        .wdash-card-header { gap: 5px; font-size: 0.5rem; line-height: 1.05; letter-spacing: 0.07em; }
+        .wdash-card-header h3 { font-size: 0.62rem; line-height: 1.05; }
+        .wdash-updated { font-size: 0.48rem; line-height: 1.05; }
+        .wdash-temp-unit-indicator { width: 22px; height: 22px; font-size: 0.58rem; }
+        .wdash-card--temp-wind { padding-block: 6px; --temp-wind-gauge-center-inset: 30%; --temp-wind-compass-block-inset: 30%; --temp-wind-compass-inline-inset: 24%; }
+        .wdash-card-header--temp-wind { padding-bottom: 2px; }
+        .wdash-temp-wind-main { gap: 6px; }
+        .wdash-gauge-center { padding: 6px; gap: 2px; }
+        .wdash-gauge-value { font-size: 1.72rem; letter-spacing: 0; }
+        .wdash-temp-extrema-label { font-size: 0.42rem; }
+        .wdash-temp-extrema-value { font-size: 0.62rem; }
+        .wdash-temp-wind-details { gap: 3px; }
+        .wdash-temp-wind-details .wdash-metric { padding: 1px 2px; }
+        .wdash-metric-label { font-size: 0.43rem; line-height: 1.05; letter-spacing: 0.05em; }
+        .wdash-metric-value { font-size: 0.66rem; line-height: 1.04; }
+        .wdash-metric-sub { font-size: 0.5rem; line-height: 1.04; }
+        .wdash-wind-overlay { gap: 2px; }
+        .wdash-wind-bearing,
+        .wdash-wind-heading { font-size: 0.54rem; }
+        .wdash-wind-speed-value { font-size: 1.45rem; }
+        .wdash-wind-gust-value { font-size: 0.66rem; }
+        .wdash-wind-gust-label { font-size: 0.43rem; }
+        .wdash-card--ambient { gap: 4px; }
+        .wdash-ambient { gap: 4px; min-height: 0; }
+        .wdash-ambient-header-meta { gap: 5px; min-width: 0; }
+        .wdash-ambient-rotation { font-size: 0.5rem; white-space: nowrap; }
+        .wdash-ambient-circles { gap: 8px; align-items: center; min-height: 0; }
+        .wdash-ambient-circle { flex-basis: min(92px, calc((100% - 8px) / 2)); width: min(92px, calc((100% - 8px) / 2)); padding: 7px; gap: 2px; }
+        .wdash-ambient-reading { font-size: 1.1rem; line-height: 1; }
+        .wdash-ambient-label { font-size: 0.44rem; line-height: 1.05; }
+        .wdash-ambient-next,
+        .wdash-ambient-timer { top: auto; bottom: 0; width: 28px; height: 28px; }
+        .wdash-ambient-next { left: -18px; }
+        .wdash-ambient-timer { right: -18px; }
+        .wdash-ambient-timer-countdown { font-size: 0.54rem; }
+        .wdash-card--lightning { padding-inline: 6px; gap: 3px; }
+        .wdash-lightning-header-icon .wdash-lightning-bolt-svg { width: 20px; }
+        .wdash-lightning { gap: 4px; padding: 0 0 3px; justify-content: space-evenly; }
+        .wdash-lightning-data { grid-template-columns: minmax(0, 1fr); gap: 1px; width: 100%; }
+        .wdash-lightning-label,
+        .wdash-lightning-value { justify-self: center; text-align: center; }
+        .wdash-lightning-label { font-size: 0.43rem; line-height: 1.02; }
+        .wdash-lightning-value { font-size: 0.64rem; line-height: 1.02; }
+        .wdash-lightning-battery { transform: scale(0.75); transform-origin: center; }
+        .wdash-rain-main { grid-template-columns: minmax(0, 0.55fr) minmax(0, 0.9fr) minmax(0, 1.35fr); gap: 7px; min-height: 0; }
+        .wdash-rain-col--drop svg { --wdash-rain-drop-height: 66%; }
+        .wdash-rain-rate-wrapper { width: 100%; }
+        .wdash-rain-daily-metric { gap: 2px; }
+        .wdash-rain-daily-value-amount { font-size: 1.8rem; }
+        .wdash-rain-daily-value-unit { font-size: 0.62rem; }
+        .wdash-rain-daily-label { font-size: 0.62rem; }
+        .wdash-rain-stats.wdash-metric-row--table .wdash-metric { padding: 1px 0; }
+        .wdash-rain-stats.wdash-metric-row--table .wdash-metric-label,
+        .wdash-rain-stats.wdash-metric-row--table .wdash-metric-value { font-size: 0.58rem; line-height: 1.04; }
+        .wdash-pressure { gap: 4px; min-height: 0; }
+        .wdash-pressure-main { gap: 5px; min-height: 0; }
+        .wdash-pressure-band { gap: 5px; }
+        .wdash-pressure-toggle { padding: 2px; gap: 2px; }
+        .wdash-pressure-button { font-size: 0.52rem; padding: 2px 7px; }
+        .wdash-pressure-reading { font-size: 1.18rem; min-height: 1.3rem; }
+        .wdash-pressure-outlook-icon { width: 32px; height: 32px; }
+        .wdash-pressure-outlook-label { font-size: 0.52rem; padding: 2px 6px; max-width: 100%; white-space: normal; }
+        .wdash-pressure-stats .wdash-metric { padding: 1px 3px; }
+        .wdash-pressure-stats .wdash-metric-value { font-size: 0.58rem; }
+        .wdash-card--solar { gap: 2px; }
+        .wdash-card--solar .wdash-sun-graphic { margin-top: -10px; }
+        .wdash-solar { gap: 1px; min-height: 0; }
+        .wdash-sun-metric-label,
+        .wdash-sun-metric-value,
+        .wdash-sun-time { font-size: 0.54rem; }
+        .wdash-sun-metric-subvalue,
+        .wdash-moon-phase-name { font-size: 0.5rem; }
+        .wdash-moon-illumination { font-size: 0.44rem; }
+        .wdash-moon-icon { width: 11px; height: 11px; }
+        .wdash-card--air { gap: 3px; }
+        .wdash-card-header--air .wdash-card-header-main { gap: 4px; }
+        .wdash-air-source { font-size: 0.45rem; }
+        .wdash-air-metrics { --wdash-columns: 4 !important; grid-auto-rows: minmax(24px, 1fr); gap: 2px 4px; min-height: 0; }
+        .wdash-air-metrics .wdash-metric { min-height: 24px; padding: 2px 4px; }
+        .wdash-air-metrics .wdash-metric-label { min-height: 0; font-size: 0.38rem; line-height: 1.02; letter-spacing: 0.04em; }
+        .wdash-air-metrics .wdash-metric-value { font-size: 0.56rem; line-height: 1.02; }
+        .wdash-battery { --wdash-battery-width: 13px; --wdash-battery-height: 24px; --wdash-battery-border: 2px; --wdash-battery-tip-length: 4px; }
       }
       
           `;
