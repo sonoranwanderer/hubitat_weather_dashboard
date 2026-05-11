@@ -230,6 +230,7 @@ assert dashboardSetupRender.inputs.any { it.name == 'saveAndPreview' && it.type 
 assert dashboardSetupRender.inputs.any { it.name == 'refreshNow' && it.type == 'button' }
 assert dashboardSetupRender.paragraphs.any { it.contains('Controls the JavaScript renderer inside tile-0') }
 assert dashboardSetupRender.paragraphs.any { it.contains('does not change Hubitat') }
+assert dashboardSetupRender.paragraphs.any { it.contains('keeps the default desktop shape and adds a mobile breakpoint') }
 assert dashboardSetupRender.paragraphs.any { it.contains('Controls the Hubitat dashboard grid and tile placement') }
 assert dashboardSetupRender.paragraphs.any { it.contains('does not control card placement inside the weather dashboard') }
 
