@@ -115,12 +115,13 @@ The rendered dashboard uses one visible Attribute tile plus several hidden/sourc
 The easiest setup path is the generated dashboard import template:
 
 1. Open **Apps -> Weather Dashboard App -> Dashboard Setup**.
-2. Copy the generated Hubitat Dashboard layout JSON.
-3. Create a new Hubitat Dashboard or export the JSON from an existing dashboard as a backup.
-4. Use the dashboard's layout import option to paste the generated JSON.
-5. Save the dashboard and refresh the browser page.
+2. Review the optional **Layout configuration JSON** only if you want to customize the JavaScript renderer inside the main weather tile. Click **Save & Refresh** on that page after changing it.
+3. Copy the generated Hubitat Dashboard import JSON.
+4. Create a new Hubitat Dashboard or export the JSON from an existing dashboard as a backup.
+5. Use the dashboard's layout import option to paste the generated JSON.
+6. Save the dashboard and refresh the browser page.
 
-The generated template creates one visible `dashboardScript` Attribute tile plus the required source Attribute tiles. The source tiles are hidden by dashboard CSS and by the renderer after it reads them.
+The Dashboard Setup page contains two different JSON controls. **Layout configuration JSON** controls the JavaScript renderer's canvas, breakpoints, rows, columns, and card placement inside `tile-0`. **Hubitat Dashboard import JSON** controls Hubitat's dashboard grid and tile placement. The generated template creates one visible `dashboardScript` Attribute tile plus the required source Attribute tiles. The source tiles are hidden by dashboard CSS and by the renderer after it reads them.
 
 Manual setup is still supported:
 
@@ -171,7 +172,7 @@ The device driver keeps each segment under Hubitat's attribute-size limit, which
 
 ## Runtime Layout Overrides
 
-The app exposes an optional **Layout configuration JSON** textarea that lets you change the dashboard canvas size and grid without editing the JavaScript. For the complete schema, examples, percent layouts, breakpoint behavior, spanning rules, and diagnostics, see [docs/dashboard-layout.md](docs/dashboard-layout.md).
+The app exposes an optional **Layout configuration JSON** textarea on **Dashboard Setup** that lets you change the JavaScript renderer's canvas size and grid without editing the JavaScript. This is separate from the generated Hubitat Dashboard import JSON on the same page. For the complete schema, examples, percent layouts, breakpoint behavior, spanning rules, and diagnostics, see [docs/dashboard-layout.md](docs/dashboard-layout.md).
 
 Common keys:
 

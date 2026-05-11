@@ -61,6 +61,13 @@ function parsePxValue(value) {
   return match ? Number(match[1]) : NaN;
 }
 
+function assertApprox(actual, expected, tolerance, message) {
+  assert(
+    Math.abs(actual - expected) <= tolerance,
+    `${message}: expected ${expected}, received ${actual}`
+  );
+}
+
 function buildDashboardSkeleton(document) {
   const tile = createElement(document, 'div');
   tile.setAttribute('id', 'tile-0');
@@ -309,6 +316,76 @@ function setTileSize(skeleton, width, height) {
     'tile',
     'height source should report tile'
   );
+
+  window.matchMedia = query => ({
+    matches: query === '(max-width: 720px)' || query === '(max-width: 1100px)',
+    media: query,
+    addEventListener() {},
+    removeEventListener() {},
+    addListener() {},
+    removeListener() {},
+    dispatchEvent() {
+      return false;
+    }
+  });
+  global.matchMedia = window.matchMedia;
+
+  resetTileMeasurement();
+  setHostSize(skeleton, 390, 844);
+  setTileSize(skeleton, 390, 844);
+  applyLayoutOverrides({
+    layout: {
+      trackUnit: 'percent',
+      mobile: {
+        columns: [76, 14],
+        gap: '6px',
+        rows: [
+          { height: 32, columns: ['temp-wind', 'temp-wind'] },
+          { height: 26, columns: ['ambient', 'lightning'] },
+          { height: 26, columns: ['rain', 'rain'] },
+          { height: 26, columns: ['pressure', 'pressure'] },
+          { height: 26, columns: ['solar', 'solar'] },
+          { height: 15, columns: ['air', 'air'] }
+        ]
+      }
+    }
+  });
+
+  assert.strictEqual(rootStyle.getPropertyValue('--wdash-base-width'), '390px', 'mobile percent layout should use measured width');
+  assert.strictEqual(rootStyle.getPropertyValue('--wdash-base-height'), '844px', 'mobile percent layout should use measured height');
+  assert.strictEqual(layoutState.lastDiagnostics.base.activeBreakpoint, 'mobile', 'diagnostics should identify mobile breakpoint');
+  assert.strictEqual(layoutState.lastDiagnostics.base.perBreakpoint.mobile.width, 390, 'mobile diagnostics should record measured width');
+  assert.strictEqual(layoutState.lastDiagnostics.base.perBreakpoint.mobile.height, 844, 'mobile diagnostics should record measured height');
+  assert.strictEqual(layoutState.lastDiagnostics.base.sources.mobile.width, 'inherit-inherit-measured', 'mobile width source should inherit measured base');
+  assert.strictEqual(layoutState.lastDiagnostics.base.sources.mobile.height, 'inherit-inherit-measured', 'mobile height source should inherit measured base');
+
+  const mobileColumnTracks = parseTrackPixels(dashStyle.getPropertyValue('--wdash-grid-columns-mobile'));
+  assert.strictEqual(mobileColumnTracks.length, 2, 'mobile percent layout should resolve two column tracks');
+  const mobileColumnAvailable = 390 - 12 - 6;
+  assertApprox(mobileColumnTracks[0], mobileColumnAvailable * (76 / 90), 0.1, 'mobile primary column should fill proportional width');
+  assertApprox(mobileColumnTracks[1], mobileColumnAvailable * (14 / 90), 0.1, 'mobile lightning column should fill proportional width');
+
+  const mobileRowTracks = parseTrackPixels(dashStyle.getPropertyValue('--wdash-grid-rows-mobile'));
+  assert.strictEqual(mobileRowTracks.length, 6, 'mobile percent layout should resolve six row tracks');
+  const mobileRowAvailable = 844 - 12 - 6 * 5;
+  const mobileRowTotal = 151;
+  assertApprox(mobileRowTracks[0], mobileRowAvailable * (32 / mobileRowTotal), 0.1, 'mobile temp/wind row should use proportional height');
+  assertApprox(mobileRowTracks[1], mobileRowAvailable * (26 / mobileRowTotal), 0.1, 'mobile ambient/lightning row should use proportional height');
+  assertApprox(mobileRowTracks[5], mobileRowAvailable * (15 / mobileRowTotal), 0.1, 'mobile air row should use proportional height');
+
+  const mobileAreas = dashStyle.getPropertyValue('--wdash-grid-areas-mobile');
+  assert(mobileAreas.includes('"temp-wind temp-wind"'), 'mobile areas should span temp/wind across both columns');
+  assert(mobileAreas.includes('"ambient lightning"'), 'mobile areas should include narrow lightning column');
+
+  const mobileDiagnostics = layoutState.lastDiagnostics;
+  const percentRowMobile = mobileDiagnostics.percentTracks.rows.find(entry => entry.breakpoint === 'mobile');
+  assert(percentRowMobile, 'mobile percent row diagnostics should be present');
+  assert.deepStrictEqual(percentRowMobile.percents, [32, 26, 26, 26, 26, 15], 'mobile row percentages should be recorded');
+  assertApprox(percentRowMobile.finalPixels, percentRowMobile.available, 0.1, 'mobile row pixels should fill available height');
+  const percentColumnMobile = mobileDiagnostics.percentTracks.columns.find(entry => entry.breakpoint === 'mobile');
+  assert(percentColumnMobile, 'mobile percent column diagnostics should be present');
+  assert.deepStrictEqual(percentColumnMobile.percents, [76, 14], 'mobile column percentages should be recorded');
+  assertApprox(percentColumnMobile.finalPixels, percentColumnMobile.available, 0.1, 'mobile column pixels should fill available width');
 
   console.log('Layout measurement harness passed');
 })();

@@ -516,14 +516,6 @@ def configurationPage() {
             input name: "pressureBaselineDays", type: "number", title: "Pressure baseline window (days)", defaultValue: 30, range: "7..60"
         }
 
-        section("Layout overrides (optional)") {
-            paragraph "Provide JSON to fine-tune the dashboard canvas size and grid rows/columns. Leave blank to use the built-in defaults."
-            paragraph "Set `baseWidth` and `baseHeight` (in pixels) to control the canvas size. Rows accept objects like `{ \"height\": 360, \"columns\": [\"temp-wind\", \"ambient\"] }`."
-            paragraph "Repeat a card name in consecutive rows to make it span multiple heights, and use `\".\"` as a placeholder when you want the other column to stay empty so the next card can start higher."
-            paragraph "Example:<br><code>{\n  \"baseWidth\": 1200,\n  \"baseHeight\": 900,\n  \"desktop\": {\n    \"rows\": [\n      { \"height\": 220, \"columns\": [\"temp-wind\", \"ambient\"] },\n      { \"height\": 200, \"columns\": [\"temp-wind\", \".\"] },\n      { \"height\": 180, \"columns\": [\"air\", \"rain\"] }\n    ]\n  }\n}</code>"
-            input name: "layoutOverrideJson", type: "textarea", title: "Layout configuration JSON", required: false
-        }
-
         section("Dashboard device") {
             input name: "dashboardDeviceLabel", type: "text", title: "Dashboard device label", defaultValue: "Weather Dashboard"
         }
@@ -544,6 +536,20 @@ def configurationPage() {
 def dashboardSetupPage() {
     dynamicPage(name: "dashboardSetupPage", title: "Dashboard Setup", install: false, uninstall: false) {
         String childDeviceId = dashboardChildDeviceIdForLayout()
+        section("JavaScript layout configuration") {
+            paragraph "This JSON controls the Weather Dashboard renderer inside tile-0. It does not change the Hubitat dashboard grid."
+            paragraph "Use it to fine-tune the dashboard canvas size, percent or pixel tracks, breakpoints, and card placement. Leave blank to use the built-in JavaScript layout."
+            paragraph "Set `baseWidth` and `baseHeight` (in pixels) to control the renderer canvas size. Set `trackUnit` to `percent` when numeric rows and columns should adapt to the measured tile size."
+            paragraph "Rows accept objects like `{ \"height\": 360, \"columns\": [\"temp-wind\", \"ambient\"] }`. Repeat a card name in adjacent cells to span space, and use `\".\"` as an empty placeholder."
+            paragraph "Example:<br><code>{\n  \"trackUnit\": \"percent\",\n  \"mobile\": {\n    \"columns\": [100],\n    \"gap\": \"6px\",\n    \"rows\": [\n      { \"height\": 32, \"columns\": [\"temp-wind\"] },\n      { \"height\": 20, \"columns\": [\"ambient\"] },\n      { \"height\": 18, \"columns\": [\"rain\"] }\n    ]\n  }\n}</code>"
+            input name: "layoutOverrideJson", type: "textarea", title: "Layout configuration JSON", required: false
+        }
+
+        section("Actions") {
+            input name: "saveAndPreview", type: "button", title: "Save & Refresh"
+            input name: "refreshNow", type: "button", title: "Refresh"
+        }
+
         section("Dashboard import") {
             paragraph """<ul>
 <li>Add Dashboard -&gt; Hubitat Dashboard.</li>
@@ -559,6 +565,7 @@ def dashboardSetupPage() {
 <li>Click <b>Save Layout JSON</b>.</li>
 <li>Click the <b>X</b> in the upper right of the dialog box.</li>
 </ul>"""
+            paragraph "This import JSON controls Hubitat's dashboard grid and tile placement. It is separate from the JavaScript layout configuration above."
             if (childDeviceId) {
                 paragraph "This template is using Weather Dashboard device ID <b>${htmlEncode(childDeviceId)}</b>."
             } else {
@@ -679,10 +686,10 @@ private Map buildDashboardLayoutTemplate() {
     List<String> tileAttributes = dashboardLayoutTileAttributes()
     [
         name        : 'Weather Dashboard',
-        cols        : '6',
-        rows        : '4',
-        colWidth    : 170,
-        rowHeight   : 170,
+        cols        : '1',
+        rows        : '1',
+        colWidth    : '',
+        rowHeight   : '',
         gridGap     : 8,
         clockMode   : true,
         bgColor     : 'black',
@@ -742,11 +749,11 @@ private List<Map> buildDashboardLayoutTiles(String deviceId, List<String> tileAt
         if (index == 0) {
             tile.row = 1
             tile.col = 1
-            tile.rowSpan = 4
-            tile.colSpan = 6
+            tile.rowSpan = 1
+            tile.colSpan = 1
         } else {
             tile.row = 1
-            tile.col = 2
+            tile.col = 1
             tile.rowSpan = 1
             tile.colSpan = 1
         }

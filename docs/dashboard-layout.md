@@ -1,6 +1,6 @@
 # Dashboard Layout Configuration
 
-The Weather Dashboard app includes a **Layout configuration JSON** setting. Use it to change the size and placement of dashboard cards without editing `dashboard/weather-dashboard.js`.
+The Weather Dashboard app includes a **Layout configuration JSON** setting on **Dashboard Setup**. Use it to change the size and placement of dashboard cards without editing `dashboard/weather-dashboard.js`. This setting controls the JavaScript renderer inside `tile-0`; the generated Hubitat Dashboard import JSON on the same page controls Hubitat's grid and tile placement.
 
 The renderer builds one CSS grid inside the visible Hubitat Dashboard tile. Each row in the JSON defines one grid row, and each item in that row's `columns` array names the card that should occupy that column.
 
