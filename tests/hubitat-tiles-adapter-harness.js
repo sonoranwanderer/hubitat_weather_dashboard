@@ -55,7 +55,10 @@ const { window, document, hooks, dom } = bootstrapRenderer({
   dataTiles: [
     { id: 'tile-1', textContent: `Weather Dashboard ${JSON.stringify(segmentOne)} ` },
     { id: 'tile-2', textContent: `Segment payload ${JSON.stringify(segmentTwo)}` },
-    { id: 'tile-3', textContent: noiseTileText }
+    { id: 'tile-3', textContent: noiseTileText },
+    { id: 'tile-4', textContent: noiseTileText },
+    { id: 'tile-5', textContent: noiseTileText },
+    { id: 'tile-6', textContent: noiseTileText }
   ]
 });
 
@@ -131,6 +134,19 @@ try {
   assert(document.getElementById('tile-1').classList.contains('wdash-source-tile'), 'Current source tile should stay masked');
   assert(!document.getElementById('tile-2').classList.contains('wdash-source-tile'), 'Stale source tile mask should be removed');
   assert(document.getElementById('tile-3').classList.contains('wdash-source-tile'), 'Remaining source tile should stay masked');
+
+  document.getElementById('tile-1').querySelector('.tile-primary').textContent = '{}';
+  document.getElementById('tile-2').querySelector('.tile-primary').textContent = '{}';
+  document.getElementById('tile-4').querySelector('.tile-primary').textContent = '{}';
+  document.getElementById('tile-5').querySelector('.tile-primary').textContent = '{}';
+  document.getElementById('tile-6').querySelector('.tile-primary').textContent = '{}';
+  const allEmptyPayloads = adapter.readPayloads();
+  assert.strictEqual(allEmptyPayloads.length, 6, 'All generated data tiles should remain source tiles when their payloads are empty JSON');
+  assert.strictEqual(hooks.mergePayloads(allEmptyPayloads), null, 'Empty JSON data tiles should not create dashboard data');
+  adapter.toggleSourceTileMask(true);
+  for (const id of ['tile-1', 'tile-2', 'tile-3', 'tile-4', 'tile-5', 'tile-6']) {
+    assert(document.getElementById(id).classList.contains('wdash-source-tile'), `${id} should be hidden even when empty`);
+  }
 
   adapter.toggleSourceTileMask(false);
   assert(!document.getElementById('tile-1').classList.contains('wdash-source-tile'), 'Tile-1 mask should be cleared');
