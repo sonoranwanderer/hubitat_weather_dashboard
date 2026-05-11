@@ -36,3 +36,6 @@ fi
 
 echo "Running Jest unit tests..."
 npm run test:unit
+
+echo "Verifying Hubitat dashboard bundle..."
+npm run verify:hubitat
