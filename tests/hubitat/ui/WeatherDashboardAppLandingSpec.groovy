@@ -225,12 +225,18 @@ assert dashboardSetupRender.sections*.title.contains('Weather Dashboard Layout S
 assert dashboardSetupRender.sections*.title.contains('Hubitat Dashboard Import')
 assert !dashboardSetupRender.sections*.title.contains('JavaScript layout configuration')
 assert !dashboardSetupRender.sections*.title.contains('Dashboard import')
-assert dashboardSetupRender.inputs.any { it.name == 'layoutOverrideJson' && it.type == 'textarea' && it.submitOnChange == true }
+Map layoutJsonInput = dashboardSetupRender.inputs.find { it.name == 'layoutOverrideJson' }
+assert layoutJsonInput
+assert layoutJsonInput.type == 'textarea'
+assert layoutJsonInput.submitOnChange == true
+assert layoutJsonInput.defaultValue.contains('"desktop"')
+assert layoutJsonInput.defaultValue.contains('"mobile"')
+assert layoutJsonInput.defaultValue.contains('"lightning"')
 assert dashboardSetupRender.inputs.any { it.name == 'saveAndPreview' && it.type == 'button' }
 assert dashboardSetupRender.inputs.any { it.name == 'refreshNow' && it.type == 'button' }
 assert dashboardSetupRender.paragraphs.any { it.contains('Controls the JavaScript renderer inside tile-0') }
 assert dashboardSetupRender.paragraphs.any { it.contains('does not change Hubitat') }
-assert dashboardSetupRender.paragraphs.any { it.contains('keeps the default desktop shape and adds a mobile breakpoint') }
+assert dashboardSetupRender.paragraphs.any { it.contains('default JSON includes the desktop layout and an additive mobile breakpoint') }
 assert dashboardSetupRender.paragraphs.any { it.contains('Controls the Hubitat dashboard grid and tile placement') }
 assert dashboardSetupRender.paragraphs.any { it.contains('does not control card placement inside the weather dashboard') }
 
@@ -497,6 +503,12 @@ assert historyState.metrics.histories.pressure.totalPruned == 1L
 assert historyState.metrics.histories.temperature.totalPruned == 1L
 
 // Scenario: payload metadata and forecast helpers handle explicit layout and pressure inputs.
+String defaultLayoutText = invokePrivate(appScript, 'currentLayoutOverrideText') as String
+Map defaultLayout = new groovy.json.JsonSlurper().parseText(defaultLayoutText) as Map
+assert defaultLayout.trackUnit == 'percent'
+assert defaultLayout.desktop.columns == [50, 36, 14]
+assert defaultLayout.desktop.rows[0].columns == ['temp-wind', 'ambient', 'lightning']
+assert defaultLayout.mobile.rows[1].columns == ['ambient', 'lightning']
 Map layoutOverride = invokePrivate(appScript, 'parseLayoutOverrideSetting', [String] as Class<?>[], '{"baseWidth":1000,"desktop":{"gap":"4px"}}') as Map
 Map metadata = invokePrivate(appScript, 'buildMetadata', [Date, TimeZone, String, Map] as Class<?>[], new Date(baseTs), TimeZone.getTimeZone('UTC'), 'station-time', layoutOverride) as Map
 assert metadata.layout.baseWidth == 1000

@@ -185,17 +185,28 @@ Example:
 
 ```json
 {
-  "baseWidth": 1200,
-  "baseHeight": 900,
-  "trackUnit": "px",
+  "trackUnit": "percent",
   "desktop": {
-    "columns": "repeat(2, minmax(0, 1fr))",
-    "gap": "14px",
+    "columns": [50, 36, 14],
+    "gap": "6px",
     "rows": [
-      { "height": 450, "columns": ["temp-wind", "ambient"] },
-      { "height": 140, "columns": ["air", "rain"] },
-      { "height": 180, "columns": ["solar", "rain"] },
-      { "height": 110, "columns": ["solar", "pressure"] }
+      { "height": 32, "columns": ["temp-wind", "ambient", "lightning"] },
+      { "height": 24, "columns": ["temp-wind", "rain", "rain"] },
+      { "height": 2, "columns": ["solar", "rain", "rain"] },
+      { "height": 27, "columns": ["solar", "pressure", "pressure"] },
+      { "height": 16, "columns": ["air", "air", "air"] }
+    ]
+  },
+  "mobile": {
+    "columns": [76, 14],
+    "gap": "6px",
+    "rows": [
+      { "height": 32, "columns": ["temp-wind", "temp-wind"] },
+      { "height": 26, "columns": ["ambient", "lightning"] },
+      { "height": 26, "columns": ["rain", "rain"] },
+      { "height": 26, "columns": ["pressure", "pressure"] },
+      { "height": 26, "columns": ["solar", "solar"] },
+      { "height": 15, "columns": ["air", "air"] }
     ]
   }
 }

@@ -49,6 +49,32 @@ definition(
 ]
 @Field final int DASHBOARD_AMBIENT_SENSORS_PER_TILE = 4
 @Field final int DASHBOARD_MAX_AMBIENT_TILES = 6
+@Field final String DEFAULT_LAYOUT_OVERRIDE_JSON = '''{
+  "trackUnit": "percent",
+  "desktop": {
+    "columns": [50, 36, 14],
+    "gap": "6px",
+    "rows": [
+      { "height": 32, "columns": ["temp-wind", "ambient", "lightning"] },
+      { "height": 24, "columns": ["temp-wind", "rain", "rain"] },
+      { "height": 2, "columns": ["solar", "rain", "rain"] },
+      { "height": 27, "columns": ["solar", "pressure", "pressure"] },
+      { "height": 16, "columns": ["air", "air", "air"] }
+    ]
+  },
+  "mobile": {
+    "columns": [76, 14],
+    "gap": "6px",
+    "rows": [
+      { "height": 32, "columns": ["temp-wind", "temp-wind"] },
+      { "height": 26, "columns": ["ambient", "lightning"] },
+      { "height": 26, "columns": ["rain", "rain"] },
+      { "height": 26, "columns": ["pressure", "pressure"] },
+      { "height": 26, "columns": ["solar", "solar"] },
+      { "height": 15, "columns": ["air", "air"] }
+    ]
+  }
+}'''
 // Future features that add operational settings or durable state must update
 // these backup allowlists, import validation, tests, and docs before release.
 @Field final List<String> BACKUP_SECRET_SETTING_NAMES = [
@@ -539,11 +565,11 @@ def dashboardSetupPage() {
         section("Weather Dashboard Layout Setup") {
             paragraph "<b>Controls the JavaScript renderer inside tile-0.</b> This JSON changes the weather cards, canvas, breakpoints, rows, and columns after Hubitat has loaded the dashboard tile."
             paragraph "It does not change Hubitat's dashboard grid, tile size, tile order, or hidden source tile placement. Use the Hubitat Dashboard Import section below for that."
-            paragraph "Use it to fine-tune the dashboard canvas size, percent or pixel tracks, breakpoints, and card placement. Leave blank to use the built-in JavaScript layout."
+            paragraph "Use it to fine-tune the dashboard canvas size, percent or pixel tracks, breakpoints, and card placement. The default JSON includes the desktop layout and an additive mobile breakpoint."
             paragraph "Set `baseWidth` and `baseHeight` (in pixels) to control the renderer canvas size. Set `trackUnit` to `percent` when numeric rows and columns should adapt to the measured tile size."
             paragraph "Rows accept objects like `{ \"height\": 360, \"columns\": [\"temp-wind\", \"ambient\"] }`. Repeat a card name in adjacent cells to span space, and use `\".\"` as an empty placeholder."
-            paragraph "The built-in desktop layout remains active unless you override it. This example keeps the default desktop shape and adds a mobile breakpoint:<br><code>{\n  \"trackUnit\": \"percent\",\n  \"desktop\": {\n    \"columns\": \"repeat(2, minmax(0, 1fr))\",\n    \"gap\": \"14px\",\n    \"rows\": [\n      { \"height\": 51.14, \"columns\": [\"temp-wind\", \"ambient\"] },\n      { \"height\": 15.91, \"columns\": [\"air\", \"rain\"] },\n      { \"height\": 20.45, \"columns\": [\"solar\", \"rain\"] },\n      { \"height\": 12.5, \"columns\": [\"solar\", \"pressure\"] }\n    ]\n  },\n  \"mobile\": {\n    \"columns\": [76, 14],\n    \"gap\": \"6px\",\n    \"rows\": [\n      { \"height\": 32, \"columns\": [\"temp-wind\", \"temp-wind\"] },\n      { \"height\": 26, \"columns\": [\"ambient\", \"lightning\"] },\n      { \"height\": 26, \"columns\": [\"rain\", \"rain\"] },\n      { \"height\": 26, \"columns\": [\"pressure\", \"pressure\"] },\n      { \"height\": 26, \"columns\": [\"solar\", \"solar\"] },\n      { \"height\": 15, \"columns\": [\"air\", \"air\"] }\n    ]\n  }\n}</code>"
-            input name: "layoutOverrideJson", type: "textarea", title: "Layout configuration JSON", required: false, submitOnChange: true
+            paragraph "Default:<br><code>${htmlEncode(DEFAULT_LAYOUT_OVERRIDE_JSON)}</code>"
+            input name: "layoutOverrideJson", type: "textarea", title: "Layout configuration JSON", required: false, submitOnChange: true, defaultValue: DEFAULT_LAYOUT_OVERRIDE_JSON
         }
 
         section("Actions") {
@@ -3188,10 +3214,10 @@ private String normalizeStationTimestamp(Object raw) {
 private String currentLayoutOverrideText() {
     def raw = settings.layoutOverrideJson
     if (!(raw instanceof CharSequence)) {
-        return null
+        return DEFAULT_LAYOUT_OVERRIDE_JSON
     }
     String text = raw.toString().trim()
-    return text ? text : null
+    return text ? text : DEFAULT_LAYOUT_OVERRIDE_JSON
 }
 
 def handleWeatherEvent(evt) {
