@@ -12,7 +12,7 @@ const FULL_FIXTURE_PATH = path.join(__dirname, 'fixtures/full-capabilities.json'
 
 function loadDefaultLayout() {
   const source = fs.readFileSync(APP_PATH, 'utf8');
-  const match = source.match(/DEFAULT_LAYOUT_OVERRIDE_JSON\s*=\s*'''([\s\S]*?)'''/);
+  const match = source.match(/@Field final String DEFAULT_LAYOUT_OVERRIDE_JSON\s*=\s*'''([\s\S]*?)'''/);
   assert(match, 'Default layout JSON constant should exist in WeatherDashboardApp.groovy');
   return JSON.parse(match[1]);
 }
@@ -80,6 +80,7 @@ function assertMobileCssScoped(document) {
   assert(mediaStart >= 0, 'mobile compact rules should be scoped to the mobile media query');
   const mobileCss = css.slice(mediaStart);
   assert(mobileCss.includes('.wdash-card { padding: 9px 10px;'), 'mobile card compaction should be present');
+  assert(mobileCss.includes('.wdash-card:not(.wdash-card--ambient) { overflow: hidden; }'), 'mobile overflow clipping should exclude ambient controls');
   assert(mobileCss.includes('.wdash-lightning-data { grid-template-columns: minmax(0, 1fr);'), 'mobile lightning compaction should be present');
   assert(mobileCss.includes('.wdash-air-metrics { --wdash-columns: 4 !important; grid-auto-rows: minmax(30px, 1fr);'), 'mobile air quality compaction should be present');
   assert(css.includes('@media (max-width: 980px) and (max-height: 520px)'), 'phone landscape compact rules should be scoped by width and height');

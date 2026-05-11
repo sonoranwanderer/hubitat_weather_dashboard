@@ -6944,7 +6944,8 @@ function createRenderer(options = {}) {
 @media (max-width: 720px) {
   .wdash-grid { gap: var(--wdash-grid-gap-mobile, ${DEFAULT_GAPS.mobile}); grid-template-columns: var(--wdash-grid-columns-mobile, ${DEFAULT_COLUMNS.mobile}); grid-template-rows: var(--wdash-grid-rows-mobile, ${DEFAULT_TEMPLATES.mobile.rows}); grid-template-areas: var(--wdash-grid-areas-mobile, ${DEFAULT_TEMPLATES.mobile.areas}); }
   .wdash { --wdash-frame-gap: var(--wdash-frame-gap-mobile, var(--wdash-frame-gap-tablet, var(--wdash-frame-gap-desktop, 18px))); }
-  .wdash-card { padding: 9px 10px; gap: 6px; overflow: hidden; border-radius: 12px; }
+  .wdash-card { padding: 9px 10px; gap: 6px; border-radius: 12px; }
+  .wdash-card:not(.wdash-card--ambient) { overflow: hidden; }
   .wdash-card-header { gap: 6px; font-size: 0.58rem; line-height: 1.1; letter-spacing: 0.08em; }
   .wdash-card-header h3 { font-size: 0.68rem; line-height: 1.1; }
   .wdash-updated { font-size: 0.54rem; gap: 1px; line-height: 1.1; }
@@ -7031,7 +7032,8 @@ function createRenderer(options = {}) {
 }
 @media (max-width: 980px) and (max-height: 520px) {
   .wdash { --wdash-frame-gap: 6px; }
-  .wdash-card { padding: 7px 8px; gap: 4px; overflow: hidden; border-radius: 10px; }
+  .wdash-card { padding: 7px 8px; gap: 4px; border-radius: 10px; }
+  .wdash-card:not(.wdash-card--ambient) { overflow: hidden; }
   .wdash-card-header { gap: 5px; font-size: 0.5rem; line-height: 1.05; letter-spacing: 0.07em; }
   .wdash-card-header h3 { font-size: 0.62rem; line-height: 1.05; }
   .wdash-updated { font-size: 0.48rem; line-height: 1.05; }
