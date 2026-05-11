@@ -151,7 +151,8 @@ function createHubitatTilesAdapter(options = {}) {
         const parsed = JSON.parse(jsonText);
         if (parsed && typeof parsed === 'object') {
           const keys = Object.keys(parsed);
-          const recognized = keys.some(key => knownPayloadKeys.has(key) || key === 'segmentIndex' || key === 'segmentSize');
+          const recognized = keys.length === 0
+            || keys.some(key => knownPayloadKeys.has(key) || key === 'segmentIndex' || key === 'segmentSize');
           if (!recognized) {
             noteInvalidJson(id, 'unrecognized JSON payload');
             continue;
