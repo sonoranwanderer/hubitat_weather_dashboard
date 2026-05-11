@@ -221,13 +221,17 @@ renderedPages.clear()
 appScript.dashboardSetupPage()
 Map dashboardSetupRender = renderedPages.find { it.name == 'dashboardSetupPage' }
 assert dashboardSetupRender
-assert dashboardSetupRender.sections*.title.contains('JavaScript layout configuration')
-assert dashboardSetupRender.sections*.title.contains('Dashboard import')
+assert dashboardSetupRender.sections*.title.contains('Weather Dashboard Layout Setup')
+assert dashboardSetupRender.sections*.title.contains('Hubitat Dashboard Import')
+assert !dashboardSetupRender.sections*.title.contains('JavaScript layout configuration')
+assert !dashboardSetupRender.sections*.title.contains('Dashboard import')
 assert dashboardSetupRender.inputs.any { it.name == 'layoutOverrideJson' && it.type == 'textarea' }
 assert dashboardSetupRender.inputs.any { it.name == 'saveAndPreview' && it.type == 'button' }
 assert dashboardSetupRender.inputs.any { it.name == 'refreshNow' && it.type == 'button' }
-assert dashboardSetupRender.paragraphs.any { it.contains('does not change the Hubitat dashboard grid') }
-assert dashboardSetupRender.paragraphs.any { it.contains('separate from the JavaScript layout configuration') }
+assert dashboardSetupRender.paragraphs.any { it.contains('Controls the JavaScript renderer inside tile-0') }
+assert dashboardSetupRender.paragraphs.any { it.contains('does not change Hubitat') }
+assert dashboardSetupRender.paragraphs.any { it.contains('Controls the Hubitat dashboard grid and tile placement') }
+assert dashboardSetupRender.paragraphs.any { it.contains('does not control card placement inside the weather dashboard') }
 
 // Scenario: ambient source tiles scale to the configured sensor count instead of always creating six tiles.
 appScript.binding.setVariable('settings', [

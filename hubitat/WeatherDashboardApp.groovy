@@ -536,8 +536,9 @@ def configurationPage() {
 def dashboardSetupPage() {
     dynamicPage(name: "dashboardSetupPage", title: "Dashboard Setup", install: false, uninstall: false) {
         String childDeviceId = dashboardChildDeviceIdForLayout()
-        section("JavaScript layout configuration") {
-            paragraph "This JSON controls the Weather Dashboard renderer inside tile-0. It does not change the Hubitat dashboard grid."
+        section("Weather Dashboard Layout Setup") {
+            paragraph "<b>Controls the JavaScript renderer inside tile-0.</b> This JSON changes the weather cards, canvas, breakpoints, rows, and columns after Hubitat has loaded the dashboard tile."
+            paragraph "It does not change Hubitat's dashboard grid, tile size, tile order, or hidden source tile placement. Use the Hubitat Dashboard Import section below for that."
             paragraph "Use it to fine-tune the dashboard canvas size, percent or pixel tracks, breakpoints, and card placement. Leave blank to use the built-in JavaScript layout."
             paragraph "Set `baseWidth` and `baseHeight` (in pixels) to control the renderer canvas size. Set `trackUnit` to `percent` when numeric rows and columns should adapt to the measured tile size."
             paragraph "Rows accept objects like `{ \"height\": 360, \"columns\": [\"temp-wind\", \"ambient\"] }`. Repeat a card name in adjacent cells to span space, and use `\".\"` as an empty placeholder."
@@ -550,7 +551,9 @@ def dashboardSetupPage() {
             input name: "refreshNow", type: "button", title: "Refresh"
         }
 
-        section("Dashboard import") {
+        section("Hubitat Dashboard Import") {
+            paragraph "<b>Controls the Hubitat dashboard grid and tile placement.</b> This generated JSON creates the visible dashboardScript tile plus hidden source tiles that feed data to the renderer."
+            paragraph "It does not control card placement inside the weather dashboard. Use the Weather Dashboard Layout Setup section above for card layout."
             paragraph """<ul>
 <li>Add Dashboard -&gt; Hubitat Dashboard.</li>
 <li>Give the dashboard a name, for example <b>Weather Dashboard</b>.</li>
@@ -565,17 +568,13 @@ def dashboardSetupPage() {
 <li>Click <b>Save Layout JSON</b>.</li>
 <li>Click the <b>X</b> in the upper right of the dialog box.</li>
 </ul>"""
-            paragraph "This import JSON controls Hubitat's dashboard grid and tile placement. It is separate from the JavaScript layout configuration above."
             if (childDeviceId) {
                 paragraph "This template is using Weather Dashboard device ID <b>${htmlEncode(childDeviceId)}</b>."
             } else {
                 paragraph "<b>Weather Dashboard device ID not available yet.</b> Click Save & Refresh on Configure data sources, then return to this page. If you still see this message, replace <code>REPLACE_WITH_WEATHER_DASHBOARD_DEVICE_ID</code> in the JSON with the virtual device ID from Hubitat Devices."
             }
-        }
-
-        section("Import JSON") {
             String json = buildDashboardLayoutTemplateJson()
-            paragraph "<textarea readonly style='width:100%; min-height:520px; font-family:monospace; white-space:pre; box-sizing:border-box;'>${htmlEncode(json)}</textarea>"
+            paragraph "<textarea readonly title='Hubitat Dashboard Import JSON' style='width:100%; min-height:520px; font-family:monospace; white-space:pre; box-sizing:border-box;'>${htmlEncode(json)}</textarea>"
         }
 
         section("After importing") {
