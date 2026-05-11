@@ -7014,9 +7014,9 @@ function createRenderer(options = {}) {
   .wdash-pressure-stats .wdash-metric { padding: 2px 4px; }
   .wdash-pressure-stats .wdash-metric-value { font-size: 0.72rem; }
   .wdash-card--solar { gap: 2px; }
-  .wdash-card--solar .wdash-updated { transform: translateY(4px); }
-  .wdash-card--solar .wdash-sun-graphic { margin-top: -15px; }
-  .wdash-solar { gap: 2px; min-height: 0; }
+  .wdash-card--solar .wdash-updated { transform: translateY(6px); }
+  .wdash-card--solar .wdash-sun-graphic { flex: 1 1 auto; height: 100%; min-height: 0; aspect-ratio: auto; margin-top: 0; }
+  .wdash-solar { gap: 0; min-height: 0; flex: 1 1 auto; }
   .wdash-sun-metric-label,
   .wdash-sun-metric-value,
   .wdash-sun-time { font-size: 0.62rem; }

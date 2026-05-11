@@ -540,9 +540,8 @@ Map savedLayoutSettings = [layoutOverrideJson: previousDefaultLayout]
 appSettings.clear()
 appScript.binding.setVariable('settings', savedLayoutSettings)
 invokePrivate(appScript, 'migrateDefaultLayoutOverrideSetting')
-assert savedLayoutSettings.layoutOverrideJson.contains('"baseWidth": 820')
-assert savedLayoutSettings.layoutOverrideJson.contains('"columns": [68, 22]')
-assert savedLayoutSettings.layoutOverrideJson.contains('"baseHeight": 1280')
+assert savedLayoutSettings.layoutOverrideJson.contains('"columns": [70, 30]')
+assert savedLayoutSettings.layoutOverrideJson.contains('"height": 18')
 
 // Scenario: custom layout JSON is not migrated.
 Map customLayoutSettings = [layoutOverrideJson: '{"trackUnit":"percent","mobile":{"columns":[1],"rows":[{"height":100,"columns":["temp-wind"]}]}}']

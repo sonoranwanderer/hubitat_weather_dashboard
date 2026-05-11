@@ -56,17 +56,15 @@ function assertDesktopTabletDefaults(layout) {
 function assertMobileDefault(layout) {
   assert.strictEqual(layout.trackUnit, 'percent', 'default layout should remain percent-based');
   assert.deepStrictEqual(layout.mobile, {
-    baseWidth: 820,
-    baseHeight: 1280,
-    columns: [68, 22],
+    columns: [70, 30],
     gap: '6px',
     rows: [
-      { height: 27, columns: ['temp-wind', 'temp-wind'] },
-      { height: 17, columns: ['ambient', 'lightning'] },
-      { height: 20, columns: ['rain', 'rain'] },
+      { height: 25, columns: ['temp-wind', 'temp-wind'] },
+      { height: 18, columns: ['ambient', 'lightning'] },
+      { height: 17, columns: ['rain', 'rain'] },
       { height: 15, columns: ['pressure', 'pressure'] },
-      { height: 13, columns: ['solar', 'solar'] },
-      { height: 8, columns: ['air', 'air'] }
+      { height: 16, columns: ['solar', 'solar'] },
+      { height: 9, columns: ['air', 'air'] }
     ]
   }, 'mobile default layout should use the Pro Max scaled canvas');
 }
@@ -83,6 +81,7 @@ function assertMobileCssScoped(document) {
   assert(mobileCss.includes('.wdash-card:not(.wdash-card--ambient) { overflow: hidden; }'), 'mobile overflow clipping should exclude ambient controls');
   assert(mobileCss.includes('.wdash-card--temp-wind { display: grid;'), 'mobile temp/wind should use a card-local grid');
   assert(mobileCss.includes('.wdash-temp-wind-details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));'), 'mobile temp/wind metrics should use a 2 by 3 grid');
+  assert(mobileCss.includes('.wdash-card--solar .wdash-sun-graphic { flex: 1 1 auto; height: 100%;'), 'mobile solar graphic should fit the card height');
   assert(mobileCss.includes('.wdash-lightning-data { grid-template-columns: minmax(0, 1fr);'), 'mobile lightning compaction should be present');
   assert(mobileCss.includes('.wdash-air-metrics { --wdash-columns: 4 !important; grid-auto-rows: minmax(30px, 1fr);'), 'mobile air quality compaction should be present');
   assert(css.includes('@media (max-width: 980px) and (max-height: 520px)'), 'phone landscape compact rules should be scoped by width and height');
@@ -141,13 +140,13 @@ function assertLandscapeLayoutStyle(document) {
 
   assert.strictEqual(wrapper.dataset.layoutHasLightning, 'true', 'mobile default should enable lightning layout area');
   assert.strictEqual(hooks.layoutState.lastDiagnostics.base.activeBreakpoint, 'mobile', 'diagnostics should identify mobile breakpoint');
-  assert.strictEqual(root.style.getPropertyValue('--wdash-base-width'), '820px', 'mobile base width should use the scaled canvas');
-  assert.strictEqual(root.style.getPropertyValue('--wdash-base-height'), '1280px', 'mobile base height should use the scaled canvas');
-  assert.strictEqual(hooks.layoutState.lastDiagnostics.base.sources.mobile.width, 'section-override', 'mobile width should come from the mobile section');
-  assert.strictEqual(hooks.layoutState.lastDiagnostics.base.sources.mobile.height, 'section-override', 'mobile height should come from the mobile section');
+  assert.strictEqual(root.style.getPropertyValue('--wdash-base-width'), '440px', 'mobile base width should use the measured tile width');
+  assert.strictEqual(root.style.getPropertyValue('--wdash-base-height'), '844px', 'mobile base height should use the measured tile height');
+  assert.strictEqual(hooks.layoutState.lastDiagnostics.base.sources.mobile.width, 'inherit-inherit-measured', 'mobile width should inherit the measured base');
+  assert.strictEqual(hooks.layoutState.lastDiagnostics.base.sources.mobile.height, 'inherit-inherit-measured', 'mobile height should inherit the measured base');
 
   const scale = readScale(root);
-  assertApprox(scale, 440 / 820, 0.0001, 'mobile scale should fit the Pro Max width');
+  assertApprox(scale, 1, 0.0001, 'mobile scale should use the measured Pro Max canvas');
   assert(readPixels(root, '--wdash-render-height') <= 844, 'scaled mobile dashboard should fit the Pro Max portrait height');
 
   const mobileAreas = wrapper.style.getPropertyValue('--wdash-grid-areas-mobile');
@@ -156,12 +155,12 @@ function assertLandscapeLayoutStyle(document) {
   const mobileDiagnostics = hooks.layoutState.lastDiagnostics;
   const percentRowMobile = mobileDiagnostics.percentTracks.rows.find(entry => entry.breakpoint === 'mobile');
   assert(percentRowMobile, 'mobile percent row diagnostics should be present');
-  assert.deepStrictEqual(percentRowMobile.percents, [27, 17, 20, 15, 13, 8], 'mobile row weights should match the default');
+  assert.deepStrictEqual(percentRowMobile.percents, [25, 18, 17, 15, 16, 9], 'mobile row weights should match the default');
   assertApprox(percentRowMobile.finalPixels, percentRowMobile.available, 0.1, 'mobile row pixels should fill the mobile canvas');
 
   const percentColumnMobile = mobileDiagnostics.percentTracks.columns.find(entry => entry.breakpoint === 'mobile');
   assert(percentColumnMobile, 'mobile percent column diagnostics should be present');
-  assert.deepStrictEqual(percentColumnMobile.percents, [68, 22], 'mobile column weights should match the default');
+  assert.deepStrictEqual(percentColumnMobile.percents, [70, 30], 'mobile column weights should match the default');
   assertApprox(percentColumnMobile.finalPixels, percentColumnMobile.available, 0.1, 'mobile column pixels should fill the mobile canvas');
 
   assertMobileCssScoped(document);
