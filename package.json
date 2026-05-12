@@ -1,6 +1,6 @@
 {
   "name": "hubitat-weather-dashboard",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "private": true,
   "scripts": {
     "test": "./tests/run-all.sh",
@@ -15,10 +15,11 @@
     "verify:hubitat": "node ./build/verify-hubitat-bundle.mjs"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "esbuild": "file:vendor/esbuild-stub",
-    "jsdom": "file:vendor/jsdom-stub",
     "jest": "file:vendor/jest-stub",
-    "jest-environment-jsdom": "file:vendor/jest-environment-jsdom-stub"
+    "jest-environment-jsdom": "file:vendor/jest-environment-jsdom-stub",
+    "jsdom": "file:vendor/jsdom-stub"
   },
   "overrides": {
     "glob": "^10.4.2",

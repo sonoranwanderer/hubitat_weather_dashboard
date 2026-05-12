@@ -81,15 +81,15 @@ This is the default layout as JSON you can paste into the app setting:
     ]
   },
   "mobile": {
-    "columns": [76, 14],
+    "columns": [70, 30],
     "gap": "6px",
     "rows": [
-      { "height": 32, "columns": ["temp-wind", "temp-wind"] },
-      { "height": 26, "columns": ["ambient", "lightning"] },
-      { "height": 26, "columns": ["rain", "rain"] },
-      { "height": 26, "columns": ["pressure", "pressure"] },
-      { "height": 26, "columns": ["solar", "solar"] },
-      { "height": 15, "columns": ["air", "air"] }
+      { "height": 25, "columns": ["temp-wind", "temp-wind"] },
+      { "height": 18, "columns": ["ambient", "lightning"] },
+      { "height": 17, "columns": ["rain", "rain"] },
+      { "height": 15, "columns": ["pressure", "pressure"] },
+      { "height": 16, "columns": ["solar", "solar"] },
+      { "height": 9, "columns": ["air", "air"] }
     ]
   }
 }

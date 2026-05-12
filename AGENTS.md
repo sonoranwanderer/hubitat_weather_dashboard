@@ -9,6 +9,14 @@ Engineering expectations for this repository:
 - Regressions are not acceptable. When fixing a quality failure or defect, add a regression test to the appropriate harness as part of the same fix.
 - Keep changes scoped and intentional. If a fix exposes broader architectural risk, document the risk in the plan or pull request rather than hiding it in incidental refactoring.
 
+Dependency and workflow maintenance:
+
+- When changing CI, dependencies, or toolchain configuration, check that GitHub Actions, Node versions, npm packages, and bundled tooling are on supported major versions.
+- Prefer supported major-version action tags, such as `actions/checkout@v6`, unless SHA pinning is explicitly required. If an action is SHA-pinned, verify its `action.yml` `runs.using` runtime is still supported.
+- Run `npm audit --audit-level=moderate` after dependency changes and address known CVEs, or document why no fix is available.
+- Check `npm outdated` and relevant action release notes when touching dependencies or workflows. Keep updates scoped and test them before pushing.
+- Do not silence security or runtime warnings with temporary environment flags unless no supported action or dependency version exists. Document temporary exceptions and remove them promptly.
+
 When the user requests a code change in this git repository:
 
 1. Create a new branch before making changes.

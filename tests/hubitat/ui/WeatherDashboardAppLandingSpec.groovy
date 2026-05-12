@@ -509,6 +509,49 @@ appScript.binding.setVariable('settings', [layoutOverrideJson: '   '])
 assert invokePrivate(appScript, 'currentLayoutOverrideText') == null
 appScript.binding.setVariable('settings', [:])
 
+// Scenario: saved copies of the previous starter layout migrate to the current default.
+String previousDefaultLayout = '''{
+  "trackUnit": "percent",
+  "desktop": {
+    "columns": [50, 36, 14],
+    "gap": "6px",
+    "rows": [
+      { "height": 32, "columns": ["temp-wind", "ambient", "lightning"] },
+      { "height": 24, "columns": ["temp-wind", "rain", "rain"] },
+      { "height": 2, "columns": ["solar", "rain", "rain"] },
+      { "height": 27, "columns": ["solar", "pressure", "pressure"] },
+      { "height": 16, "columns": ["air", "air", "air"] }
+    ]
+  },
+  "mobile": {
+    "columns": [76, 14],
+    "gap": "6px",
+    "rows": [
+      { "height": 32, "columns": ["temp-wind", "temp-wind"] },
+      { "height": 26, "columns": ["ambient", "lightning"] },
+      { "height": 26, "columns": ["rain", "rain"] },
+      { "height": 26, "columns": ["pressure", "pressure"] },
+      { "height": 26, "columns": ["solar", "solar"] },
+      { "height": 15, "columns": ["air", "air"] }
+    ]
+  }
+}'''
+Map savedLayoutSettings = [layoutOverrideJson: previousDefaultLayout]
+appSettings.clear()
+appScript.binding.setVariable('settings', savedLayoutSettings)
+invokePrivate(appScript, 'migrateDefaultLayoutOverrideSetting')
+assert savedLayoutSettings.layoutOverrideJson.contains('"columns": [70, 30]')
+assert savedLayoutSettings.layoutOverrideJson.contains('"height": 18')
+
+// Scenario: custom layout JSON is not migrated.
+Map customLayoutSettings = [layoutOverrideJson: '{"trackUnit":"percent","mobile":{"columns":[1],"rows":[{"height":100,"columns":["temp-wind"]}]}}']
+appSettings.clear()
+appScript.binding.setVariable('settings', customLayoutSettings)
+invokePrivate(appScript, 'migrateDefaultLayoutOverrideSetting')
+assert customLayoutSettings.layoutOverrideJson.contains('"columns":[1]')
+assert !appSettings.containsKey('layoutOverrideJson')
+appScript.binding.setVariable('settings', [:])
+
 // Scenario: payload metadata and forecast helpers handle explicit layout and pressure inputs.
 Map layoutOverride = invokePrivate(appScript, 'parseLayoutOverrideSetting', [String] as Class<?>[], '{"baseWidth":1000,"desktop":{"gap":"4px"}}') as Map
 Map metadata = invokePrivate(appScript, 'buildMetadata', [Date, TimeZone, String, Map] as Class<?>[], new Date(baseTs), TimeZone.getTimeZone('UTC'), 'station-time', layoutOverride) as Map

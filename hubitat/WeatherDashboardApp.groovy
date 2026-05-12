@@ -49,7 +49,7 @@ definition(
 ]
 @Field final int DASHBOARD_AMBIENT_SENSORS_PER_TILE = 4
 @Field final int DASHBOARD_MAX_AMBIENT_TILES = 6
-@Field final String DEFAULT_LAYOUT_OVERRIDE_JSON = '''{
+@Field final String PRE_PROMAX_DEFAULT_LAYOUT_OVERRIDE_JSON = '''{
   "trackUnit": "percent",
   "desktop": {
     "columns": [50, 36, 14],
@@ -72,6 +72,32 @@ definition(
       { "height": 26, "columns": ["pressure", "pressure"] },
       { "height": 26, "columns": ["solar", "solar"] },
       { "height": 15, "columns": ["air", "air"] }
+    ]
+  }
+}'''
+@Field final String DEFAULT_LAYOUT_OVERRIDE_JSON = '''{
+  "trackUnit": "percent",
+  "desktop": {
+    "columns": [50, 36, 14],
+    "gap": "6px",
+    "rows": [
+      { "height": 32, "columns": ["temp-wind", "ambient", "lightning"] },
+      { "height": 24, "columns": ["temp-wind", "rain", "rain"] },
+      { "height": 2, "columns": ["solar", "rain", "rain"] },
+      { "height": 27, "columns": ["solar", "pressure", "pressure"] },
+      { "height": 16, "columns": ["air", "air", "air"] }
+    ]
+  },
+  "mobile": {
+    "columns": [70, 30],
+    "gap": "6px",
+    "rows": [
+      { "height": 25, "columns": ["temp-wind", "temp-wind"] },
+      { "height": 18, "columns": ["ambient", "lightning"] },
+      { "height": 13, "columns": ["rain", "rain"] },
+      { "height": 15, "columns": ["pressure", "pressure"] },
+      { "height": 16, "columns": ["solar", "solar"] },
+      { "height": 13, "columns": ["air", "air"] }
     ]
   }
 }'''
@@ -2595,6 +2621,7 @@ def updated() {
     unschedule()
     unsubscribe()
     ensureDashboardAccessToken()
+    migrateDefaultLayoutOverrideSetting()
     initialize()
 }
 
@@ -3218,6 +3245,43 @@ private String currentLayoutOverrideText() {
     }
     String text = raw.toString().trim()
     return text ? text : null
+}
+
+private void migrateDefaultLayoutOverrideSetting() {
+    String current = currentLayoutOverrideText()
+    if (!current) {
+        return
+    }
+    if (!layoutJsonEquivalent(current, PRE_PROMAX_DEFAULT_LAYOUT_OVERRIDE_JSON)) {
+        return
+    }
+    try {
+        if (app != null) {
+            app.updateSetting('layoutOverrideJson', [value: DEFAULT_LAYOUT_OVERRIDE_JSON, type: 'textarea'])
+        }
+    } catch (Throwable t) {
+        logWarn "Weather Dashboard App could not migrate default layout JSON: ${t?.message ?: t}"
+    }
+    try {
+        if (settings instanceof Map) {
+            settings.layoutOverrideJson = DEFAULT_LAYOUT_OVERRIDE_JSON
+        }
+    } catch (Throwable ignored) {
+    }
+    state.remove('cachedLayoutOverride')
+    state.remove('cachedLayoutOverrideRaw')
+    state.remove('lastLayoutOverrideError')
+    logInfo "Migrated Weather Dashboard default mobile layout JSON"
+}
+
+private boolean layoutJsonEquivalent(String left, String right) {
+    try {
+        def leftParsed = new JsonSlurper().parseText(left)
+        def rightParsed = new JsonSlurper().parseText(right)
+        return leftParsed == rightParsed
+    } catch (Exception ignored) {
+        return false
+    }
 }
 
 def handleWeatherEvent(evt) {
