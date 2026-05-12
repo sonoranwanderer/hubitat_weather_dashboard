@@ -7046,7 +7046,7 @@
         .wdash-wind-gust-value { font-size: 0.58rem; line-height: 1; }
         .wdash-wind-gust-unit { display: none; }
         .wdash-wind-gust-label { font-size: 0.4rem; line-height: 1; }
-        .wdash-card--temp-wind .wdash-wind-unit-indicator { top: 0; right: auto; left: 0; }
+        .wdash-card--temp-wind .wdash-wind-unit-indicator { top: 0; right: 0; }
         .wdash-card--ambient { gap: 5px; }
         .wdash-ambient { gap: 5px; min-height: 0; }
         .wdash-ambient-header-meta { gap: 5px; min-width: 0; }
