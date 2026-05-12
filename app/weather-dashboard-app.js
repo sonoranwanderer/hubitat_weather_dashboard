@@ -1319,22 +1319,52 @@
     };
   }
 
+  function isStandalonePortraitPhone(dimensions) {
+    const width = Number(dimensions?.width);
+    const height = Number(dimensions?.height);
+    return Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0
+      && width <= 720
+      && height > width;
+  }
+
+  function isStandaloneLandscapePhone(dimensions) {
+    const width = Number(dimensions?.width);
+    const height = Number(dimensions?.height);
+    return Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0
+      && width <= 980
+      && height <= 520
+      && width > height;
+  }
+
+  function assignLayoutBaseDimensions(layout, breakpoint, dimensions) {
+    if (!isObjectRecord(layout) || !breakpoint || !isObjectRecord(dimensions)) {
+      return;
+    }
+    if (!isObjectRecord(layout[breakpoint])) {
+      layout[breakpoint] = {};
+    }
+    layout[breakpoint].baseWidth = dimensions.width;
+    layout[breakpoint].baseHeight = dimensions.height;
+  }
+
   function applyStandaloneLayoutMetadata(payload) {
     if (!isObjectRecord(payload)) {
       return;
     }
     ensureDefaultLayoutMetadata(payload);
-    const dimensions = deriveStandaloneBaseDimensions(standaloneDashboardDimensions());
+    const dashboardDimensions = standaloneDashboardDimensions();
+    const dimensions = deriveStandaloneBaseDimensions(dashboardDimensions);
     const layout = payload.metadata.layout;
     layout.baseWidth = dimensions.width;
     layout.baseHeight = dimensions.height;
     ['desktop', 'tablet', 'mobile'].forEach(breakpoint => {
-      if (!isObjectRecord(layout[breakpoint])) {
-        layout[breakpoint] = {};
-      }
-      layout[breakpoint].baseWidth = dimensions.width;
-      layout[breakpoint].baseHeight = dimensions.height;
+      assignLayoutBaseDimensions(layout, breakpoint, dimensions);
     });
+    if (isStandalonePortraitPhone(dashboardDimensions)) {
+      assignLayoutBaseDimensions(layout, 'mobile', dashboardDimensions);
+    } else if (isStandaloneLandscapePhone(dashboardDimensions)) {
+      assignLayoutBaseDimensions(layout, 'tablet', dashboardDimensions);
+    }
   }
 
   function buildPayloadFromDevice(device) {
