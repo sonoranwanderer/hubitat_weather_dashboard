@@ -147,11 +147,12 @@ appScript.landingPage()
 Map landingPreviewPage = renderedPages.find { it.name == 'landingPage' }
 String previewMarkup = landingPreviewPage?.paragraphs?.join('\n') ?: ''
 assert previewMarkup.contains('id="weather-dashboard-preview-frame"')
-assert previewMarkup.contains('height: 560px')
-assert previewMarkup.contains('var MIN_HEIGHT = 360')
-assert previewMarkup.contains('var MAX_HEIGHT = 1100')
-assert previewMarkup.contains('var DEFAULT_HEIGHT = 560')
-assert previewMarkup.contains('width * 9 / 16')
+assert previewMarkup.contains('height: 680px')
+assert previewMarkup.contains('var STATUS_BAR_HEIGHT = 120')
+assert previewMarkup.contains('var MIN_HEIGHT = 480')
+assert previewMarkup.contains('var MAX_HEIGHT = 1220')
+assert previewMarkup.contains('var DEFAULT_HEIGHT = 680')
+assert previewMarkup.contains('width * 9 / 16) + STATUS_BAR_HEIGHT')
 assert !previewMarkup.contains("addEventListener('message'")
 assert !previewMarkup.contains('weather-dashboard-app:resize')
 
