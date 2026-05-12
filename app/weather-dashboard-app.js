@@ -123,8 +123,7 @@
       body ? body.clientHeight : 0,
       html ? html.scrollHeight : 0,
       html ? html.offsetHeight : 0,
-      html ? html.clientHeight : 0,
-      typeof global.innerHeight === 'number' ? global.innerHeight : 0
+      html ? html.clientHeight : 0
     ].filter(value => typeof value === 'number' && value > 0);
     if (!values.length) return 0;
     return Math.ceil(Math.max(...values));
@@ -278,7 +277,7 @@
     const { host, status, displayTile, displayPrimary } = shell;
     if (!host || !displayTile) return null;
 
-    const viewportDimensions = standaloneViewportDimensions();
+    const viewportDimensions = standaloneDashboardDimensions();
     const width = Math.max(1, Math.round(viewportDimensions.width));
     const height = Math.max(1, Math.round(viewportDimensions.height));
     const widthPx = `${width}px`;
@@ -1257,6 +1256,23 @@
     return { width, height };
   }
 
+  function measureStatusReserveHeight() {
+    const shell = shellElements;
+    const status = shell?.status;
+    if (!status || status.hidden) return 0;
+
+    const measured = [
+      status.scrollHeight,
+      status.offsetHeight,
+      status.clientHeight,
+      typeof status.getBoundingClientRect === 'function'
+        ? Number(status.getBoundingClientRect()?.height)
+        : 0
+    ].filter(value => Number.isFinite(value) && value > 0);
+    if (!measured.length) return 0;
+    return Math.ceil(Math.max(...measured) + HTML_APP_INNER_OFFSET);
+  }
+
   function browserViewportDimensions() {
     const doc = global.document;
     const docElement = doc?.documentElement || null;
@@ -1272,6 +1288,14 @@
     return configuredRenderDimensions()
       || browserViewportDimensions()
       || { width: DEFAULT_RENDER_BASE_WIDTH, height: DEFAULT_RENDER_BASE_HEIGHT };
+  }
+
+  function standaloneDashboardDimensions() {
+    const viewport = standaloneViewportDimensions();
+    return {
+      width: viewport.width,
+      height: Math.max(1, viewport.height - measureStatusReserveHeight())
+    };
   }
 
   function deriveStandaloneBaseDimensions(dimensions) {
@@ -1299,7 +1323,7 @@
       return;
     }
     ensureDefaultLayoutMetadata(payload);
-    const dimensions = deriveStandaloneBaseDimensions(standaloneViewportDimensions());
+    const dimensions = deriveStandaloneBaseDimensions(standaloneDashboardDimensions());
     const layout = payload.metadata.layout;
     layout.baseWidth = dimensions.width;
     layout.baseHeight = dimensions.height;

@@ -285,7 +285,7 @@ function runScheduledCallbacks(env, limit = 20) {
   delete global.location;
 
   const browserDimensionEnv = setupAppEnvironment({
-    search: '?hubBaseUrl=http%3A%2F%2Fhubitat.local&appId=123&makerToken=token&deviceIds=10',
+    search: '?hubBaseUrl=http%3A%2F%2Fhubitat.local&appId=123&makerToken=token&deviceIds=10&statusBar=no',
     innerWidth: 600,
     innerHeight: 350,
     responses: [
@@ -301,6 +301,29 @@ function runScheduledCallbacks(env, limit = 20) {
   const browserDisplayTile = findElementById(browserDimensionEnv.window.document.body, 'tile-0');
   assert.strictEqual(browserDisplayTile.style.width, '560px', 'browser viewport should subtract the horizontal inner offset from default width');
   assert.strictEqual(browserDisplayTile.style.height, '310px', 'browser viewport should subtract the vertical inner offset from default height');
+
+  delete global.window;
+  delete global.document;
+  delete global.location;
+
+  const statusDimensionEnv = setupAppEnvironment({
+    search: '?hubBaseUrl=http%3A%2F%2Fhubitat.local&appId=123&makerToken=token&deviceIds=10&statusBar=yes&width=600&height=350',
+    responses: [
+      { ok: true, text: JSON.stringify(makePayload(78.2)) }
+    ]
+  });
+  const visibleStatusPanel = findElementById(statusDimensionEnv.window.document.body, 'weather-dashboard-app-status');
+  Object.defineProperty(visibleStatusPanel, 'scrollHeight', { configurable: true, value: 50 });
+  Object.defineProperty(visibleStatusPanel, 'offsetHeight', { configurable: true, value: 50 });
+  statusDimensionEnv.window.__WEATHER_DASHBOARD_APP__.refreshNow();
+  await flushMicrotasks();
+  runScheduledCallbacks(statusDimensionEnv);
+  const statusDimensionPayload = lastRenderedPayload(statusDimensionEnv.renderCalls);
+  assert(Math.abs(statusDimensionPayload.metadata.layout.baseWidth - 1928.571) < 0.01, 'visible status bar should reduce the dashboard renderer height');
+  assert.strictEqual(statusDimensionPayload.metadata.layout.baseHeight, 900, 'visible status bar should preserve renderer base height');
+  const statusDisplayTile = findElementById(statusDimensionEnv.window.document.body, 'tile-0');
+  assert.strictEqual(statusDisplayTile.style.width, '600px', 'explicit width should still size the standalone viewport');
+  assert.strictEqual(statusDisplayTile.style.height, '280px', 'visible status bar height and gap should be removed from dashboard height');
 
   delete global.window;
   delete global.document;
