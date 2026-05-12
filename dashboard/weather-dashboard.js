@@ -7077,7 +7077,6 @@
         .wdash-pressure-stats .wdash-metric { padding: 2px 4px; }
         .wdash-pressure-stats .wdash-metric-value { font-size: 0.72rem; }
         .wdash-card--solar { gap: 2px; }
-        .wdash-card--solar .wdash-updated { transform: translateY(6px); }
         .wdash-card--solar .wdash-sun-graphic { flex: 1 1 auto; height: auto; min-height: 74px; aspect-ratio: auto; margin-top: -3px; overflow: visible; }
         .wdash-card--solar .wdash-sun-svg { transform: translateY(18%) scaleY(0.82); transform-origin: center bottom; }
         .wdash-card--solar .wdash-sun-html-metric--uv { left: 18% !important; top: 39% !important; }
