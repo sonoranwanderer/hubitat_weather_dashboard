@@ -6961,9 +6961,9 @@ function createRenderer(options = {}) {
   .wdash-card--temp-wind .wdash-temp,
   .wdash-card--temp-wind .wdash-wind { align-items: center; justify-content: center; min-height: 0; height: 100%; }
   .wdash-temp-wind-footer { grid-column: 2; grid-row: 2; display: flex; align-items: center; min-height: 0; }
-  .wdash-gauge-center { padding: 6px 5px; gap: 1px; }
+  .wdash-gauge-center { padding: 6px 5px; gap: 3px; }
   .wdash-gauge-current { line-height: 1; }
-  .wdash-gauge-value { font-size: 1.42rem; line-height: 0.94; letter-spacing: 0; }
+  .wdash-gauge-value { font-size: 1.5rem; line-height: 0.94; letter-spacing: 0; }
   .wdash-temp-extrema { gap: 0; line-height: 1; }
   .wdash-temp-extrema-label { font-size: 0.4rem; line-height: 1; }
   .wdash-temp-extrema-value { font-size: 0.58rem; line-height: 1; }
@@ -6973,11 +6973,11 @@ function createRenderer(options = {}) {
   .wdash-metric-label { font-size: 0.5rem; line-height: 1.12; letter-spacing: 0.07em; }
   .wdash-metric-value { font-size: 0.78rem; line-height: 1.08; }
   .wdash-metric-sub { font-size: 0.56rem; line-height: 1.1; }
-  .wdash-wind-overlay { gap: 1px; line-height: 1; }
+  .wdash-wind-overlay { gap: 3px; line-height: 1; }
   .wdash-wind-bearing,
   .wdash-wind-heading { font-size: 0.5rem; line-height: 1; }
   .wdash-wind-speed { gap: 2px; line-height: 1; }
-  .wdash-wind-speed-value { font-size: 1.34rem; line-height: 0.95; }
+  .wdash-wind-speed-value { font-size: 1.42rem; line-height: 0.95; }
   .wdash-wind-speed-unit { font-size: 0.64rem; }
   .wdash-wind-gust { gap: 2px; line-height: 1; }
   .wdash-wind-gust-value { font-size: 0.58rem; line-height: 1; }
