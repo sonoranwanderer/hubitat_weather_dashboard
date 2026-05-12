@@ -71,51 +71,6 @@
     </div>
     <script>
       (function bootstrap() {
-        function parseQuery(search) {
-          var source = (search || '').replace(/^\?/, '');
-          if (!source) return {};
-          return source.split('&').reduce(function (acc, pair) {
-            if (!pair) return acc;
-            var index = pair.indexOf('=');
-            var key = index >= 0 ? pair.slice(0, index) : pair;
-            var value = index >= 0 ? pair.slice(index + 1) : '';
-            try {
-              key = decodeURIComponent(key.replace(/\+/g, ' '));
-            } catch (err) {
-              key = key.replace(/\+/g, ' ');
-            }
-            try {
-              value = decodeURIComponent(value.replace(/\+/g, ' '));
-            } catch (err) {
-              value = value.replace(/\+/g, ' ');
-            }
-            if (!key) return acc;
-            acc[key] = value;
-            return acc;
-          }, {});
-        }
-
-        var SearchParams = window.URLSearchParams || (typeof URLSearchParams === 'function' ? URLSearchParams : null);
-        var params = null;
-        if (SearchParams) {
-          try {
-            params = new SearchParams(window.location.search || '');
-          } catch (err) {
-            params = null;
-          }
-        }
-        var fallbackParams = params ? null : parseQuery(window.location.search || '');
-        function readParam(name) {
-          if (params && typeof params.get === 'function') {
-            return params.get(name);
-          }
-          return fallbackParams ? fallbackParams[name] : null;
-        }
-
-        var rendererSrc = readParam('rendererScript');
-        var appSrc = readParam('appScript');
-        var bundleBase = readParam('bundleBase');
-
         var resizePending = false;
         var lastHeight = 0;
 
@@ -172,51 +127,16 @@
           }
         }
 
-        function normalizePath(path) {
-          if (!path) return '';
-          return path.endsWith('/') ? path : path + '/';
-        }
-
-        function resolveSafeScriptSource(src) {
-          var raw = String(src || '').trim();
-          if (!raw || /[\u0000-\u001f\u007f]/.test(raw)) return '';
-          if (typeof URL === 'function') {
-            try {
-              var url = new URL(raw, window.location.href);
-              if (url.protocol !== 'http:' && url.protocol !== 'https:') return '';
-              if (url.origin !== window.location.origin) return '';
-              return url.href;
-            } catch (err) {
-              return '';
-            }
-          }
-          if (/^[a-z][a-z0-9+.-]*:/i.test(raw) || raw.indexOf('//') === 0) return '';
-          return raw;
-        }
-
-        var base = normalizePath(resolveSafeScriptSource(bundleBase || '/local') || '/local');
-        if (!rendererSrc) {
-          rendererSrc = base + 'weather-dashboard.js';
-        }
-        if (!appSrc) {
-          appSrc = base + 'weather-dashboard-app.js';
-        }
-
         function appendScript(src, onload) {
-          var safeSrc = resolveSafeScriptSource(src);
-          if (!safeSrc) {
-            reportFailure('Refused to load unsafe script path.');
-            return;
-          }
           var script = document.createElement('script');
           script.async = false;
-          script.src = safeSrc;
+          script.src = src;
           if (onload) {
             script.addEventListener('load', onload, { once: true });
           }
           script.addEventListener('error', function (event) {
-            console.error('Weather Dashboard App: failed to load script', safeSrc, event);
-            reportFailure('Unable to load ' + safeSrc + '.');
+            console.error('Weather Dashboard App: failed to load script', src, event);
+            reportFailure('Unable to load ' + src + '.');
           });
           document.body.appendChild(script);
         }
@@ -241,8 +161,8 @@
           scheduleResize();
         }
 
-        appendScript(rendererSrc, function () {
-          appendScript(appSrc, function () {
+        appendScript('/local/weather-dashboard.js', function () {
+          appendScript('/local/weather-dashboard-app.js', function () {
             var loader = document.getElementById('wdash-app-loader');
             if (loader && loader.parentNode) {
               loader.parentNode.removeChild(loader);

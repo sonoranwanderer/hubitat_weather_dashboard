@@ -59,5 +59,4 @@ Older alias names such as `hub`, `token`, `makerApiToken`, and `devices` are int
 ### Troubleshooting
 
 - **404 in the preview frame** - Re-upload `app/weather-dashboard-app.html`, `app/weather-dashboard-app.js`, and `dashboard/weather-dashboard.js` to File Manager.
-- **Custom asset locations** - Pass `bundleBase`, `rendererScript`, or `appScript` in the preview URL if you host the files somewhere other than `/local/`.
 - **401 Unauthorized** - Recheck the Maker API Application ID and token in both Maker API and the Weather Dashboard app settings.

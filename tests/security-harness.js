@@ -51,10 +51,11 @@ function runLoader(search) {
 }
 
 const unsafe = runLoader('?rendererScript=javascript%3Aalert(1)%3Cimg%20src%3Dx%20onerror%3Dalert(2)%3E');
-assert.strictEqual(unsafe.appendedScripts.length, 0, 'unsafe renderer script should not be appended');
-assert(
-  unsafe.window.document.body.textContent.includes('Refused to load unsafe script path.'),
-  'unsafe renderer script should render a text-only failure'
+assert.strictEqual(unsafe.appendedScripts.length, 1, 'loader should ignore query-controlled renderer script paths');
+assert.strictEqual(
+  unsafe.appendedScripts[0].src,
+  '/local/weather-dashboard.js',
+  'loader should always use the fixed renderer script path'
 );
 assert(
   !unsafe.window.document.body.innerHTML.includes('<img'),
@@ -62,15 +63,18 @@ assert(
 );
 
 const safe = runLoader('?bundleBase=/local/custom/');
-assert.strictEqual(safe.appendedScripts.length, 1, 'safe same-origin renderer script should be appended');
+assert.strictEqual(safe.appendedScripts.length, 1, 'loader should append the fixed same-origin renderer script');
 assert.strictEqual(
   safe.appendedScripts[0].src,
-  'http://localhost/local/custom/weather-dashboard.js',
-  'relative bundle base should resolve against the current origin'
+  '/local/weather-dashboard.js',
+  'bundleBase should not override the fixed renderer script path'
 );
 
 const parsed = new JSDOM('<!doctype html><html><head><title>Safe</title></head><body><main id="root">Ready</main></body></html>');
 assert.strictEqual(parsed.window.document.head.textContent, 'Safe', 'head content should be extracted');
 assert.strictEqual(parsed.window.document.body.textContent, 'Ready', 'body content should be extracted');
+
+const prefixed = new JSDOM('<!doctype html><html><header>Banner</header><head><title>Safe</title></head><body><main>Ready</main></body></html>');
+assert.strictEqual(prefixed.window.document.head.textContent, 'Safe', 'head extraction should skip tag-name prefixes');
 
 console.log('security-harness.js passed');

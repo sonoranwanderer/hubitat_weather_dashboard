@@ -62,9 +62,6 @@ These URL dimensions affect the standalone HTML page only. Layout JSON configure
 | `statusBar` | Use `yes` or `no` to force the connection/status panel visible or hidden after successful renders. |
 | `pollIntervalMs` | Refresh interval in milliseconds. The page enforces the supported minimum. |
 | `maxBackoffMs` | Maximum retry backoff after failed Maker API requests. |
-| `bundleBase` | Base path for `weather-dashboard.js` and `weather-dashboard-app.js` when they are hosted outside `/local/`. |
-| `rendererScript` | Full URL/path override for `weather-dashboard.js`. |
-| `appScript` | Full URL/path override for `weather-dashboard-app.js`. |
 
 The canonical refresh parameters are `pollIntervalMs` and `maxBackoffMs`. The page also accepts these aliases:
 
