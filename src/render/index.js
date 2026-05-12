@@ -6853,7 +6853,7 @@ function createRenderer(options = {}) {
 .wdash-rain-main { display: grid; grid-template-columns: minmax(0, 0.85fr) 1fr 1fr; gap: 18px; align-items: stretch; flex: 1; height: 100%; }
 .wdash-rain-col { min-height: 0; }
 .wdash-rain-col--drop { display: flex; align-items: center; justify-content: center; }
-.wdash-rain-col--drop svg { width: auto; height: var(--wdash-rain-drop-height, 80%); max-width: 100%; max-height: var(--wdash-rain-drop-height, 80%); display: block; filter: drop-shadow(0 6px 12px rgba(0,0,0,0.3)); overflow: visible; }
+.wdash-rain-col--drop svg { width: auto; height: var(--wdash-rain-drop-height, 95%); max-width: 100%; max-height: var(--wdash-rain-drop-height, 95%); display: block; filter: drop-shadow(0 6px 12px rgba(0,0,0,0.3)); overflow: visible; }
 .wdash-rain-drop-outline { fill: none; stroke: #6ab9ff; stroke-width: 4; stroke-linejoin: round; }
 .wdash-rain-drop-bg { fill: rgba(80,160,255,0.15); }
 .wdash-rain-drop-fill { transition: all 0.4s ease-in-out; }
@@ -6959,7 +6959,7 @@ function createRenderer(options = {}) {
   .wdash-card-header--temp-wind { grid-column: 1 / -1; padding-bottom: 2px; }
   .wdash-temp-wind-main { grid-column: 1; grid-row: 2; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px; align-items: stretch; min-height: 0; height: 100%; }
   .wdash-card--temp-wind .wdash-temp,
-  .wdash-card--temp-wind .wdash-wind { align-items: center; justify-content: center; min-height: 0; height: 100%; }
+  .wdash-card--temp-wind .wdash-wind { align-items: center; justify-content: center; min-height: 0; height: 100%; padding: 2px; box-sizing: border-box; }
   .wdash-temp-wind-footer { grid-column: 2; grid-row: 2; display: flex; align-items: center; min-height: 0; }
   .wdash-gauge-center { padding: 6px 5px; gap: 5px; }
   .wdash-gauge-current { line-height: 1; }
@@ -7006,10 +7006,10 @@ function createRenderer(options = {}) {
   .wdash-lightning-label { font-size: 0.48rem; line-height: 1.05; }
   .wdash-lightning-value { font-size: 0.72rem; line-height: 1.05; }
   .wdash-lightning-battery { transform: scale(0.82); transform-origin: center; }
-  .wdash-rain-main { grid-template-columns: minmax(0, 0.65fr) minmax(0, 0.95fr) minmax(0, 1.25fr); gap: 9px; min-height: 0; }
-  .wdash-rain-col--drop svg { --wdash-rain-drop-height: 72%; }
+  .wdash-rain-main { grid-template-columns: minmax(0, 0.65fr) minmax(0, 0.95fr) minmax(0, 1.25fr); gap: 9px; min-height: 0; position: relative; }
   .wdash-rain-rate-wrapper { width: 100%; }
   .wdash-rain-daily-metric { gap: 3px; }
+  .wdash-rain-daily-metric .wdash-battery-slot { position: absolute; left: calc((100% - 18px) * 0.205 + 3px); bottom: 11%; margin-top: 0; transform: scale(0.86); transform-origin: left bottom; }
   .wdash-rain-daily-value-amount { font-size: 2.15rem; }
   .wdash-rain-daily-value-unit { font-size: 0.72rem; }
   .wdash-rain-daily-label { font-size: 0.72rem; }
@@ -7030,7 +7030,7 @@ function createRenderer(options = {}) {
   .wdash-card--solar .wdash-sun-graphic { flex: 1 1 auto; height: auto; min-height: 74px; aspect-ratio: auto; margin-top: -3px; overflow: visible; }
   .wdash-card--solar .wdash-sun-svg { transform: translateY(18%) scaleY(0.82); transform-origin: center bottom; }
   .wdash-card--solar .wdash-sun-html-metric--uv { left: 18% !important; top: 39% !important; }
-  .wdash-card--solar .wdash-sun-html-metric--solar { left: 52% !important; top: 54% !important; }
+  .wdash-card--solar .wdash-sun-html-metric--solar { left: 50% !important; top: 15% !important; }
   .wdash-card--solar .wdash-sun-html-metric--moon { left: 84% !important; top: 40% !important; }
   .wdash-card--solar .wdash-sun-time { top: auto !important; bottom: 3px; transform: translateX(-50%); }
   .wdash-card--solar .wdash-sun-time--rise { left: 24% !important; }
@@ -7046,8 +7046,8 @@ function createRenderer(options = {}) {
   .wdash-card--air { gap: 4px; }
   .wdash-card-header--air .wdash-card-header-main { gap: 5px; }
   .wdash-air-source { font-size: 0.5rem; }
-  .wdash-air-metrics { --wdash-columns: 4 !important; grid-auto-rows: minmax(30px, 1fr); gap: 3px 5px; min-height: 0; }
-  .wdash-air-metrics .wdash-metric { min-height: 30px; padding: 3px 5px; }
+  .wdash-air-metrics { --wdash-columns: 4 !important; grid-auto-rows: minmax(28px, 1fr); gap: 3px 5px; min-height: 0; }
+  .wdash-air-metrics .wdash-metric { min-height: 28px; padding: 3px 5px; }
   .wdash-air-metrics .wdash-metric-label { min-height: 0; font-size: 0.42rem; line-height: 1.05; letter-spacing: 0.05em; }
   .wdash-air-metrics .wdash-metric-value { font-size: 0.66rem; line-height: 1.05; }
   .wdash-battery { --wdash-battery-width: 15px; --wdash-battery-height: 28px; --wdash-battery-border: 2px; --wdash-battery-tip-length: 4px; }
@@ -7102,7 +7102,6 @@ function createRenderer(options = {}) {
   .wdash-lightning-value { font-size: 0.64rem; line-height: 1.02; }
   .wdash-lightning-battery { transform: scale(0.75); transform-origin: center; }
   .wdash-rain-main { grid-template-columns: minmax(0, 0.55fr) minmax(0, 0.9fr) minmax(0, 1.35fr); gap: 7px; min-height: 0; }
-  .wdash-rain-col--drop svg { --wdash-rain-drop-height: 66%; }
   .wdash-rain-rate-wrapper { width: 100%; }
   .wdash-rain-daily-metric { gap: 2px; }
   .wdash-rain-daily-value-amount { font-size: 1.8rem; }

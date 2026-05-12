@@ -61,10 +61,10 @@ function assertMobileDefault(layout) {
     rows: [
       { height: 25, columns: ['temp-wind', 'temp-wind'] },
       { height: 18, columns: ['ambient', 'lightning'] },
-      { height: 17, columns: ['rain', 'rain'] },
+      { height: 13, columns: ['rain', 'rain'] },
       { height: 15, columns: ['pressure', 'pressure'] },
       { height: 16, columns: ['solar', 'solar'] },
-      { height: 9, columns: ['air', 'air'] }
+      { height: 13, columns: ['air', 'air'] }
     ]
   }, 'mobile default layout should use the Pro Max scaled canvas');
 }
@@ -81,6 +81,7 @@ function assertMobileCssScoped(document) {
   assert(mobileCss.includes('.wdash-card:not(.wdash-card--ambient) { overflow: hidden; }'), 'mobile overflow clipping should exclude ambient controls');
   assert(mobileCss.includes('.wdash-card--temp-wind { display: grid;'), 'mobile temp/wind should use a card-local grid');
   assert(mobileCss.includes('.wdash-temp-wind-main { grid-column: 1; grid-row: 2; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px; align-items: stretch; min-height: 0; height: 100%; }'), 'mobile temp/wind gauge grid should keep stretched measurable cells');
+  assert(mobileCss.includes('.wdash-wind { align-items: center; justify-content: center; min-height: 0; height: 100%; padding: 2px; box-sizing: border-box; }'), 'mobile temp/wind dial hosts should keep a small buffer from unit buttons');
   assert(mobileCss.includes('--temp-wind-gauge-center-inset: 23%; --temp-wind-compass-block-inset: 23%; --temp-wind-compass-inline-inset: 17%;'), 'mobile temp/wind overlay insets should fit compact gauges');
   assert(mobileCss.includes('.wdash-gauge-center { padding: 6px 5px; gap: 5px; }'), 'mobile temp gauge center should keep readable vertical spacing');
   assert(mobileCss.includes('.wdash-gauge-value { font-size: 1.5rem; line-height: 0.94;'), 'mobile temp gauge value should be compact');
@@ -88,11 +89,17 @@ function assertMobileCssScoped(document) {
   assert(mobileCss.includes('.wdash-wind-gust-unit { display: none; }'), 'mobile gust overlay should hide the wind unit label');
   assert(mobileCss.includes('.wdash-card--temp-wind .wdash-wind-unit-indicator { top: 0; right: 0; }'), 'mobile wind unit button should remove the compass corner inset');
   assert(mobileCss.includes('.wdash-temp-wind-details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));'), 'mobile temp/wind metrics should use a 2 by 3 grid');
+  assert(mobileCss.includes('.wdash-rain-main { grid-template-columns: minmax(0, 0.65fr) minmax(0, 0.95fr) minmax(0, 1.25fr); gap: 9px; min-height: 0; position: relative; }'), 'mobile rain card should anchor floating elements inside the rain grid');
+  assert(mobileCss.includes('.wdash-rain-daily-metric .wdash-battery-slot { position: absolute; left: calc((100% - 18px) * 0.205 + 3px); bottom: 11%; margin-top: 0; transform: scale(0.86); transform-origin: left bottom; }'), 'mobile rain battery should float between the drop and daily label');
+  assert(css.includes('.wdash-rain-col--drop svg { width: auto; height: var(--wdash-rain-drop-height, 95%); max-width: 100%; max-height: var(--wdash-rain-drop-height, 95%);'), 'rain drop should use the universal 95 percent height default');
+  assert(!css.includes('--wdash-rain-drop-height: 72%;'), 'mobile rain drop should not override the universal height');
+  assert(!css.includes('--wdash-rain-drop-height: 66%;'), 'phone landscape rain drop should not override the universal height');
   assert(mobileCss.includes('.wdash-card--solar .wdash-sun-graphic { flex: 1 1 auto; height: auto; min-height: 74px;'), 'mobile solar graphic should use a compact fixed composition');
   assert(mobileCss.includes('.wdash-card--solar .wdash-sun-svg { transform: translateY(18%) scaleY(0.82);'), 'mobile solar arc should be moved closer to the time labels');
+  assert(mobileCss.includes('.wdash-card--solar .wdash-sun-html-metric--solar { left: 50% !important; top: 15% !important; }'), 'mobile solar metric should sit above the sun arc');
   assert(mobileCss.includes('.wdash-card--solar .wdash-sun-time { top: auto !important; bottom: 3px; transform: translateX(-50%); }'), 'mobile solar times should be bottom anchored');
   assert(mobileCss.includes('.wdash-lightning-data { grid-template-columns: minmax(0, 1fr);'), 'mobile lightning compaction should be present');
-  assert(mobileCss.includes('.wdash-air-metrics { --wdash-columns: 4 !important; grid-auto-rows: minmax(30px, 1fr);'), 'mobile air quality compaction should be present');
+  assert(mobileCss.includes('.wdash-air-metrics { --wdash-columns: 4 !important; grid-auto-rows: minmax(28px, 1fr);'), 'mobile air quality compaction should be present');
   assert(css.includes('@media (max-width: 980px) and (max-height: 520px)'), 'phone landscape compact rules should be scoped by width and height');
   assert(css.includes('.wdash-air-metrics { --wdash-columns: 4 !important; grid-auto-rows: minmax(24px, 1fr);'), 'phone landscape air quality compaction should be present');
 }
@@ -164,7 +171,7 @@ function assertLandscapeLayoutStyle(document) {
   const mobileDiagnostics = hooks.layoutState.lastDiagnostics;
   const percentRowMobile = mobileDiagnostics.percentTracks.rows.find(entry => entry.breakpoint === 'mobile');
   assert(percentRowMobile, 'mobile percent row diagnostics should be present');
-  assert.deepStrictEqual(percentRowMobile.percents, [25, 18, 17, 15, 16, 9], 'mobile row weights should match the default');
+  assert.deepStrictEqual(percentRowMobile.percents, [25, 18, 13, 15, 16, 13], 'mobile row weights should match the default');
   assertApprox(percentRowMobile.finalPixels, percentRowMobile.available, 0.1, 'mobile row pixels should fill the mobile canvas');
 
   const percentColumnMobile = mobileDiagnostics.percentTracks.columns.find(entry => entry.breakpoint === 'mobile');
