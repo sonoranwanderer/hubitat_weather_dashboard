@@ -286,26 +286,7 @@ def landingPage() {
     frame.style.height = clamped + 'px';
   }
 
-  function normalizePayload(payload) {
-    if (!payload) return null;
-    if (typeof payload === 'string') {
-      try {
-        return JSON.parse(payload);
-      } catch (err) {
-        return null;
-      }
-    }
-    return payload;
-  }
-
-  function handleMessage(event) {
-    var data = event && event.data ? normalizePayload(event.data) : null;
-    if (!data || data.type !== 'weather-dashboard-app:resize') return;
-    applyHeight(data.height);
-  }
-
   if (window && window.addEventListener) {
-    window.addEventListener('message', handleMessage, false);
     window.addEventListener('resize', applyPreviewHeight);
     window.addEventListener('load', function () {
       if (!applyPreviewHeight()) {

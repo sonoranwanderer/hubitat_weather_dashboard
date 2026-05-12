@@ -152,6 +152,8 @@ assert previewMarkup.contains('var MIN_HEIGHT = 360')
 assert previewMarkup.contains('var MAX_HEIGHT = 1100')
 assert previewMarkup.contains('var DEFAULT_HEIGHT = 560')
 assert previewMarkup.contains('width * 9 / 16')
+assert !previewMarkup.contains("addEventListener('message'")
+assert !previewMarkup.contains('weather-dashboard-app:resize')
 
 // Scenario: fresh app initialization creates the dashboard child device before weather devices are configured.
 childDevices.clear()
