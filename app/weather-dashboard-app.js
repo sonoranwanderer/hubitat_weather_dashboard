@@ -14,6 +14,7 @@
   const DEFAULT_MAX_BACKOFF_MS = 60000;
   const DEFAULT_RENDER_BASE_WIDTH = 1200;
   const DEFAULT_RENDER_BASE_HEIGHT = 900;
+  const HTML_APP_INNER_OFFSET = 20;
   const HTML_APP_MAX_SCALE = 2;
 
   const state = {
@@ -436,7 +437,7 @@
         display: flex;
         justify-content: center;
         align-items: stretch;
-        padding: 24px 16px 36px;
+        padding: 0;
         box-sizing: border-box;
         overflow: auto;
       }
@@ -448,7 +449,7 @@
         align-items: stretch;
         justify-content: flex-start;
         gap: 20px;
-        padding: 18px 20px 28px;
+        padding: ${HTML_APP_INNER_OFFSET}px;
         margin: 0 auto;
         box-sizing: border-box;
         min-height: 100%;
@@ -465,7 +466,6 @@
       }
       #${HOST_ID}[data-status-bar-visible="false"][data-status-bar-locked="true"] {
         gap: 0;
-        padding-top: 0;
       }
       #${HOST_ID} .wdash-app-status {
         width: 100%;
@@ -1259,8 +1259,8 @@
   function browserViewportDimensions() {
     const doc = global.document;
     const docElement = doc?.documentElement || null;
-    const width = Number(global.innerWidth) || Number(docElement?.clientWidth) || 0;
-    const height = Number(global.innerHeight) || Number(docElement?.clientHeight) || 0;
+    const width = (Number(global.innerWidth) || Number(docElement?.clientWidth) || 0) - (HTML_APP_INNER_OFFSET * 2);
+    const height = (Number(global.innerHeight) || Number(docElement?.clientHeight) || 0) - (HTML_APP_INNER_OFFSET * 2);
     if (!Number.isFinite(width) || width <= 0 || !Number.isFinite(height) || height <= 0) {
       return null;
     }

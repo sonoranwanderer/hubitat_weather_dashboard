@@ -137,6 +137,25 @@ function lastRenderedPayload(renderCalls) {
   return JSON.parse(rendered[rendered.length - 1]);
 }
 
+function findElementById(node, id) {
+  if (!node) return null;
+  if (node.id === id) return node;
+  for (const child of Array.from(node.children || [])) {
+    const found = findElementById(child, id);
+    if (found) return found;
+  }
+  return null;
+}
+
+function runScheduledCallbacks(env, limit = 20) {
+  for (let index = 0; index < env.timers.length && index < limit; index += 1) {
+    const timer = env.timers[index];
+    if (timer.type === 'raf' && typeof timer.callback === 'function') {
+      timer.callback();
+    }
+  }
+}
+
 (async () => {
   const env = setupAppEnvironment({
     search: '?statusBar=no',
@@ -273,9 +292,13 @@ function lastRenderedPayload(renderCalls) {
   });
   browserDimensionEnv.window.__WEATHER_DASHBOARD_APP__.refreshNow();
   await flushMicrotasks();
+  runScheduledCallbacks(browserDimensionEnv);
   const browserDimensionPayload = lastRenderedPayload(browserDimensionEnv.renderCalls);
-  assert(Math.abs(browserDimensionPayload.metadata.layout.baseWidth - 1542.857) < 0.01, 'browser viewport should set a same-ratio renderer baseWidth when width is omitted');
+  assert(Math.abs(browserDimensionPayload.metadata.layout.baseWidth - 1625.806) < 0.01, 'browser viewport should set a same-ratio renderer baseWidth when width is omitted');
   assert.strictEqual(browserDimensionPayload.metadata.layout.baseHeight, 900, 'browser viewport should set a same-ratio renderer baseHeight when height is omitted');
+  const browserDisplayTile = findElementById(browserDimensionEnv.window.document.body, 'tile-0');
+  assert.strictEqual(browserDisplayTile.style.width, '560px', 'browser viewport should subtract the horizontal inner offset from default width');
+  assert.strictEqual(browserDisplayTile.style.height, '310px', 'browser viewport should subtract the vertical inner offset from default height');
 
   delete global.window;
   delete global.document;
