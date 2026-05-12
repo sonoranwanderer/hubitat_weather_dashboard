@@ -7078,7 +7078,14 @@
         .wdash-pressure-stats .wdash-metric-value { font-size: 0.72rem; }
         .wdash-card--solar { gap: 2px; }
         .wdash-card--solar .wdash-updated { transform: translateY(6px); }
-        .wdash-card--solar .wdash-sun-graphic { flex: 1 1 auto; height: 100%; min-height: 0; aspect-ratio: auto; margin-top: 0; }
+        .wdash-card--solar .wdash-sun-graphic { flex: 1 1 auto; height: auto; min-height: 74px; aspect-ratio: auto; margin-top: -3px; overflow: visible; }
+        .wdash-card--solar .wdash-sun-svg { transform: translateY(18%) scaleY(0.82); transform-origin: center bottom; }
+        .wdash-card--solar .wdash-sun-html-metric--uv { left: 18% !important; top: 39% !important; }
+        .wdash-card--solar .wdash-sun-html-metric--solar { left: 52% !important; top: 54% !important; }
+        .wdash-card--solar .wdash-sun-html-metric--moon { left: 84% !important; top: 40% !important; }
+        .wdash-card--solar .wdash-sun-time { top: auto !important; bottom: 3px; transform: translateX(-50%); }
+        .wdash-card--solar .wdash-sun-time--rise { left: 24% !important; }
+        .wdash-card--solar .wdash-sun-time--set { left: 76% !important; }
         .wdash-solar { gap: 0; min-height: 0; flex: 1 1 auto; }
         .wdash-sun-metric-label,
         .wdash-sun-metric-value,
@@ -7166,6 +7173,10 @@
         .wdash-pressure-stats .wdash-metric-value { font-size: 0.58rem; }
         .wdash-card--solar { gap: 2px; }
         .wdash-card--solar .wdash-sun-graphic { margin-top: -10px; }
+        .wdash-card--solar .wdash-sun-svg { transform: translateY(14%) scaleY(0.84); transform-origin: center bottom; }
+        .wdash-card--solar .wdash-sun-time { top: auto !important; bottom: 2px; transform: translateX(-50%); }
+        .wdash-card--solar .wdash-sun-time--rise { left: 24% !important; }
+        .wdash-card--solar .wdash-sun-time--set { left: 76% !important; }
         .wdash-solar { gap: 1px; min-height: 0; }
         .wdash-sun-metric-label,
         .wdash-sun-metric-value,
