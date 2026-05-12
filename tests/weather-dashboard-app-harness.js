@@ -224,6 +224,7 @@ function runScheduledCallbacks(env, limit = 20) {
   assert(api.state.status.level === 'error', 'malformed device payload should surface a render error');
   assert(api.state.status.details.some(detail => detail.includes('invalid JSON')));
 
+  env.window.innerHeight = 430;
   Object.defineProperty(env.window.document.body, 'scrollHeight', { configurable: true, value: 432 });
   Object.defineProperty(env.window.document.documentElement, 'scrollHeight', { configurable: true, value: 432 });
   (env.listeners.resize || []).forEach(callback => callback());
@@ -237,6 +238,7 @@ function runScheduledCallbacks(env, limit = 20) {
   }
   assert(env.timers.length >= initialTimerCount, 'resize processing should keep timer queue stable or grow');
   assert(env.postedMessages.some(message => message && message.type === 'weather-dashboard-app:resize'), 'resize should post preview height');
+  assert(env.postedMessages.some(message => message && message.height === 434), 'resize should include a small height buffer to avoid iframe clipping');
 
   delete global.window;
   delete global.document;

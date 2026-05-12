@@ -142,6 +142,17 @@ assert !embedUrl.contains('makerApiToken=')
 assert !embedUrl.contains('token=')
 assert !embedUrl.contains('devices=')
 
+renderedPages.clear()
+appScript.landingPage()
+Map landingPreviewPage = renderedPages.find { it.name == 'landingPage' }
+String previewMarkup = landingPreviewPage?.paragraphs?.join('\n') ?: ''
+assert previewMarkup.contains('id="weather-dashboard-preview-frame"')
+assert previewMarkup.contains('height: 560px')
+assert previewMarkup.contains('var MIN_HEIGHT = 360')
+assert previewMarkup.contains('var MAX_HEIGHT = 1100')
+assert previewMarkup.contains('var DEFAULT_HEIGHT = 560')
+assert previewMarkup.contains('width * 9 / 16')
+
 // Scenario: fresh app initialization creates the dashboard child device before weather devices are configured.
 childDevices.clear()
 childDeviceCreations.clear()

@@ -5,7 +5,7 @@
   "id": "61deb191-7a0b-4a29-93f2-733f56bd4039",
   "minimumHEVersion": "2.3.0",
   "dateReleased": "2026-05-12",
-  "releaseNotes": "Fix GitHub code scanning alerts, standalone HTML viewport scaling, and HPM package metadata for the latest dashboard update.",
+  "releaseNotes": "Fix GitHub code scanning alerts, standalone HTML and embedded app preview scaling, and HPM package metadata for the latest dashboard update.",
   "documentationLink": "https://github.com/sonoranwanderer/hubitat_weather_dashboard#readme",
   "communityLink": "https://github.com/sonoranwanderer/hubitat_weather_dashboard/issues",
   "category": "Convenience",

@@ -16,6 +16,7 @@
   const DEFAULT_RENDER_BASE_HEIGHT = 900;
   const HTML_APP_INNER_OFFSET = 20;
   const HTML_APP_MAX_SCALE = 2;
+  const HOST_RESIZE_BUFFER_PX = 2;
 
   const state = {
     renderer: null,
@@ -132,7 +133,7 @@
   function postPreviewHeight(height) {
     if (!global || !global.parent || global.parent === global) return;
     if (!height || !Number.isFinite(height)) return;
-    const size = Math.max(0, Math.ceil(height));
+    const size = Math.max(0, Math.ceil(height) + HOST_RESIZE_BUFFER_PX);
     try {
       global.parent.postMessage({ type: 'weather-dashboard-app:resize', height: size }, '*');
     } catch (err) {
