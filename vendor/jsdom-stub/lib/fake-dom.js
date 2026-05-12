@@ -759,13 +759,24 @@ function initializeDocumentFromHtml(document, html) {
     return;
   }
 
-  const headMatch = html.match(/<head[^>]*>([\s\S]*?)<\/head>/i);
-  const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
-  const headContent = headMatch ? headMatch[1] : '';
-  const bodyContent = bodyMatch ? bodyMatch[1] : html;
+  const headContent = extractHtmlElementContent(html, 'head') || '';
+  const bodyContent = extractHtmlElementContent(html, 'body') || html;
 
   document.head.innerHTML = headContent;
   document.body.innerHTML = bodyContent;
+}
+
+function extractHtmlElementContent(html, tagName) {
+  const lowerHtml = html.toLowerCase();
+  const openPrefix = `<${tagName}`;
+  const closeTag = `</${tagName}>`;
+  const openStart = lowerHtml.indexOf(openPrefix);
+  if (openStart < 0) return null;
+  const openEnd = lowerHtml.indexOf('>', openStart + openPrefix.length);
+  if (openEnd < 0) return null;
+  const closeStart = lowerHtml.indexOf(closeTag, openEnd + 1);
+  if (closeStart < 0) return null;
+  return html.slice(openEnd + 1, closeStart);
 }
 
 function serializeNode(node) {

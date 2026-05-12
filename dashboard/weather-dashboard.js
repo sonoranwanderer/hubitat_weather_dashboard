@@ -6438,12 +6438,67 @@
           if (typeof value === 'string') {
             const trimmed = value.trim();
             if (!trimmed) return defaultTrack;
-            if (/^var\(\s*--[\w-]+\s*(?:,[^)]*)?\)$/i.test(trimmed)) return trimmed;
-            if (/^(?:calc|minmax|clamp|fit-content)\((?:[^()]+|\([^()]*\))*\)$/i.test(trimmed)) return trimmed;
+            if (isSafeCssVariableTrack(trimmed)) return trimmed;
+            if (isSafeCssFunctionTrack(trimmed)) return trimmed;
             if (/^\d*\.?\d+fr$/i.test(trimmed)) return trimmed.toLowerCase();
             if (/^\d*\.?\d+(?:px|rem|em|vh|vw|%)$/i.test(trimmed)) return trimmed.toLowerCase();
           }
           return defaultTrack;
+        }
+      
+        function isSafeCssVariableTrack(value) {
+          if (value.length > 256 || !value.toLowerCase().startsWith('var(') || !value.endsWith(')')) {
+            return false;
+          }
+          const inner = value.slice(4, -1).trim();
+          if (!inner.startsWith('--')) return false;
+          const commaIndex = inner.indexOf(',');
+          const name = commaIndex >= 0 ? inner.slice(0, commaIndex).trim() : inner;
+          if (!/^--[\w-]+$/.test(name)) return false;
+          if (commaIndex < 0) return true;
+          const fallback = inner.slice(commaIndex + 1).trim();
+          return fallback.length > 0 && isSafeCssTrackContent(fallback);
+        }
+      
+        function isSafeCssFunctionTrack(value) {
+          if (value.length > 256) return false;
+          const openIndex = value.indexOf('(');
+          if (openIndex <= 0 || !value.endsWith(')')) return false;
+          const name = value.slice(0, openIndex).toLowerCase();
+          if (!['calc', 'minmax', 'clamp', 'fit-content'].includes(name)) return false;
+          return isBalancedCssFunction(value) && isSafeCssTrackContent(value.slice(openIndex + 1, -1));
+        }
+      
+        function isBalancedCssFunction(value) {
+          let depth = 0;
+          for (let i = 0; i < value.length; i += 1) {
+            const char = value[i];
+            if (char === '(') {
+              depth += 1;
+            } else if (char === ')') {
+              depth -= 1;
+              if (depth < 0 || (depth === 0 && i !== value.length - 1)) return false;
+            }
+          }
+          return depth === 0;
+        }
+      
+        function isSafeCssTrackContent(value) {
+          return /^[\w\s.+\-*/%,()]+$/.test(value) && isBalancedCssContent(value);
+        }
+      
+        function isBalancedCssContent(value) {
+          let depth = 0;
+          for (let i = 0; i < value.length; i += 1) {
+            const char = value[i];
+            if (char === '(') {
+              depth += 1;
+            } else if (char === ')') {
+              depth -= 1;
+              if (depth < 0) return false;
+            }
+          }
+          return depth === 0;
         }
       
         function sanitizeColumns(value, fallback, trackUnit = DEFAULT_TRACK_UNIT) {

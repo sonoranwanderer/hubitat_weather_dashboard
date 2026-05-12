@@ -177,7 +177,24 @@
           return path.endsWith('/') ? path : path + '/';
         }
 
-        var base = normalizePath(bundleBase || '/local');
+        function resolveSafeScriptSource(src) {
+          var raw = String(src || '').trim();
+          if (!raw || /[\u0000-\u001f\u007f]/.test(raw)) return '';
+          if (typeof URL === 'function') {
+            try {
+              var url = new URL(raw, window.location.href);
+              if (url.protocol !== 'http:' && url.protocol !== 'https:') return '';
+              if (url.origin !== window.location.origin) return '';
+              return url.href;
+            } catch (err) {
+              return '';
+            }
+          }
+          if (/^[a-z][a-z0-9+.-]*:/i.test(raw) || raw.indexOf('//') === 0) return '';
+          return raw;
+        }
+
+        var base = normalizePath(resolveSafeScriptSource(bundleBase || '/local') || '/local');
         if (!rendererSrc) {
           rendererSrc = base + 'weather-dashboard.js';
         }
@@ -186,15 +203,20 @@
         }
 
         function appendScript(src, onload) {
+          var safeSrc = resolveSafeScriptSource(src);
+          if (!safeSrc) {
+            reportFailure('Refused to load unsafe script path.');
+            return;
+          }
           var script = document.createElement('script');
           script.async = false;
-          script.src = src;
+          script.src = safeSrc;
           if (onload) {
             script.addEventListener('load', onload, { once: true });
           }
           script.addEventListener('error', function (event) {
-            console.error('Weather Dashboard App: failed to load script', src, event);
-            reportFailure('Unable to load ' + src + '.');
+            console.error('Weather Dashboard App: failed to load script', safeSrc, event);
+            reportFailure('Unable to load ' + safeSrc + '.');
           });
           document.body.appendChild(script);
         }
@@ -202,15 +224,20 @@
         function reportFailure(message) {
           var host = document.getElementById('wdash-app-loader');
           if (!host) return;
-          host.innerHTML = [
-            '<div class="wdash-app-loader__content">',
-            '<div class="wdash-app-loader__heading">Weather Dashboard preview unavailable</div>',
-            '<div class="wdash-app-loader__details">',
-            message.replace(/</g, '&lt;').replace(/>/g, '&gt;'),
-            ' Verify the files are uploaded to Hubitat&#39;s File Manager and retry.',
-            '</div>',
-            '</div>'
-          ].join('');
+          while (host.firstChild) {
+            host.removeChild(host.firstChild);
+          }
+          var content = document.createElement('div');
+          content.className = 'wdash-app-loader__content';
+          var heading = document.createElement('div');
+          heading.className = 'wdash-app-loader__heading';
+          heading.textContent = 'Weather Dashboard preview unavailable';
+          var details = document.createElement('div');
+          details.className = 'wdash-app-loader__details';
+          details.textContent = String(message || '') + ' Verify the files are uploaded to Hubitat\'s File Manager and retry.';
+          content.appendChild(heading);
+          content.appendChild(details);
+          host.appendChild(content);
           scheduleResize();
         }
 
