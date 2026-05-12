@@ -4,3 +4,4 @@ dist/
 .docker/
 tmp/
 coverage/
+tests/e2e/endpoints.local.json
