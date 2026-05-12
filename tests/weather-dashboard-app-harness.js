@@ -248,14 +248,14 @@ function lastRenderedPayload(renderCalls) {
   assert.strictEqual(dimensionEnv.window.__WEATHER_DASHBOARD_APP__.state.config.renderWidth, 1000, 'width query parameter should be normalized');
   assert.strictEqual(dimensionEnv.window.__WEATHER_DASHBOARD_APP__.state.config.renderHeight, 700, 'height query parameter should be normalized');
   const dimensionPayload = lastRenderedPayload(dimensionEnv.renderCalls);
-  assert.strictEqual(dimensionPayload.metadata.layout.baseWidth, 1000, 'width query parameter should override baseWidth');
-  assert.strictEqual(dimensionPayload.metadata.layout.baseHeight, 700, 'height query parameter should override baseHeight');
-  assert.strictEqual(dimensionPayload.metadata.layout.desktop.baseWidth, 1000, 'width query parameter should override desktop baseWidth');
-  assert.strictEqual(dimensionPayload.metadata.layout.desktop.baseHeight, 700, 'height query parameter should override desktop baseHeight');
-  assert.strictEqual(dimensionPayload.metadata.layout.tablet.baseWidth, 1000, 'width query parameter should override tablet baseWidth');
-  assert.strictEqual(dimensionPayload.metadata.layout.tablet.baseHeight, 700, 'height query parameter should override tablet baseHeight');
-  assert.strictEqual(dimensionPayload.metadata.layout.mobile.baseWidth, 1000, 'width query parameter should override mobile baseWidth');
-  assert.strictEqual(dimensionPayload.metadata.layout.mobile.baseHeight, 700, 'height query parameter should override mobile baseHeight');
+  assert.strictEqual(dimensionPayload.metadata.layout.baseWidth, 1200, 'width query parameter should not override renderer baseWidth');
+  assert.strictEqual(dimensionPayload.metadata.layout.baseHeight, 900, 'height query parameter should not override renderer baseHeight');
+  assert.strictEqual(dimensionPayload.metadata.layout.desktop.baseWidth, 1300, 'width query parameter should not override desktop baseWidth');
+  assert.strictEqual(dimensionPayload.metadata.layout.desktop.baseHeight, 950, 'height query parameter should not override desktop baseHeight');
+  assert.strictEqual(dimensionPayload.metadata.layout.tablet.baseWidth, 900, 'width query parameter should not override tablet baseWidth');
+  assert.strictEqual(dimensionPayload.metadata.layout.tablet.baseHeight, 800, 'height query parameter should not override tablet baseHeight');
+  assert.strictEqual(dimensionPayload.metadata.layout.mobile.baseWidth, 480, 'width query parameter should not override mobile baseWidth');
+  assert.strictEqual(dimensionPayload.metadata.layout.mobile.baseHeight, 900, 'height query parameter should not override mobile baseHeight');
 
   delete global.window;
   delete global.document;

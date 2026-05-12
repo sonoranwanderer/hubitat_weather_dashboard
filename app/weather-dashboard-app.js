@@ -1152,11 +1152,11 @@
 
     const makerPayload = convertMakerApiResponse(response, state.config);
     if (makerPayload) {
-      applyConfiguredLayoutMetadata(makerPayload);
+      ensureDefaultLayoutMetadata(makerPayload);
       return { payload: makerPayload, text: JSON.stringify(makerPayload) };
     }
 
-    applyConfiguredLayoutMetadata(response);
+    ensureDefaultLayoutMetadata(response);
     return {
       payload: response,
       text: response && typeof response === 'object' ? JSON.stringify(response) : originalText
@@ -1281,23 +1281,6 @@
       return null;
     }
     return { width, height };
-  }
-
-  function applyConfiguredLayoutMetadata(payload) {
-    const dimensions = configuredRenderDimensions();
-    if (!dimensions || !isObjectRecord(payload)) {
-      return;
-    }
-    ensureDefaultLayoutMetadata(payload);
-    const layout = payload.metadata.layout;
-    layout.baseWidth = dimensions.width;
-    layout.baseHeight = dimensions.height;
-    ['desktop', 'tablet', 'mobile'].forEach(breakpoint => {
-      if (isObjectRecord(layout[breakpoint])) {
-        layout[breakpoint].baseWidth = dimensions.width;
-        layout[breakpoint].baseHeight = dimensions.height;
-      }
-    });
   }
 
   function buildPayloadFromDevice(device) {

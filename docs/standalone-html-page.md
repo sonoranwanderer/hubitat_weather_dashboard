@@ -47,7 +47,7 @@ http://<hub-ip>/local/weather-dashboard-app.html?hubBaseUrl=http://192.168.1.10&
 
 Both values must be positive numbers. If either value is missing or invalid, the standalone page uses the default `1200` by `900` canvas.
 
-These URL dimensions affect the standalone HTML page only. Layout JSON configured in the Hubitat app still controls the Hubitat dashboard tile unless the standalone URL provides valid `width` and `height` values.
+These URL dimensions affect the standalone HTML page only. Layout JSON configured in the Hubitat app still controls the Hubitat dashboard tile, and the standalone page uses `width` and `height` as the preview viewport to fit that layout into.
 
 ## Supported page parameters
 
@@ -57,8 +57,8 @@ These URL dimensions affect the standalone HTML page only. Layout JSON configure
 | `appId` | Maker API application ID. Required for Maker API fetches. |
 | `makerToken` | Maker API access token. Required for Maker API fetches. |
 | `deviceIds` | Comma-separated Weather Dashboard virtual device IDs authorized in Maker API. Recommended. |
-| `width` | Standalone dashboard design canvas width in pixels. Must be a positive number and is used only when `height` is also valid. |
-| `height` | Standalone dashboard design canvas height in pixels. Must be a positive number and is used only when `width` is also valid. |
+| `width` | Standalone dashboard viewport width in pixels. Must be a positive number and is used only when `height` is also valid. |
+| `height` | Standalone dashboard viewport height in pixels. Must be a positive number and is used only when `width` is also valid. |
 | `statusBar` | Use `yes` or `no` to force the connection/status panel visible or hidden after successful renders. |
 | `pollIntervalMs` | Refresh interval in milliseconds. The page enforces the supported minimum. |
 | `maxBackoffMs` | Maximum retry backoff after failed Maker API requests. |
