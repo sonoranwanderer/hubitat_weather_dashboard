@@ -39,15 +39,15 @@ The Hubitat dashboard tile does not need Maker API. Maker API is required only f
 
 ## Dashboard size
 
-Use `width` and `height` to set the dashboard design canvas size in pixels:
+Use `width` and `height` to set the standalone dashboard viewport size in pixels:
 
 ```text
 http://<hub-ip>/local/weather-dashboard-app.html?hubBaseUrl=http://192.168.1.10&appId=123&makerToken=YOUR_TOKEN&deviceIds=45&width=1000&height=700
 ```
 
-Both values must be positive numbers. If either value is missing or invalid, the standalone page uses the default `1200` by `900` canvas.
+Both values must be positive numbers. If either value is missing or invalid, the standalone page uses the browser viewport size.
 
-These URL dimensions affect the standalone HTML page only. Layout JSON configured in the Hubitat app still controls the Hubitat dashboard tile, and the standalone page uses `width` and `height` as the preview viewport to fit that layout into.
+These URL dimensions affect the standalone HTML page only. Layout JSON configured in the Hubitat app still controls the Hubitat dashboard tile. The standalone page derives same-ratio renderer base dimensions from the viewport so the dashboard fills the requested shape without distorting card contents.
 
 ## Supported page parameters
 

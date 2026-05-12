@@ -271,46 +271,19 @@
     }
   }
 
-  function readBoxPixels(computed, propertyName) {
-    if (!computed || typeof computed.getPropertyValue !== 'function') return 0;
-    return parseCssPixels(computed.getPropertyValue(propertyName)) || 0;
-  }
-
   function syncPreviewContainerBounds(shell) {
     if (!shell) return null;
     const { host, status, displayTile, displayPrimary } = shell;
-    if (!host || !displayTile || typeof host.getBoundingClientRect !== 'function') return null;
+    if (!host || !displayTile) return null;
 
-    const hostRect = host.getBoundingClientRect();
-    const hostWidth = Number(hostRect?.width);
-    if (!Number.isFinite(hostWidth) || hostWidth <= 0) return null;
-
-    let paddingLeft = 0;
-    let paddingRight = 0;
-
-    if (typeof global.getComputedStyle === 'function') {
-      try {
-        const computed = global.getComputedStyle(host);
-        paddingLeft = readBoxPixels(computed, 'padding-left');
-        paddingRight = readBoxPixels(computed, 'padding-right');
-      } catch (err) {
-        /* ignore */
-      }
-    }
-
-    const widthLimit = Math.max(1, hostWidth - paddingLeft - paddingRight);
-    const configuredDimensions = configuredRenderDimensions();
-    const baseWidth = configuredDimensions ? configuredDimensions.width : DEFAULT_RENDER_BASE_WIDTH;
-    const baseHeight = configuredDimensions ? configuredDimensions.height : DEFAULT_RENDER_BASE_HEIGHT;
-    const widthScale = widthLimit / baseWidth;
-    const scale = Math.max(0.1, Math.min(widthScale, HTML_APP_MAX_SCALE));
-    const width = Math.max(1, Math.floor(baseWidth * scale));
-    const height = Math.max(1, Math.floor(baseHeight * scale));
+    const viewportDimensions = standaloneViewportDimensions();
+    const width = Math.max(1, Math.round(viewportDimensions.width));
+    const height = Math.max(1, Math.round(viewportDimensions.height));
     const widthPx = `${width}px`;
     const heightPx = `${height}px`;
 
     displayTile.style.width = widthPx;
-    displayTile.style.maxWidth = '100%';
+    displayTile.style.maxWidth = 'none';
     displayTile.style.minWidth = '0';
     displayTile.style.height = heightPx;
     displayTile.style.minHeight = heightPx;
@@ -318,7 +291,7 @@
 
     if (displayPrimary) {
       displayPrimary.style.width = widthPx;
-      displayPrimary.style.maxWidth = '100%';
+      displayPrimary.style.maxWidth = 'none';
       displayPrimary.style.height = heightPx;
       displayPrimary.style.minHeight = heightPx;
       displayPrimary.style.setProperty('flex-basis', heightPx);
@@ -327,7 +300,7 @@
       status.style.maxWidth = widthPx;
     }
 
-    return { width, height, scale };
+    return { width, height, scale: 1 };
   }
 
   function requestPreviewSizeSync() {
@@ -1152,11 +1125,11 @@
 
     const makerPayload = convertMakerApiResponse(response, state.config);
     if (makerPayload) {
-      ensureDefaultLayoutMetadata(makerPayload);
+      applyStandaloneLayoutMetadata(makerPayload);
       return { payload: makerPayload, text: JSON.stringify(makerPayload) };
     }
 
-    ensureDefaultLayoutMetadata(response);
+    applyStandaloneLayoutMetadata(response);
     return {
       payload: response,
       text: response && typeof response === 'object' ? JSON.stringify(response) : originalText
@@ -1281,6 +1254,61 @@
       return null;
     }
     return { width, height };
+  }
+
+  function browserViewportDimensions() {
+    const doc = global.document;
+    const docElement = doc?.documentElement || null;
+    const width = Number(global.innerWidth) || Number(docElement?.clientWidth) || 0;
+    const height = Number(global.innerHeight) || Number(docElement?.clientHeight) || 0;
+    if (!Number.isFinite(width) || width <= 0 || !Number.isFinite(height) || height <= 0) {
+      return null;
+    }
+    return { width, height };
+  }
+
+  function standaloneViewportDimensions() {
+    return configuredRenderDimensions()
+      || browserViewportDimensions()
+      || { width: DEFAULT_RENDER_BASE_WIDTH, height: DEFAULT_RENDER_BASE_HEIGHT };
+  }
+
+  function deriveStandaloneBaseDimensions(dimensions) {
+    const width = Number(dimensions?.width);
+    const height = Number(dimensions?.height);
+    if (!Number.isFinite(width) || width <= 0 || !Number.isFinite(height) || height <= 0) {
+      return { width: DEFAULT_RENDER_BASE_WIDTH, height: DEFAULT_RENDER_BASE_HEIGHT };
+    }
+    const requestedRatio = width / height;
+    const defaultRatio = DEFAULT_RENDER_BASE_WIDTH / DEFAULT_RENDER_BASE_HEIGHT;
+    if (requestedRatio >= defaultRatio) {
+      return {
+        width: DEFAULT_RENDER_BASE_HEIGHT * requestedRatio,
+        height: DEFAULT_RENDER_BASE_HEIGHT
+      };
+    }
+    return {
+      width: DEFAULT_RENDER_BASE_WIDTH,
+      height: DEFAULT_RENDER_BASE_WIDTH / requestedRatio
+    };
+  }
+
+  function applyStandaloneLayoutMetadata(payload) {
+    if (!isObjectRecord(payload)) {
+      return;
+    }
+    ensureDefaultLayoutMetadata(payload);
+    const dimensions = deriveStandaloneBaseDimensions(standaloneViewportDimensions());
+    const layout = payload.metadata.layout;
+    layout.baseWidth = dimensions.width;
+    layout.baseHeight = dimensions.height;
+    ['desktop', 'tablet', 'mobile'].forEach(breakpoint => {
+      if (!isObjectRecord(layout[breakpoint])) {
+        layout[breakpoint] = {};
+      }
+      layout[breakpoint].baseWidth = dimensions.width;
+      layout[breakpoint].baseHeight = dimensions.height;
+    });
   }
 
   function buildPayloadFromDevice(device) {

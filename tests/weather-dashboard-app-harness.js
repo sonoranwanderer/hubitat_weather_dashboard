@@ -31,6 +31,8 @@ function setupAppEnvironment(options = {}) {
     href: `http://localhost/local/weather-dashboard-app.html${search}`,
     search
   };
+  window.innerWidth = options.innerWidth || 1024;
+  window.innerHeight = options.innerHeight || 768;
   const timers = [];
   const clearedTimers = [];
   const renderCalls = [];
@@ -248,14 +250,32 @@ function lastRenderedPayload(renderCalls) {
   assert.strictEqual(dimensionEnv.window.__WEATHER_DASHBOARD_APP__.state.config.renderWidth, 1000, 'width query parameter should be normalized');
   assert.strictEqual(dimensionEnv.window.__WEATHER_DASHBOARD_APP__.state.config.renderHeight, 700, 'height query parameter should be normalized');
   const dimensionPayload = lastRenderedPayload(dimensionEnv.renderCalls);
-  assert.strictEqual(dimensionPayload.metadata.layout.baseWidth, 1200, 'width query parameter should not override renderer baseWidth');
-  assert.strictEqual(dimensionPayload.metadata.layout.baseHeight, 900, 'height query parameter should not override renderer baseHeight');
-  assert.strictEqual(dimensionPayload.metadata.layout.desktop.baseWidth, 1300, 'width query parameter should not override desktop baseWidth');
-  assert.strictEqual(dimensionPayload.metadata.layout.desktop.baseHeight, 950, 'height query parameter should not override desktop baseHeight');
-  assert.strictEqual(dimensionPayload.metadata.layout.tablet.baseWidth, 900, 'width query parameter should not override tablet baseWidth');
-  assert.strictEqual(dimensionPayload.metadata.layout.tablet.baseHeight, 800, 'height query parameter should not override tablet baseHeight');
-  assert.strictEqual(dimensionPayload.metadata.layout.mobile.baseWidth, 480, 'width query parameter should not override mobile baseWidth');
-  assert.strictEqual(dimensionPayload.metadata.layout.mobile.baseHeight, 900, 'height query parameter should not override mobile baseHeight');
+  assert(Math.abs(dimensionPayload.metadata.layout.baseWidth - 1285.714) < 0.01, 'width query parameter should set a same-ratio renderer baseWidth');
+  assert.strictEqual(dimensionPayload.metadata.layout.baseHeight, 900, 'height query parameter should set a same-ratio renderer baseHeight');
+  assert(Math.abs(dimensionPayload.metadata.layout.desktop.baseWidth - 1285.714) < 0.01, 'width query parameter should set desktop baseWidth ratio');
+  assert.strictEqual(dimensionPayload.metadata.layout.desktop.baseHeight, 900, 'height query parameter should set desktop baseHeight ratio');
+  assert(Math.abs(dimensionPayload.metadata.layout.tablet.baseWidth - 1285.714) < 0.01, 'width query parameter should set tablet baseWidth ratio');
+  assert.strictEqual(dimensionPayload.metadata.layout.tablet.baseHeight, 900, 'height query parameter should set tablet baseHeight ratio');
+  assert(Math.abs(dimensionPayload.metadata.layout.mobile.baseWidth - 1285.714) < 0.01, 'width query parameter should set mobile baseWidth ratio');
+  assert.strictEqual(dimensionPayload.metadata.layout.mobile.baseHeight, 900, 'height query parameter should set mobile baseHeight ratio');
+
+  delete global.window;
+  delete global.document;
+  delete global.location;
+
+  const browserDimensionEnv = setupAppEnvironment({
+    search: '?hubBaseUrl=http%3A%2F%2Fhubitat.local&appId=123&makerToken=token&deviceIds=10',
+    innerWidth: 600,
+    innerHeight: 350,
+    responses: [
+      { ok: true, text: JSON.stringify(makePayload(78.1)) }
+    ]
+  });
+  browserDimensionEnv.window.__WEATHER_DASHBOARD_APP__.refreshNow();
+  await flushMicrotasks();
+  const browserDimensionPayload = lastRenderedPayload(browserDimensionEnv.renderCalls);
+  assert(Math.abs(browserDimensionPayload.metadata.layout.baseWidth - 1542.857) < 0.01, 'browser viewport should set a same-ratio renderer baseWidth when width is omitted');
+  assert.strictEqual(browserDimensionPayload.metadata.layout.baseHeight, 900, 'browser viewport should set a same-ratio renderer baseHeight when height is omitted');
 
   delete global.window;
   delete global.document;
