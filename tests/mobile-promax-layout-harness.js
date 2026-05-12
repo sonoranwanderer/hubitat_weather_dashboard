@@ -80,6 +80,7 @@ function assertMobileCssScoped(document) {
   assert(mobileCss.includes('.wdash-card { padding: 9px 10px;'), 'mobile card compaction should be present');
   assert(mobileCss.includes('.wdash-card:not(.wdash-card--ambient) { overflow: hidden; }'), 'mobile overflow clipping should exclude ambient controls');
   assert(mobileCss.includes('.wdash-card--temp-wind { display: grid;'), 'mobile temp/wind should use a card-local grid');
+  assert(mobileCss.includes('.wdash-temp-wind-main { grid-column: 1; grid-row: 2; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px; align-items: stretch; min-height: 0; height: 100%; }'), 'mobile temp/wind gauge grid should keep stretched measurable cells');
   assert(mobileCss.includes('--temp-wind-gauge-center-inset: 23%; --temp-wind-compass-block-inset: 23%; --temp-wind-compass-inline-inset: 17%;'), 'mobile temp/wind overlay insets should fit compact gauges');
   assert(mobileCss.includes('.wdash-gauge-value { font-size: 1.42rem; line-height: 0.94;'), 'mobile temp gauge value should be compact');
   assert(mobileCss.includes('.wdash-wind-speed-value { font-size: 1.34rem; line-height: 0.95;'), 'mobile wind speed overlay should be compact');

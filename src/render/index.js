@@ -6957,9 +6957,9 @@ function createRenderer(options = {}) {
   .wdash-temp-unit-indicator { width: 24px; height: 24px; font-size: 0.62rem; }
   .wdash-card--temp-wind { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(104px, 0.74fr); grid-template-rows: auto minmax(0, 1fr); align-items: stretch; padding-block: 7px; --temp-wind-gauge-center-inset: 23%; --temp-wind-compass-block-inset: 23%; --temp-wind-compass-inline-inset: 17%; }
   .wdash-card-header--temp-wind { grid-column: 1 / -1; padding-bottom: 2px; }
-  .wdash-temp-wind-main { grid-column: 1; grid-row: 2; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px; align-items: center; min-height: 0; }
+  .wdash-temp-wind-main { grid-column: 1; grid-row: 2; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px; align-items: stretch; min-height: 0; height: 100%; }
   .wdash-card--temp-wind .wdash-temp,
-  .wdash-card--temp-wind .wdash-wind { align-items: center; justify-content: center; }
+  .wdash-card--temp-wind .wdash-wind { align-items: center; justify-content: center; min-height: 0; height: 100%; }
   .wdash-temp-wind-footer { grid-column: 2; grid-row: 2; display: flex; align-items: center; min-height: 0; }
   .wdash-gauge-center { padding: 6px 5px; gap: 1px; }
   .wdash-gauge-current { line-height: 1; }
