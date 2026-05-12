@@ -15,6 +15,7 @@
   const DEFAULT_RENDER_BASE_WIDTH = 1200;
   const DEFAULT_RENDER_BASE_HEIGHT = 900;
   const HTML_APP_INNER_OFFSET = 20;
+  const HTML_APP_PHONE_PORTRAIT_INNER_OFFSET = 12;
   const HTML_APP_MAX_SCALE = 2;
   const HOST_RESIZE_BUFFER_PX = 2;
 
@@ -463,6 +464,11 @@
         --wdash-grid-gap-tablet: 14px;
         background: radial-gradient(circle at top, rgba(20,40,80,0.55), rgba(4,10,22,0.92));
         font-family: var(--wdash-app-font);
+      }
+      @media (max-width: 720px) and (orientation: portrait) {
+        #${HOST_ID} {
+          padding: ${HTML_APP_PHONE_PORTRAIT_INNER_OFFSET}px;
+        }
       }
       #${HOST_ID}[data-status-bar-visible="false"][data-status-bar-locked="true"] {
         gap: 0;
@@ -1277,8 +1283,13 @@
   function browserViewportDimensions() {
     const doc = global.document;
     const docElement = doc?.documentElement || null;
-    const width = (Number(global.innerWidth) || Number(docElement?.clientWidth) || 0) - (HTML_APP_INNER_OFFSET * 2);
-    const height = (Number(global.innerHeight) || Number(docElement?.clientHeight) || 0) - (HTML_APP_INNER_OFFSET * 2);
+    const rawWidth = Number(global.innerWidth) || Number(docElement?.clientWidth) || 0;
+    const rawHeight = Number(global.innerHeight) || Number(docElement?.clientHeight) || 0;
+    const offset = rawWidth <= 720 && rawHeight > rawWidth
+      ? HTML_APP_PHONE_PORTRAIT_INNER_OFFSET
+      : HTML_APP_INNER_OFFSET;
+    const width = rawWidth - (offset * 2);
+    const height = rawHeight - (offset * 2);
     if (!Number.isFinite(width) || width <= 0 || !Number.isFinite(height) || height <= 0) {
       return null;
     }

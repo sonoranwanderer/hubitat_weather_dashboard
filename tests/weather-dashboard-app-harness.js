@@ -372,13 +372,13 @@ function runScheduledCallbacks(env, limit = 20) {
   await flushMicrotasks();
   runScheduledCallbacks(browserPortraitPhoneEnv);
   const browserPortraitPhonePayload = lastRenderedPayload(browserPortraitPhoneEnv.renderCalls);
-  assert.strictEqual(browserPortraitPhonePayload.metadata.layout.mobile.baseWidth, 390, 'browser portrait phone mobile baseWidth should subtract horizontal inner offset');
-  assert.strictEqual(browserPortraitPhonePayload.metadata.layout.mobile.baseHeight, 892, 'browser portrait phone mobile baseHeight should subtract vertical inner offset');
+  assert.strictEqual(browserPortraitPhonePayload.metadata.layout.mobile.baseWidth, 406, 'browser portrait phone mobile baseWidth should subtract compact horizontal inner offset');
+  assert.strictEqual(browserPortraitPhonePayload.metadata.layout.mobile.baseHeight, 908, 'browser portrait phone mobile baseHeight should subtract compact vertical inner offset');
   assertApprox(browserPortraitPhonePayload.metadata.layout.tablet.baseWidth, 1200, 0.01, 'browser portrait phone tablet baseWidth should keep same-ratio base');
-  assertApprox(browserPortraitPhonePayload.metadata.layout.tablet.baseHeight, 2744.615, 0.01, 'browser portrait phone tablet baseHeight should keep same-ratio base');
+  assertApprox(browserPortraitPhonePayload.metadata.layout.tablet.baseHeight, 2683.744, 0.01, 'browser portrait phone tablet baseHeight should keep same-ratio base');
   const browserPortraitDisplayTile = findElementById(browserPortraitPhoneEnv.window.document.body, 'tile-0');
-  assert.strictEqual(browserPortraitDisplayTile.style.width, '390px', 'browser portrait phone display should subtract horizontal inner offset');
-  assert.strictEqual(browserPortraitDisplayTile.style.height, '892px', 'browser portrait phone display should subtract vertical inner offset');
+  assert.strictEqual(browserPortraitDisplayTile.style.width, '406px', 'browser portrait phone display should subtract compact horizontal inner offset');
+  assert.strictEqual(browserPortraitDisplayTile.style.height, '908px', 'browser portrait phone display should subtract compact vertical inner offset');
 
   delete global.window;
   delete global.document;
