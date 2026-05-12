@@ -203,6 +203,27 @@ describe('Renderer payload and layout branches', () => {
     expect(hooks.layoutState.baseHeight).toBe(900);
   });
 
+  it('accepts bounded CSS track functions without regex backtracking', () => {
+    const { hooks, wrapper } = bootstrapRenderer();
+    hooks.applyLayoutOverrides({
+      layout: {
+        desktop: {
+          rows: [
+            { height: 'minmax(0, calc(40px + 1fr))', columns: ['temp-wind'] },
+            { height: 'clamp(120px, 30%, 320px)', columns: ['ambient'] },
+            { height: "calc('".repeat(260), columns: ['rain'] }
+          ]
+        }
+      }
+    });
+
+    const rows = wrapper.style.getPropertyValue('--wdash-grid-rows-desktop');
+    expect(rows).toContain('minmax(0, calc(40px + 1fr))');
+    expect(rows).toContain('clamp(120px, 30%, 320px)');
+    expect(rows).toContain('minmax(0, 1fr)');
+    expect(rows).not.toContain("calc('");
+  });
+
   it('renders full-capability cards with the mobile percent layout including lightning', () => {
     const { hooks, window: dashboardWindow, grid, wrapper } = bootstrapRenderer({
       displayRect: { width: 390, height: 844 }

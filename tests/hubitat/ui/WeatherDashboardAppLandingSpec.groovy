@@ -136,11 +136,26 @@ assert embedUrl?.startsWith('/local/weather-dashboard-app.html?')
 assert embedUrl.contains('hubBaseUrl=http%3A%2F%2F192.168.1.50')
 assert embedUrl.contains('appId=501')
 assert embedUrl.contains('makerToken=s3cr3tTOKEN')
+assert embedUrl.contains('statusBar=yes')
 assert embedUrl.contains('deviceIds=10%2C11%2C12%2C13')
 assert !embedUrl.contains('hub=')
 assert !embedUrl.contains('makerApiToken=')
 assert !embedUrl.contains('token=')
 assert !embedUrl.contains('devices=')
+
+renderedPages.clear()
+appScript.landingPage()
+Map landingPreviewPage = renderedPages.find { it.name == 'landingPage' }
+String previewMarkup = landingPreviewPage?.paragraphs?.join('\n') ?: ''
+assert previewMarkup.contains('id="weather-dashboard-preview-frame"')
+assert previewMarkup.contains('height: 680px')
+assert previewMarkup.contains('var STATUS_BAR_HEIGHT = 120')
+assert previewMarkup.contains('var MIN_HEIGHT = 480')
+assert previewMarkup.contains('var MAX_HEIGHT = 1220')
+assert previewMarkup.contains('var DEFAULT_HEIGHT = 680')
+assert previewMarkup.contains('width * 9 / 16) + STATUS_BAR_HEIGHT')
+assert !previewMarkup.contains("addEventListener('message'")
+assert !previewMarkup.contains('weather-dashboard-app:resize')
 
 // Scenario: fresh app initialization creates the dashboard child device before weather devices are configured.
 childDevices.clear()

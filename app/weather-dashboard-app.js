@@ -14,7 +14,9 @@
   const DEFAULT_MAX_BACKOFF_MS = 60000;
   const DEFAULT_RENDER_BASE_WIDTH = 1200;
   const DEFAULT_RENDER_BASE_HEIGHT = 900;
+  const HTML_APP_INNER_OFFSET = 20;
   const HTML_APP_MAX_SCALE = 2;
+  const HOST_RESIZE_BUFFER_PX = 2;
 
   const state = {
     renderer: null,
@@ -121,8 +123,7 @@
       body ? body.clientHeight : 0,
       html ? html.scrollHeight : 0,
       html ? html.offsetHeight : 0,
-      html ? html.clientHeight : 0,
-      typeof global.innerHeight === 'number' ? global.innerHeight : 0
+      html ? html.clientHeight : 0
     ].filter(value => typeof value === 'number' && value > 0);
     if (!values.length) return 0;
     return Math.ceil(Math.max(...values));
@@ -131,7 +132,7 @@
   function postPreviewHeight(height) {
     if (!global || !global.parent || global.parent === global) return;
     if (!height || !Number.isFinite(height)) return;
-    const size = Math.max(0, Math.ceil(height));
+    const size = Math.max(0, Math.ceil(height) + HOST_RESIZE_BUFFER_PX);
     try {
       global.parent.postMessage({ type: 'weather-dashboard-app:resize', height: size }, '*');
     } catch (err) {
@@ -271,46 +272,19 @@
     }
   }
 
-  function readBoxPixels(computed, propertyName) {
-    if (!computed || typeof computed.getPropertyValue !== 'function') return 0;
-    return parseCssPixels(computed.getPropertyValue(propertyName)) || 0;
-  }
-
   function syncPreviewContainerBounds(shell) {
     if (!shell) return null;
     const { host, status, displayTile, displayPrimary } = shell;
-    if (!host || !displayTile || typeof host.getBoundingClientRect !== 'function') return null;
+    if (!host || !displayTile) return null;
 
-    const hostRect = host.getBoundingClientRect();
-    const hostWidth = Number(hostRect?.width);
-    if (!Number.isFinite(hostWidth) || hostWidth <= 0) return null;
-
-    let paddingLeft = 0;
-    let paddingRight = 0;
-
-    if (typeof global.getComputedStyle === 'function') {
-      try {
-        const computed = global.getComputedStyle(host);
-        paddingLeft = readBoxPixels(computed, 'padding-left');
-        paddingRight = readBoxPixels(computed, 'padding-right');
-      } catch (err) {
-        /* ignore */
-      }
-    }
-
-    const widthLimit = Math.max(1, hostWidth - paddingLeft - paddingRight);
-    const configuredDimensions = configuredRenderDimensions();
-    const baseWidth = configuredDimensions ? configuredDimensions.width : DEFAULT_RENDER_BASE_WIDTH;
-    const baseHeight = configuredDimensions ? configuredDimensions.height : DEFAULT_RENDER_BASE_HEIGHT;
-    const widthScale = widthLimit / baseWidth;
-    const scale = Math.max(0.1, Math.min(widthScale, HTML_APP_MAX_SCALE));
-    const width = Math.max(1, Math.floor(baseWidth * scale));
-    const height = Math.max(1, Math.floor(baseHeight * scale));
+    const viewportDimensions = standaloneDashboardDimensions();
+    const width = Math.max(1, Math.round(viewportDimensions.width));
+    const height = Math.max(1, Math.round(viewportDimensions.height));
     const widthPx = `${width}px`;
     const heightPx = `${height}px`;
 
     displayTile.style.width = widthPx;
-    displayTile.style.maxWidth = '100%';
+    displayTile.style.maxWidth = 'none';
     displayTile.style.minWidth = '0';
     displayTile.style.height = heightPx;
     displayTile.style.minHeight = heightPx;
@@ -318,7 +292,7 @@
 
     if (displayPrimary) {
       displayPrimary.style.width = widthPx;
-      displayPrimary.style.maxWidth = '100%';
+      displayPrimary.style.maxWidth = 'none';
       displayPrimary.style.height = heightPx;
       displayPrimary.style.minHeight = heightPx;
       displayPrimary.style.setProperty('flex-basis', heightPx);
@@ -327,7 +301,7 @@
       status.style.maxWidth = widthPx;
     }
 
-    return { width, height, scale };
+    return { width, height, scale: 1 };
   }
 
   function requestPreviewSizeSync() {
@@ -463,7 +437,7 @@
         display: flex;
         justify-content: center;
         align-items: stretch;
-        padding: 24px 16px 36px;
+        padding: 0;
         box-sizing: border-box;
         overflow: auto;
       }
@@ -475,7 +449,7 @@
         align-items: stretch;
         justify-content: flex-start;
         gap: 20px;
-        padding: 18px 20px 28px;
+        padding: ${HTML_APP_INNER_OFFSET}px;
         margin: 0 auto;
         box-sizing: border-box;
         min-height: 100%;
@@ -492,7 +466,6 @@
       }
       #${HOST_ID}[data-status-bar-visible="false"][data-status-bar-locked="true"] {
         gap: 0;
-        padding-top: 0;
       }
       #${HOST_ID} .wdash-app-status {
         width: 100%;
@@ -1152,11 +1125,11 @@
 
     const makerPayload = convertMakerApiResponse(response, state.config);
     if (makerPayload) {
-      applyConfiguredLayoutMetadata(makerPayload);
+      applyStandaloneLayoutMetadata(makerPayload);
       return { payload: makerPayload, text: JSON.stringify(makerPayload) };
     }
 
-    applyConfiguredLayoutMetadata(response);
+    applyStandaloneLayoutMetadata(response);
     return {
       payload: response,
       text: response && typeof response === 'object' ? JSON.stringify(response) : originalText
@@ -1283,20 +1256,84 @@
     return { width, height };
   }
 
-  function applyConfiguredLayoutMetadata(payload) {
-    const dimensions = configuredRenderDimensions();
-    if (!dimensions || !isObjectRecord(payload)) {
+  function measureStatusReserveHeight() {
+    const shell = shellElements;
+    const status = shell?.status;
+    if (!state.statusBarVisible) return 0;
+    if (!status || status.hidden) return 0;
+
+    const measured = [
+      status.scrollHeight,
+      status.offsetHeight,
+      status.clientHeight,
+      typeof status.getBoundingClientRect === 'function'
+        ? Number(status.getBoundingClientRect()?.height)
+        : 0
+    ].filter(value => Number.isFinite(value) && value > 0);
+    if (!measured.length) return 0;
+    return Math.ceil(Math.max(...measured) + HTML_APP_INNER_OFFSET);
+  }
+
+  function browserViewportDimensions() {
+    const doc = global.document;
+    const docElement = doc?.documentElement || null;
+    const width = (Number(global.innerWidth) || Number(docElement?.clientWidth) || 0) - (HTML_APP_INNER_OFFSET * 2);
+    const height = (Number(global.innerHeight) || Number(docElement?.clientHeight) || 0) - (HTML_APP_INNER_OFFSET * 2);
+    if (!Number.isFinite(width) || width <= 0 || !Number.isFinite(height) || height <= 0) {
+      return null;
+    }
+    return { width, height };
+  }
+
+  function standaloneViewportDimensions() {
+    return configuredRenderDimensions()
+      || browserViewportDimensions()
+      || { width: DEFAULT_RENDER_BASE_WIDTH, height: DEFAULT_RENDER_BASE_HEIGHT };
+  }
+
+  function standaloneDashboardDimensions() {
+    const viewport = standaloneViewportDimensions();
+    return {
+      width: viewport.width,
+      height: Math.max(1, viewport.height - measureStatusReserveHeight())
+    };
+  }
+
+  function deriveStandaloneBaseDimensions(dimensions) {
+    const width = Number(dimensions?.width);
+    const height = Number(dimensions?.height);
+    if (!Number.isFinite(width) || width <= 0 || !Number.isFinite(height) || height <= 0) {
+      return { width: DEFAULT_RENDER_BASE_WIDTH, height: DEFAULT_RENDER_BASE_HEIGHT };
+    }
+    const requestedRatio = width / height;
+    const defaultRatio = DEFAULT_RENDER_BASE_WIDTH / DEFAULT_RENDER_BASE_HEIGHT;
+    if (requestedRatio >= defaultRatio) {
+      return {
+        width: DEFAULT_RENDER_BASE_HEIGHT * requestedRatio,
+        height: DEFAULT_RENDER_BASE_HEIGHT
+      };
+    }
+    return {
+      width: DEFAULT_RENDER_BASE_WIDTH,
+      height: DEFAULT_RENDER_BASE_WIDTH / requestedRatio
+    };
+  }
+
+  function applyStandaloneLayoutMetadata(payload) {
+    if (!isObjectRecord(payload)) {
       return;
     }
     ensureDefaultLayoutMetadata(payload);
+    const dimensions = deriveStandaloneBaseDimensions(standaloneDashboardDimensions());
     const layout = payload.metadata.layout;
     layout.baseWidth = dimensions.width;
     layout.baseHeight = dimensions.height;
     ['desktop', 'tablet', 'mobile'].forEach(breakpoint => {
-      if (isObjectRecord(layout[breakpoint])) {
-        layout[breakpoint].baseWidth = dimensions.width;
-        layout[breakpoint].baseHeight = dimensions.height;
+      if (!isObjectRecord(layout[breakpoint])) {
+        layout[breakpoint] = {};
       }
+      layout[breakpoint].baseWidth = dimensions.width;
+      layout[breakpoint].baseHeight = dimensions.height;
     });
   }
 
@@ -1480,7 +1517,7 @@
     state.maxBackoffMs = normalized.maxBackoffMs || DEFAULT_MAX_BACKOFF_MS;
     state.endpointUrl = endpoint;
     state.redactedEndpointUrl = redactUrlSecrets(endpoint);
-    state.statusBarVisible = queryStatusBar === 'no' || queryStatusBar === '0' ? false : true;
+    state.statusBarVisible = queryStatusBar === 'yes' || queryStatusBar === '1';
     state.statusBarLocked = queryStatusBar === 'yes' || queryStatusBar === '1' || queryStatusBar === 'no' || queryStatusBar === '0';
 
     return { normalized, errors, warnings, endpoint };

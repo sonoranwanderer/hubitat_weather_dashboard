@@ -39,15 +39,15 @@ The Hubitat dashboard tile does not need Maker API. Maker API is required only f
 
 ## Dashboard size
 
-Use `width` and `height` to set the dashboard design canvas size in pixels:
+Use `width` and `height` to set the standalone dashboard viewport size in pixels:
 
 ```text
 http://<hub-ip>/local/weather-dashboard-app.html?hubBaseUrl=http://192.168.1.10&appId=123&makerToken=YOUR_TOKEN&deviceIds=45&width=1000&height=700
 ```
 
-Both values must be positive numbers. If either value is missing or invalid, the standalone page uses the default `1200` by `900` canvas.
+Both values must be positive numbers. If either value is missing or invalid, the standalone page uses the browser viewport size minus the app's 20px inner offset on each side.
 
-These URL dimensions affect the standalone HTML page only. Layout JSON configured in the Hubitat app still controls the Hubitat dashboard tile unless the standalone URL provides valid `width` and `height` values.
+These URL dimensions affect the standalone HTML page only. Layout JSON configured in the Hubitat app still controls the Hubitat dashboard tile. The standalone page derives same-ratio renderer base dimensions from the viewport so the dashboard fills the requested shape without distorting card contents.
 
 ## Supported page parameters
 
@@ -57,14 +57,11 @@ These URL dimensions affect the standalone HTML page only. Layout JSON configure
 | `appId` | Maker API application ID. Required for Maker API fetches. |
 | `makerToken` | Maker API access token. Required for Maker API fetches. |
 | `deviceIds` | Comma-separated Weather Dashboard virtual device IDs authorized in Maker API. Recommended. |
-| `width` | Standalone dashboard design canvas width in pixels. Must be a positive number and is used only when `height` is also valid. |
-| `height` | Standalone dashboard design canvas height in pixels. Must be a positive number and is used only when `width` is also valid. |
+| `width` | Standalone dashboard viewport width in pixels. Must be a positive number and is used only when `height` is also valid. |
+| `height` | Standalone dashboard viewport height in pixels. Must be a positive number and is used only when `width` is also valid. |
 | `statusBar` | Use `yes` or `no` to force the connection/status panel visible or hidden after successful renders. |
 | `pollIntervalMs` | Refresh interval in milliseconds. The page enforces the supported minimum. |
 | `maxBackoffMs` | Maximum retry backoff after failed Maker API requests. |
-| `bundleBase` | Base path for `weather-dashboard.js` and `weather-dashboard-app.js` when they are hosted outside `/local/`. |
-| `rendererScript` | Full URL/path override for `weather-dashboard.js`. |
-| `appScript` | Full URL/path override for `weather-dashboard-app.js`. |
 
 The canonical refresh parameters are `pollIntervalMs` and `maxBackoffMs`. The page also accepts these aliases:
 

@@ -17,6 +17,13 @@ Dependency and workflow maintenance:
 - Check `npm outdated` and relevant action release notes when touching dependencies or workflows. Keep updates scoped and test them before pushing.
 - Do not silence security or runtime warnings with temporary environment flags unless no supported action or dependency version exists. Document temporary exceptions and remove them promptly.
 
+Release and HPM metadata:
+
+- When bumping the project version, update every release-facing version source in the same change: `package.json`, `package-lock.json`, and `packageManifest.json`.
+- Treat `packageManifest.json` as the source Hubitat Package Manager reads for update discovery. Its `version` must be higher than the previously released manifest version, and its `dateReleased` and `releaseNotes` must describe the release being published.
+- If changing Hubitat app, driver, or File Manager assets that should be delivered through HPM, verify the manifest still references the correct `main` branch raw URLs for `hubitat/WeatherDashboardApp.groovy`, `hubitat/WeatherDashboardDevice.groovy`, `dashboard/weather-dashboard.js`, `app/weather-dashboard-app.js`, and `app/weather-dashboard-app.html`.
+- Before pushing a release metadata change, validate `packageManifest.json` parses as JSON and compare it with the intended HPM-visible version.
+
 When the user requests a code change in this git repository:
 
 1. Create a new branch before making changes.

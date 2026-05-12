@@ -241,13 +241,14 @@ def landingPage() {
             if (embedUrl) {
                 String encodedSrc = htmlAttributeEncode(embedUrl)
                 String iframeId = 'weather-dashboard-preview-frame'
-                paragraph "<iframe id=\"${iframeId}\" src=\"${encodedSrc}\" style=\"width: 100%; max-width: 1240px; height: 930px; border: 0; display: block; margin: 0 auto; border-radius: 18px; box-shadow: 0 18px 36px rgba(0,0,0,0.35);\" sandbox=\"allow-same-origin allow-scripts allow-forms allow-popups\"></iframe>"
+                paragraph "<iframe id=\"${iframeId}\" src=\"${encodedSrc}\" style=\"width: 100%; max-width: 1240px; height: 680px; border: 0; display: block; margin: 0 auto; border-radius: 18px; box-shadow: 0 18px 36px rgba(0,0,0,0.35);\" sandbox=\"allow-same-origin allow-scripts allow-forms allow-popups\"></iframe>"
                 paragraph '''<script type="text/javascript">
 (function () {
   var FRAME_ID = 'weather-dashboard-preview-frame';
-  var MIN_HEIGHT = 600;
-  var MAX_HEIGHT = 1500;
-  var DEFAULT_HEIGHT = 930;
+  var STATUS_BAR_HEIGHT = 120;
+  var MIN_HEIGHT = 480;
+  var MAX_HEIGHT = 1220;
+  var DEFAULT_HEIGHT = 680;
   var lastApplied = 0;
 
   function clampHeight(value) {
@@ -258,19 +259,19 @@ def landingPage() {
     return size;
   }
 
-  function computeAspectHeight() {
+  function computePreviewHeight() {
     var frame = document.getElementById(FRAME_ID);
     if (!frame) return null;
     var width = frame.clientWidth || frame.offsetWidth;
     if (!isFinite(width) || width <= 0) return null;
-    var height = Math.round(width * 3 / 4);
+    var height = Math.round(width * 9 / 16) + STATUS_BAR_HEIGHT;
     if (height < MIN_HEIGHT) height = MIN_HEIGHT;
     if (height > MAX_HEIGHT) height = MAX_HEIGHT;
     return height;
   }
 
-  function applyAspectHeight() {
-    var height = computeAspectHeight();
+  function applyPreviewHeight() {
+    var height = computePreviewHeight();
     if (!height) return null;
     applyHeight(height);
     return height;
@@ -286,35 +287,16 @@ def landingPage() {
     frame.style.height = clamped + 'px';
   }
 
-  function normalizePayload(payload) {
-    if (!payload) return null;
-    if (typeof payload === 'string') {
-      try {
-        return JSON.parse(payload);
-      } catch (err) {
-        return null;
-      }
-    }
-    return payload;
-  }
-
-  function handleMessage(event) {
-    var data = event && event.data ? normalizePayload(event.data) : null;
-    if (!data || data.type !== 'weather-dashboard-app:resize') return;
-    applyHeight(data.height);
-  }
-
   if (window && window.addEventListener) {
-    window.addEventListener('message', handleMessage, false);
-    window.addEventListener('resize', applyAspectHeight);
+    window.addEventListener('resize', applyPreviewHeight);
     window.addEventListener('load', function () {
-      if (!applyAspectHeight()) {
+      if (!applyPreviewHeight()) {
         applyHeight(lastApplied || DEFAULT_HEIGHT);
       }
     }, { once: true });
   }
 
-  if (!applyAspectHeight()) {
+  if (!applyPreviewHeight()) {
     applyHeight(DEFAULT_HEIGHT);
   }
 })();
@@ -715,7 +697,8 @@ private String buildDashboardEmbedUrl() {
     Map<String, String> params = [
         hubBaseUrl : baseUrl,
         appId      : appId,
-        makerToken : token
+        makerToken : token,
+        statusBar  : 'yes'
     ]
 
     List<String> deviceIds = makerApiDeviceIdList()

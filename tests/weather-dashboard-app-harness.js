@@ -31,6 +31,8 @@ function setupAppEnvironment(options = {}) {
     href: `http://localhost/local/weather-dashboard-app.html${search}`,
     search
   };
+  window.innerWidth = options.innerWidth || 1024;
+  window.innerHeight = options.innerHeight || 768;
   const timers = [];
   const clearedTimers = [];
   const renderCalls = [];
@@ -135,6 +137,25 @@ function lastRenderedPayload(renderCalls) {
   return JSON.parse(rendered[rendered.length - 1]);
 }
 
+function findElementById(node, id) {
+  if (!node) return null;
+  if (node.id === id) return node;
+  for (const child of Array.from(node.children || [])) {
+    const found = findElementById(child, id);
+    if (found) return found;
+  }
+  return null;
+}
+
+function runScheduledCallbacks(env, limit = 20) {
+  for (let index = 0; index < env.timers.length && index < limit; index += 1) {
+    const timer = env.timers[index];
+    if (timer.type === 'raf' && typeof timer.callback === 'function') {
+      timer.callback();
+    }
+  }
+}
+
 (async () => {
   const env = setupAppEnvironment({
     search: '?statusBar=no',
@@ -181,6 +202,9 @@ function lastRenderedPayload(renderCalls) {
   const statusPanel = env.window.document.querySelector('.wdash-app-status');
   assert(statusPanel, 'status panel should exist after initial render');
   assert(statusPanel.hidden === true, 'statusBar=no should hide success status panel');
+  const firstStatusHiddenPayload = JSON.parse(env.renderCalls[0]);
+  assert(Math.abs(firstStatusHiddenPayload.metadata.layout.baseWidth - 1216.484) < 0.01, 'statusBar=no should not reserve status height during initial render');
+  assert.strictEqual(firstStatusHiddenPayload.metadata.layout.baseHeight, 900, 'statusBar=no should keep the full dashboard height during initial render');
   api.refreshNow();
   assert(statusPanel.hidden === true, 'background refresh should not unhide hidden status panel');
   assert(api.state.status.level === 'success', 'background refresh should keep previous status until the fetch resolves');
@@ -203,6 +227,7 @@ function lastRenderedPayload(renderCalls) {
   assert(api.state.status.level === 'error', 'malformed device payload should surface a render error');
   assert(api.state.status.details.some(detail => detail.includes('invalid JSON')));
 
+  env.window.innerHeight = 430;
   Object.defineProperty(env.window.document.body, 'scrollHeight', { configurable: true, value: 432 });
   Object.defineProperty(env.window.document.documentElement, 'scrollHeight', { configurable: true, value: 432 });
   (env.listeners.resize || []).forEach(callback => callback());
@@ -216,6 +241,7 @@ function lastRenderedPayload(renderCalls) {
   }
   assert(env.timers.length >= initialTimerCount, 'resize processing should keep timer queue stable or grow');
   assert(env.postedMessages.some(message => message && message.type === 'weather-dashboard-app:resize'), 'resize should post preview height');
+  assert(env.postedMessages.some(message => message && message.height === 434), 'resize should include a small height buffer to avoid iframe clipping');
 
   delete global.window;
   delete global.document;
@@ -248,14 +274,84 @@ function lastRenderedPayload(renderCalls) {
   assert.strictEqual(dimensionEnv.window.__WEATHER_DASHBOARD_APP__.state.config.renderWidth, 1000, 'width query parameter should be normalized');
   assert.strictEqual(dimensionEnv.window.__WEATHER_DASHBOARD_APP__.state.config.renderHeight, 700, 'height query parameter should be normalized');
   const dimensionPayload = lastRenderedPayload(dimensionEnv.renderCalls);
-  assert.strictEqual(dimensionPayload.metadata.layout.baseWidth, 1000, 'width query parameter should override baseWidth');
-  assert.strictEqual(dimensionPayload.metadata.layout.baseHeight, 700, 'height query parameter should override baseHeight');
-  assert.strictEqual(dimensionPayload.metadata.layout.desktop.baseWidth, 1000, 'width query parameter should override desktop baseWidth');
-  assert.strictEqual(dimensionPayload.metadata.layout.desktop.baseHeight, 700, 'height query parameter should override desktop baseHeight');
-  assert.strictEqual(dimensionPayload.metadata.layout.tablet.baseWidth, 1000, 'width query parameter should override tablet baseWidth');
-  assert.strictEqual(dimensionPayload.metadata.layout.tablet.baseHeight, 700, 'height query parameter should override tablet baseHeight');
-  assert.strictEqual(dimensionPayload.metadata.layout.mobile.baseWidth, 1000, 'width query parameter should override mobile baseWidth');
-  assert.strictEqual(dimensionPayload.metadata.layout.mobile.baseHeight, 700, 'height query parameter should override mobile baseHeight');
+  assert(Math.abs(dimensionPayload.metadata.layout.baseWidth - 1285.714) < 0.01, 'width query parameter should set a same-ratio renderer baseWidth');
+  assert.strictEqual(dimensionPayload.metadata.layout.baseHeight, 900, 'height query parameter should set a same-ratio renderer baseHeight');
+  assert(Math.abs(dimensionPayload.metadata.layout.desktop.baseWidth - 1285.714) < 0.01, 'width query parameter should set desktop baseWidth ratio');
+  assert.strictEqual(dimensionPayload.metadata.layout.desktop.baseHeight, 900, 'height query parameter should set desktop baseHeight ratio');
+  assert(Math.abs(dimensionPayload.metadata.layout.tablet.baseWidth - 1285.714) < 0.01, 'width query parameter should set tablet baseWidth ratio');
+  assert.strictEqual(dimensionPayload.metadata.layout.tablet.baseHeight, 900, 'height query parameter should set tablet baseHeight ratio');
+  assert(Math.abs(dimensionPayload.metadata.layout.mobile.baseWidth - 1285.714) < 0.01, 'width query parameter should set mobile baseWidth ratio');
+  assert.strictEqual(dimensionPayload.metadata.layout.mobile.baseHeight, 900, 'height query parameter should set mobile baseHeight ratio');
+
+  delete global.window;
+  delete global.document;
+  delete global.location;
+
+  const browserDimensionEnv = setupAppEnvironment({
+    search: '?hubBaseUrl=http%3A%2F%2Fhubitat.local&appId=123&makerToken=token&deviceIds=10&statusBar=no',
+    innerWidth: 600,
+    innerHeight: 350,
+    responses: [
+      { ok: true, text: JSON.stringify(makePayload(78.1)) }
+    ]
+  });
+  browserDimensionEnv.window.__WEATHER_DASHBOARD_APP__.refreshNow();
+  await flushMicrotasks();
+  runScheduledCallbacks(browserDimensionEnv);
+  const browserDimensionPayload = lastRenderedPayload(browserDimensionEnv.renderCalls);
+  assert(Math.abs(browserDimensionPayload.metadata.layout.baseWidth - 1625.806) < 0.01, 'browser viewport should set a same-ratio renderer baseWidth when width is omitted');
+  assert.strictEqual(browserDimensionPayload.metadata.layout.baseHeight, 900, 'browser viewport should set a same-ratio renderer baseHeight when height is omitted');
+  const browserDisplayTile = findElementById(browserDimensionEnv.window.document.body, 'tile-0');
+  assert.strictEqual(browserDisplayTile.style.width, '560px', 'browser viewport should subtract the horizontal inner offset from default width');
+  assert.strictEqual(browserDisplayTile.style.height, '310px', 'browser viewport should subtract the vertical inner offset from default height');
+
+  delete global.window;
+  delete global.document;
+  delete global.location;
+
+  const statusDimensionEnv = setupAppEnvironment({
+    search: '?hubBaseUrl=http%3A%2F%2Fhubitat.local&appId=123&makerToken=token&deviceIds=10&statusBar=yes&width=600&height=350',
+    responses: [
+      { ok: true, text: JSON.stringify(makePayload(78.2)) }
+    ]
+  });
+  const visibleStatusPanel = findElementById(statusDimensionEnv.window.document.body, 'weather-dashboard-app-status');
+  Object.defineProperty(visibleStatusPanel, 'scrollHeight', { configurable: true, value: 50 });
+  Object.defineProperty(visibleStatusPanel, 'offsetHeight', { configurable: true, value: 50 });
+  statusDimensionEnv.window.__WEATHER_DASHBOARD_APP__.refreshNow();
+  await flushMicrotasks();
+  runScheduledCallbacks(statusDimensionEnv);
+  const statusDimensionPayload = lastRenderedPayload(statusDimensionEnv.renderCalls);
+  assert(Math.abs(statusDimensionPayload.metadata.layout.baseWidth - 1928.571) < 0.01, 'visible status bar should reduce the dashboard renderer height');
+  assert.strictEqual(statusDimensionPayload.metadata.layout.baseHeight, 900, 'visible status bar should preserve renderer base height');
+  const statusDisplayTile = findElementById(statusDimensionEnv.window.document.body, 'tile-0');
+  assert.strictEqual(statusDisplayTile.style.width, '600px', 'explicit width should still size the standalone viewport');
+  assert.strictEqual(statusDisplayTile.style.height, '280px', 'visible status bar height and gap should be removed from dashboard height');
+
+  delete global.window;
+  delete global.document;
+  delete global.location;
+
+  const defaultStatusDimensionEnv = setupAppEnvironment({
+    search: '?hubBaseUrl=http%3A%2F%2Fhubitat.local&appId=123&makerToken=token&deviceIds=10&width=600&height=350',
+    responses: [
+      { ok: true, text: JSON.stringify(makePayload(78.3)) }
+    ]
+  });
+  const defaultVisibleStatusPanel = findElementById(defaultStatusDimensionEnv.window.document.body, 'weather-dashboard-app-status');
+  Object.defineProperty(defaultVisibleStatusPanel, 'scrollHeight', { configurable: true, value: 50 });
+  Object.defineProperty(defaultVisibleStatusPanel, 'offsetHeight', { configurable: true, value: 50 });
+  defaultStatusDimensionEnv.window.__WEATHER_DASHBOARD_APP__.refreshNow();
+  await flushMicrotasks();
+  runScheduledCallbacks(defaultStatusDimensionEnv);
+  assert.strictEqual(defaultStatusDimensionEnv.window.__WEATHER_DASHBOARD_APP__.state.statusBarVisible, false, 'omitted statusBar should default to hidden');
+  assert.strictEqual(defaultStatusDimensionEnv.window.__WEATHER_DASHBOARD_APP__.state.statusBarLocked, false, 'omitted statusBar should not lock the hidden default');
+  const defaultStatusPayload = lastRenderedPayload(defaultStatusDimensionEnv.renderCalls);
+  assert(Math.abs(defaultStatusPayload.metadata.layout.baseWidth - 1542.857) < 0.01, 'omitted statusBar should not reserve status height');
+  assert.strictEqual(defaultStatusPayload.metadata.layout.baseHeight, 900, 'omitted statusBar should keep full dashboard height');
+  const defaultStatusDisplayTile = findElementById(defaultStatusDimensionEnv.window.document.body, 'tile-0');
+  assert.strictEqual(defaultStatusDisplayTile.style.width, '600px', 'omitted statusBar should keep explicit width');
+  assert.strictEqual(defaultStatusDisplayTile.style.height, '350px', 'omitted statusBar should keep explicit height');
 
   delete global.window;
   delete global.document;

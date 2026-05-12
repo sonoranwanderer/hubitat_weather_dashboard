@@ -124,7 +124,7 @@ test('statusBar=no hides the success panel', async ({ page }) => {
   expect(snapshot.html).toBe('');
 });
 
-test('statusBar absent keeps the success panel visible', async ({ page }) => {
+test('statusBar absent hides the success panel', async ({ page }) => {
   await page.goto('http://localhost/?hubBaseUrl=192.168.0.10&appId=123&makerToken=abc123&deviceIds=45,46');
   page.queueResponse(successResponse(minimalPayload));
   page.queueResponse(successResponse(minimalPayload));
@@ -145,9 +145,9 @@ test('statusBar absent keeps the success panel visible', async ({ page }) => {
     };
   });
 
-  expect(snapshot.statusBarVisible).toBe(true);
+  expect(snapshot.statusBarVisible).toBe(false);
   expect(snapshot.statusBarLocked).toBe(false);
-  expect(snapshot.bar).toBe(true);
+  expect(snapshot.bar).toBe(false);
 });
 
 test('backs off after Maker API failures and recovers on success', async ({ page }) => {

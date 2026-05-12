@@ -71,51 +71,6 @@
     </div>
     <script>
       (function bootstrap() {
-        function parseQuery(search) {
-          var source = (search || '').replace(/^\?/, '');
-          if (!source) return {};
-          return source.split('&').reduce(function (acc, pair) {
-            if (!pair) return acc;
-            var index = pair.indexOf('=');
-            var key = index >= 0 ? pair.slice(0, index) : pair;
-            var value = index >= 0 ? pair.slice(index + 1) : '';
-            try {
-              key = decodeURIComponent(key.replace(/\+/g, ' '));
-            } catch (err) {
-              key = key.replace(/\+/g, ' ');
-            }
-            try {
-              value = decodeURIComponent(value.replace(/\+/g, ' '));
-            } catch (err) {
-              value = value.replace(/\+/g, ' ');
-            }
-            if (!key) return acc;
-            acc[key] = value;
-            return acc;
-          }, {});
-        }
-
-        var SearchParams = window.URLSearchParams || (typeof URLSearchParams === 'function' ? URLSearchParams : null);
-        var params = null;
-        if (SearchParams) {
-          try {
-            params = new SearchParams(window.location.search || '');
-          } catch (err) {
-            params = null;
-          }
-        }
-        var fallbackParams = params ? null : parseQuery(window.location.search || '');
-        function readParam(name) {
-          if (params && typeof params.get === 'function') {
-            return params.get(name);
-          }
-          return fallbackParams ? fallbackParams[name] : null;
-        }
-
-        var rendererSrc = readParam('rendererScript');
-        var appSrc = readParam('appScript');
-        var bundleBase = readParam('bundleBase');
-
         var resizePending = false;
         var lastHeight = 0;
 
@@ -172,19 +127,6 @@
           }
         }
 
-        function normalizePath(path) {
-          if (!path) return '';
-          return path.endsWith('/') ? path : path + '/';
-        }
-
-        var base = normalizePath(bundleBase || '/local');
-        if (!rendererSrc) {
-          rendererSrc = base + 'weather-dashboard.js';
-        }
-        if (!appSrc) {
-          appSrc = base + 'weather-dashboard-app.js';
-        }
-
         function appendScript(src, onload) {
           var script = document.createElement('script');
           script.async = false;
@@ -202,20 +144,25 @@
         function reportFailure(message) {
           var host = document.getElementById('wdash-app-loader');
           if (!host) return;
-          host.innerHTML = [
-            '<div class="wdash-app-loader__content">',
-            '<div class="wdash-app-loader__heading">Weather Dashboard preview unavailable</div>',
-            '<div class="wdash-app-loader__details">',
-            message.replace(/</g, '&lt;').replace(/>/g, '&gt;'),
-            ' Verify the files are uploaded to Hubitat&#39;s File Manager and retry.',
-            '</div>',
-            '</div>'
-          ].join('');
+          while (host.firstChild) {
+            host.removeChild(host.firstChild);
+          }
+          var content = document.createElement('div');
+          content.className = 'wdash-app-loader__content';
+          var heading = document.createElement('div');
+          heading.className = 'wdash-app-loader__heading';
+          heading.textContent = 'Weather Dashboard preview unavailable';
+          var details = document.createElement('div');
+          details.className = 'wdash-app-loader__details';
+          details.textContent = String(message || '') + ' Verify the files are uploaded to Hubitat\'s File Manager and retry.';
+          content.appendChild(heading);
+          content.appendChild(details);
+          host.appendChild(content);
           scheduleResize();
         }
 
-        appendScript(rendererSrc, function () {
-          appendScript(appSrc, function () {
+        appendScript('/local/weather-dashboard.js', function () {
+          appendScript('/local/weather-dashboard-app.js', function () {
             var loader = document.getElementById('wdash-app-loader');
             if (loader && loader.parentNode) {
               loader.parentNode.removeChild(loader);

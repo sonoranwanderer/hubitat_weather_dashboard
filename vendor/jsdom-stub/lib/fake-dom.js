@@ -759,13 +759,32 @@ function initializeDocumentFromHtml(document, html) {
     return;
   }
 
-  const headMatch = html.match(/<head[^>]*>([\s\S]*?)<\/head>/i);
-  const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
-  const headContent = headMatch ? headMatch[1] : '';
-  const bodyContent = bodyMatch ? bodyMatch[1] : html;
+  const headContent = extractHtmlElementContent(html, 'head') || '';
+  const bodyContent = extractHtmlElementContent(html, 'body') || html;
 
   document.head.innerHTML = headContent;
   document.body.innerHTML = bodyContent;
+}
+
+function extractHtmlElementContent(html, tagName) {
+  const lowerHtml = html.toLowerCase();
+  const openPrefix = `<${tagName}`;
+  const closeTag = `</${tagName}>`;
+  let searchPos = 0;
+  while (searchPos < lowerHtml.length) {
+    const openStart = lowerHtml.indexOf(openPrefix, searchPos);
+    if (openStart < 0) return null;
+    const nextChar = lowerHtml[openStart + openPrefix.length];
+    if (nextChar === '>' || /\s/.test(nextChar)) {
+      const openEnd = lowerHtml.indexOf('>', openStart + openPrefix.length);
+      if (openEnd < 0) return null;
+      const closeStart = lowerHtml.indexOf(closeTag, openEnd + 1);
+      if (closeStart < 0) return null;
+      return html.slice(openEnd + 1, closeStart);
+    }
+    searchPos = openStart + 1;
+  }
+  return null;
 }
 
 function serializeNode(node) {
