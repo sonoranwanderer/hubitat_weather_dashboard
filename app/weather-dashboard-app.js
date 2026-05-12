@@ -1259,7 +1259,7 @@
   function measureStatusReserveHeight() {
     const shell = shellElements;
     const status = shell?.status;
-    if (!state.statusBarVisible && state.statusBarLocked) return 0;
+    if (!state.statusBarVisible) return 0;
     if (!status || status.hidden) return 0;
 
     const measured = [
@@ -1517,7 +1517,7 @@
     state.maxBackoffMs = normalized.maxBackoffMs || DEFAULT_MAX_BACKOFF_MS;
     state.endpointUrl = endpoint;
     state.redactedEndpointUrl = redactUrlSecrets(endpoint);
-    state.statusBarVisible = queryStatusBar === 'no' || queryStatusBar === '0' ? false : true;
+    state.statusBarVisible = queryStatusBar === 'yes' || queryStatusBar === '1';
     state.statusBarLocked = queryStatusBar === 'yes' || queryStatusBar === '1' || queryStatusBar === 'no' || queryStatusBar === '0';
 
     return { normalized, errors, warnings, endpoint };

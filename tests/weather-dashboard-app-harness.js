@@ -332,6 +332,31 @@ function runScheduledCallbacks(env, limit = 20) {
   delete global.document;
   delete global.location;
 
+  const defaultStatusDimensionEnv = setupAppEnvironment({
+    search: '?hubBaseUrl=http%3A%2F%2Fhubitat.local&appId=123&makerToken=token&deviceIds=10&width=600&height=350',
+    responses: [
+      { ok: true, text: JSON.stringify(makePayload(78.3)) }
+    ]
+  });
+  const defaultVisibleStatusPanel = findElementById(defaultStatusDimensionEnv.window.document.body, 'weather-dashboard-app-status');
+  Object.defineProperty(defaultVisibleStatusPanel, 'scrollHeight', { configurable: true, value: 50 });
+  Object.defineProperty(defaultVisibleStatusPanel, 'offsetHeight', { configurable: true, value: 50 });
+  defaultStatusDimensionEnv.window.__WEATHER_DASHBOARD_APP__.refreshNow();
+  await flushMicrotasks();
+  runScheduledCallbacks(defaultStatusDimensionEnv);
+  assert.strictEqual(defaultStatusDimensionEnv.window.__WEATHER_DASHBOARD_APP__.state.statusBarVisible, false, 'omitted statusBar should default to hidden');
+  assert.strictEqual(defaultStatusDimensionEnv.window.__WEATHER_DASHBOARD_APP__.state.statusBarLocked, false, 'omitted statusBar should not lock the hidden default');
+  const defaultStatusPayload = lastRenderedPayload(defaultStatusDimensionEnv.renderCalls);
+  assert(Math.abs(defaultStatusPayload.metadata.layout.baseWidth - 1542.857) < 0.01, 'omitted statusBar should not reserve status height');
+  assert.strictEqual(defaultStatusPayload.metadata.layout.baseHeight, 900, 'omitted statusBar should keep full dashboard height');
+  const defaultStatusDisplayTile = findElementById(defaultStatusDimensionEnv.window.document.body, 'tile-0');
+  assert.strictEqual(defaultStatusDisplayTile.style.width, '600px', 'omitted statusBar should keep explicit width');
+  assert.strictEqual(defaultStatusDisplayTile.style.height, '350px', 'omitted statusBar should keep explicit height');
+
+  delete global.window;
+  delete global.document;
+  delete global.location;
+
   const invalidDimensionEnv = setupAppEnvironment({
     search: '?hubBaseUrl=http%3A%2F%2Fhubitat.local&appId=123&makerToken=token&deviceIds=10&width=0&height=wide',
     responses: [

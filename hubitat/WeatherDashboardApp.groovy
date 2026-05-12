@@ -697,7 +697,8 @@ private String buildDashboardEmbedUrl() {
     Map<String, String> params = [
         hubBaseUrl : baseUrl,
         appId      : appId,
-        makerToken : token
+        makerToken : token,
+        statusBar  : 'yes'
     ]
 
     List<String> deviceIds = makerApiDeviceIdList()
