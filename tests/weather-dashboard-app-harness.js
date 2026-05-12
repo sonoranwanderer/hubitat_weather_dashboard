@@ -331,8 +331,26 @@ function runScheduledCallbacks(env, limit = 20) {
   assert.strictEqual(landscapePhonePayload.metadata.layout.desktop.baseHeight, 900, 'landscape phone desktop baseHeight should keep same-ratio base');
   assert.strictEqual(landscapePhonePayload.metadata.layout.tablet.baseWidth, 932, 'landscape phone tablet baseWidth should match standalone width');
   assert.strictEqual(landscapePhonePayload.metadata.layout.tablet.baseHeight, 430, 'landscape phone tablet baseHeight should match standalone height');
-  assertApprox(landscapePhonePayload.metadata.layout.mobile.baseWidth, 1950.698, 0.01, 'landscape phone mobile baseWidth should keep same-ratio base');
-  assert.strictEqual(landscapePhonePayload.metadata.layout.mobile.baseHeight, 900, 'landscape phone mobile baseHeight should keep same-ratio base');
+  assert.strictEqual(landscapePhonePayload.metadata.layout.mobile.baseWidth, 932, 'landscape phone mobile baseWidth should match standalone width');
+  assert.strictEqual(landscapePhonePayload.metadata.layout.mobile.baseHeight, 430, 'landscape phone mobile baseHeight should match standalone height');
+
+  delete global.window;
+  delete global.document;
+  delete global.location;
+
+  const narrowLandscapePhoneEnv = setupAppEnvironment({
+    search: '?hubBaseUrl=http%3A%2F%2Fhubitat.local&appId=123&makerToken=token&deviceIds=10&width=700&height=390',
+    responses: [
+      { ok: true, text: JSON.stringify(makePayload(78.0)) }
+    ]
+  });
+  narrowLandscapePhoneEnv.window.__WEATHER_DASHBOARD_APP__.refreshNow();
+  await flushMicrotasks();
+  const narrowLandscapePhonePayload = lastRenderedPayload(narrowLandscapePhoneEnv.renderCalls);
+  assert.strictEqual(narrowLandscapePhonePayload.metadata.layout.tablet.baseWidth, 700, 'narrow landscape phone tablet baseWidth should match standalone width');
+  assert.strictEqual(narrowLandscapePhonePayload.metadata.layout.tablet.baseHeight, 390, 'narrow landscape phone tablet baseHeight should match standalone height');
+  assert.strictEqual(narrowLandscapePhonePayload.metadata.layout.mobile.baseWidth, 700, 'narrow landscape phone mobile baseWidth should match standalone width');
+  assert.strictEqual(narrowLandscapePhonePayload.metadata.layout.mobile.baseHeight, 390, 'narrow landscape phone mobile baseHeight should match standalone height');
 
   delete global.window;
   delete global.document;
@@ -398,6 +416,8 @@ function runScheduledCallbacks(env, limit = 20) {
   const browserLandscapePhonePayload = lastRenderedPayload(browserLandscapePhoneEnv.renderCalls);
   assert.strictEqual(browserLandscapePhonePayload.metadata.layout.tablet.baseWidth, 892, 'browser landscape phone tablet baseWidth should subtract horizontal inner offset');
   assert.strictEqual(browserLandscapePhonePayload.metadata.layout.tablet.baseHeight, 390, 'browser landscape phone tablet baseHeight should subtract vertical inner offset');
+  assert.strictEqual(browserLandscapePhonePayload.metadata.layout.mobile.baseWidth, 892, 'browser landscape phone mobile baseWidth should subtract horizontal inner offset');
+  assert.strictEqual(browserLandscapePhonePayload.metadata.layout.mobile.baseHeight, 390, 'browser landscape phone mobile baseHeight should subtract vertical inner offset');
   assertApprox(browserLandscapePhonePayload.metadata.layout.desktop.baseWidth, 2058.462, 0.01, 'browser landscape phone desktop baseWidth should keep same-ratio base');
   assert.strictEqual(browserLandscapePhonePayload.metadata.layout.desktop.baseHeight, 900, 'browser landscape phone desktop baseHeight should keep same-ratio base');
   const browserLandscapeDisplayTile = findElementById(browserLandscapePhoneEnv.window.document.body, 'tile-0');

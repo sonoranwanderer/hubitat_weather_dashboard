@@ -1375,6 +1375,7 @@
       assignLayoutBaseDimensions(layout, 'mobile', dashboardDimensions);
     } else if (isStandaloneLandscapePhone(dashboardDimensions)) {
       assignLayoutBaseDimensions(layout, 'tablet', dashboardDimensions);
+      assignLayoutBaseDimensions(layout, 'mobile', dashboardDimensions);
     }
   }
 
