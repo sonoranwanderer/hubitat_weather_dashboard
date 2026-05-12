@@ -202,6 +202,9 @@ function runScheduledCallbacks(env, limit = 20) {
   const statusPanel = env.window.document.querySelector('.wdash-app-status');
   assert(statusPanel, 'status panel should exist after initial render');
   assert(statusPanel.hidden === true, 'statusBar=no should hide success status panel');
+  const firstStatusHiddenPayload = JSON.parse(env.renderCalls[0]);
+  assert(Math.abs(firstStatusHiddenPayload.metadata.layout.baseWidth - 1216.484) < 0.01, 'statusBar=no should not reserve status height during initial render');
+  assert.strictEqual(firstStatusHiddenPayload.metadata.layout.baseHeight, 900, 'statusBar=no should keep the full dashboard height during initial render');
   api.refreshNow();
   assert(statusPanel.hidden === true, 'background refresh should not unhide hidden status panel');
   assert(api.state.status.level === 'success', 'background refresh should keep previous status until the fetch resolves');

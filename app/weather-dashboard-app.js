@@ -1259,6 +1259,7 @@
   function measureStatusReserveHeight() {
     const shell = shellElements;
     const status = shell?.status;
+    if (!state.statusBarVisible && state.statusBarLocked) return 0;
     if (!status || status.hidden) return 0;
 
     const measured = [
