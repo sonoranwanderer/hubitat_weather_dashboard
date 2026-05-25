@@ -360,6 +360,41 @@ describe('Renderer payload and layout branches', () => {
     }
   });
 
+  it('uses singular lightning recency labels for one minute, hour, and day', () => {
+    const originalNow = Date.now;
+    Date.now = () => Date.parse('2026-05-25T12:00:00Z');
+
+    try {
+      const cases = [
+        { time: '2026-05-25T11:58:30Z', label: 'Minute Ago', value: '1' },
+        { time: '2026-05-25T10:30:00Z', label: 'Hour Ago', value: '1' },
+        { time: '2026-05-24T10:30:00Z', label: 'Day Ago', value: '1' }
+      ];
+
+      for (const testCase of cases) {
+        const { hooks, grid } = bootstrapRenderer();
+        hooks.render({
+          metadata: { weatherStationTimezone: 'UTC' },
+          lightning: {
+            time: testCase.time,
+            distanceMi: 4.5,
+            count: 3,
+            battery: 72
+          }
+        }, grid);
+
+        const lightningCard = grid.querySelector('.wdash-card--lightning');
+        const labels = Array.from(lightningCard.querySelectorAll('.wdash-lightning-label')).map(node => node.textContent);
+        const values = Array.from(lightningCard.querySelectorAll('.wdash-lightning-value')).map(node => node.textContent);
+
+        expect(labels[0]).toBe(testCase.label);
+        expect(values[0]).toBe(testCase.value);
+      }
+    } finally {
+      Date.now = originalNow;
+    }
+  });
+
   it('applies metadata unit defaults and preserves user overrides', () => {
     const { hooks } = bootstrapRenderer();
     hooks.applyTemperatureUnitsFromMetadata({ temperatureDisplayUnit: 'C', temperatureInputUnit: 'F' });

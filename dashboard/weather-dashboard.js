@@ -6833,6 +6833,11 @@
       .wdash-lightning-header-icon { display: flex; align-items: flex-start; justify-content: flex-end; margin-left: auto; }
       .wdash-lightning-header-icon .wdash-lightning-bolt-svg { width: 30px; height: auto; transform: scaleY(1.15) rotate(10deg); transform-origin: center; filter: drop-shadow(0 4px 10px rgba(0,0,0,0.45)); }
       .wdash-lightning-header-icon--active .wdash-lightning-bolt-svg { animation: wdash-lightning-flash 1s steps(2, end) infinite; }
+      @media (prefers-reduced-motion: reduce) {
+        .wdash-lightning-header-icon--active .wdash-lightning-bolt-svg {
+          animation: none;
+        }
+      }
       @keyframes wdash-lightning-flash { 0%, 100% { opacity: 1; } 50% { opacity: 0.2; } }
       .wdash-card--rain { grid-area: rain; position: relative; }
       .wdash-rain-battery { display: inline-flex; align-items: center; justify-content: center; }
@@ -7822,19 +7827,31 @@
         function formatLightningStrikeAge(nowUtc, eventUtc) {
           if (!Number.isFinite(nowUtc) || !Number.isFinite(eventUtc)) return null;
           const diff = nowUtc - eventUtc;
-          if (!Number.isFinite(diff)) return null;
           if (diff <= 0) {
             return { label: 'Minutes Ago', value: 0, isRecent: true };
           }
-          const minutes = Math.floor(diff / 60000);
+          const minutes = Math.floor(diff / (60 * 1000));
           if (minutes < 60) {
-            return { label: 'Minutes Ago', value: minutes, isRecent: true };
+            return {
+              label: minutes === 1 ? 'Minute Ago' : 'Minutes Ago',
+              value: minutes,
+              isRecent: true
+            };
           }
-          const hours = Math.floor(diff / 3600000);
+          const hours = Math.floor(diff / (60 * 60 * 1000));
           if (hours < 24) {
-            return { label: 'Hours Ago', value: hours, isRecent: false };
+            return {
+              label: hours === 1 ? 'Hour Ago' : 'Hours Ago',
+              value: hours,
+              isRecent: false
+            };
           }
-          return { label: 'Days Ago', value: calculateDaysAgo(nowUtc, eventUtc), isRecent: false };
+          const days = calculateDaysAgo(nowUtc, eventUtc);
+          return {
+            label: days === 1 ? 'Day Ago' : 'Days Ago',
+            value: days,
+            isRecent: false
+          };
         }
         function parseIsoDateParts(value) {
           if (value == null) return null;
