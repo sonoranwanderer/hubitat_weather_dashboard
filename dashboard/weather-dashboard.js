@@ -2487,7 +2487,8 @@
           const battery = toNumber(lightning.battery);
       
           const strikeAgeDisplay = strikeAge ? String(strikeAge.value) : '--';
-          const strikeAgeLabel = strikeAge ? strikeAge.label : 'Days Ago';
+          const strikeAgeLabel = formatLightningStrikeAgeLabel(strikeAge);
+          const strikeAgeShortLabel = strikeAgeLabel.replace(/\bminutes?\b/, 'min');
           const lightningIconClass = strikeAge && strikeAge.isRecent ? ' wdash-lightning-header-icon--active' : '';
           let distanceDisplay = '--';
           if (Number.isFinite(distanceMiles)) {
@@ -2522,12 +2523,15 @@
               </header>
               <div class="wdash-lightning">
                 <div class="wdash-lightning-data">
-                  <span class="wdash-lightning-label">${escapeHtml(strikeAgeLabel)}</span>
-                  <span class="wdash-lightning-value">${escapeHtml(strikeAgeDisplay)}</span>
-                  <span class="wdash-lightning-label">Distance</span>
-                  <span class="wdash-lightning-value">${escapeHtml(distanceDisplay)}</span>
-                  <span class="wdash-lightning-label">Count</span>
-                  <span class="wdash-lightning-value">${escapeHtml(countDisplay)}</span>
+                  <div class="wdash-lightning-row wdash-lightning-row--age">
+                    <span class="wdash-lightning-value">${escapeHtml(strikeAgeDisplay)}</span> <span class="wdash-lightning-age-label" data-short="${escapeHtml(strikeAgeShortLabel)}">${escapeHtml(strikeAgeLabel)}</span>
+                  </div>
+                  <div class="wdash-lightning-row">
+                    <span class="wdash-lightning-label wdash-lightning-label--distance" data-short="Dis">Distance</span><span class="wdash-lightning-separator">: </span><span class="wdash-lightning-value">${escapeHtml(distanceDisplay)}</span>
+                  </div>
+                  <div class="wdash-lightning-row">
+                    <span class="wdash-lightning-label">Count</span><span class="wdash-lightning-separator">: </span><span class="wdash-lightning-value">${escapeHtml(countDisplay)}</span>
+                  </div>
                 </div>
                 <div class="wdash-lightning-battery" aria-hidden="true">${batteryIcon}</div>
               </div>
@@ -6827,7 +6831,7 @@
       .wdash-card--temp-wind .wdash-metric-row--gauge { max-width: 100%; }
       .wdash-card--temp-wind .wdash-temp-wind-main { padding-block: 2px; position: relative; z-index: 1; }
       .wdash-card--ambient { grid-area: ambient; gap: 12px; align-items: stretch; }
-      .wdash-card--lightning { grid-area: lightning; gap: 8px; align-items: stretch; min-width: 0; display: none; position: relative; }
+      .wdash-card--lightning { grid-area: lightning; gap: 8px; align-items: stretch; min-width: 0; display: none; position: relative; container-type: inline-size; }
       .wdash[data-layout-has-lightning="true"] .wdash-card--lightning { display: flex; }
       .wdash-card-header--lightning { align-items: flex-start; }
       .wdash-lightning-header-icon { display: flex; align-items: flex-start; justify-content: flex-end; margin-left: auto; }
@@ -6940,11 +6944,20 @@
       .wdash-battery--with-label { gap: 4px; }
       .wdash-battery--critical { --wdash-battery-fill-color: #ff6b63; }
       .wdash-battery--unknown { --wdash-battery-fill-color: #8ea0c8; }
-      .wdash-lightning { display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1; min-height: 0; gap: 16px; padding: 4px 6px 10px; }
-      .wdash-lightning-data { display: grid; grid-template-columns: max-content max-content; gap: 10px 20px; justify-content: center; align-items: center; }
-      .wdash-lightning-label { font-size: 0.72rem; letter-spacing: 0.08em; color: #8ea0c8; text-transform: uppercase; text-align: right; justify-self: end; }
-      .wdash-lightning-value { font-size: 1.05rem; font-weight: 600; color: #f4f6ff; white-space: nowrap; text-align: left; justify-self: start; text-transform: none; }
+      .wdash-lightning { display: flex; flex-direction: column; align-items: stretch; justify-content: center; flex: 1; min-height: 0; gap: 16px; padding: 4px 6px 10px; }
+      .wdash-lightning-data { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; justify-content: center; max-width: 100%; }
+      .wdash-lightning-row { max-width: 100%; color: #8ea0c8; font-size: 0.78rem; font-weight: 600; letter-spacing: 0; line-height: 1.15; white-space: nowrap; text-align: left; }
+      .wdash-lightning-label,
+      .wdash-lightning-age-label,
+      .wdash-lightning-separator { color: #8ea0c8; text-transform: none; }
+      .wdash-lightning-value { font-size: 1.05rem; font-weight: 600; color: #f4f6ff; white-space: nowrap; text-transform: none; }
       .wdash-lightning-battery { display: flex; justify-content: center; width: 100%; }
+      @container (max-width: 118px) {
+        .wdash-lightning-age-label[data-short],
+        .wdash-lightning-label--distance[data-short] { font-size: 0; }
+        .wdash-lightning-age-label[data-short]::after,
+        .wdash-lightning-label--distance[data-short]::after { content: attr(data-short); font-size: 0.78rem; }
+      }
       .wdash-ambient-circles { display: flex; gap: 12px; justify-content: center; }
       .wdash-ambient-circle { flex: 0 0 130px; width: 130px; aspect-ratio: 1; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: #fff; font-weight: 600; box-shadow: 0 10px 22px rgba(4,9,20,0.4); text-align: center; padding: 12px; position: relative; background: transparent; }
       .wdash-ambient-svg { position: absolute; inset: 4px; width: calc(100% - 8px); height: calc(100% - 8px); z-index: 1; pointer-events: none; }
@@ -7127,11 +7140,11 @@
         .wdash-card--lightning { padding-inline: 7px; gap: 4px; }
         .wdash-lightning-header-icon .wdash-lightning-bolt-svg { width: 22px; }
         .wdash-lightning { gap: 5px; padding: 0 0 12px; justify-content: center; }
-        .wdash-lightning-data { grid-template-columns: minmax(0, 1fr); gap: 2px; width: 100%; }
-        .wdash-lightning-label,
-        .wdash-lightning-value { justify-self: center; text-align: center; }
-        .wdash-lightning-label { font-size: 0.48rem; line-height: 1.05; }
+        .wdash-lightning-data { gap: 2px; width: 100%; }
+        .wdash-lightning-row { font-size: 0.52rem; line-height: 1.05; }
         .wdash-lightning-value { font-size: 0.72rem; line-height: 1.05; }
+        .wdash-lightning-age-label[data-short]::after,
+        .wdash-lightning-label--distance[data-short]::after { font-size: 0.52rem; }
         .wdash-lightning-battery { transform: scale(0.82); transform-origin: center; }
         .wdash-rain-main { grid-template-columns: minmax(0, 0.65fr) minmax(0, 0.95fr) minmax(0, 1.25fr); gap: 9px; min-height: 0; position: relative; }
         .wdash-rain-rate-wrapper { width: 100%; }
@@ -7222,11 +7235,11 @@
         .wdash-card--lightning { padding-inline: 6px; gap: 3px; }
         .wdash-lightning-header-icon .wdash-lightning-bolt-svg { width: 20px; }
         .wdash-lightning { gap: 4px; padding: 0 0 3px; justify-content: space-evenly; }
-        .wdash-lightning-data { grid-template-columns: minmax(0, 1fr); gap: 1px; width: 100%; }
-        .wdash-lightning-label,
-        .wdash-lightning-value { justify-self: center; text-align: center; }
-        .wdash-lightning-label { font-size: 0.43rem; line-height: 1.02; }
+        .wdash-lightning-data { gap: 1px; width: 100%; }
+        .wdash-lightning-row { font-size: 0.46rem; line-height: 1.02; }
         .wdash-lightning-value { font-size: 0.64rem; line-height: 1.02; }
+        .wdash-lightning-age-label[data-short]::after,
+        .wdash-lightning-label--distance[data-short]::after { font-size: 0.46rem; }
         .wdash-lightning-battery { transform: scale(0.75); transform-origin: center; }
         .wdash-rain-main { grid-template-columns: minmax(0, 0.55fr) minmax(0, 0.9fr) minmax(0, 1.35fr); gap: 7px; min-height: 0; }
         .wdash-rain-rate-wrapper { width: 100%; }
@@ -7853,6 +7866,12 @@
             isRecent: false
           };
         }
+      
+        function formatLightningStrikeAgeLabel(strikeAge) {
+          return strikeAge && typeof strikeAge.label === 'string' && strikeAge.label
+            ? strikeAge.label.toLowerCase()
+            : 'days ago';
+        }
         function parseIsoDateParts(value) {
           if (value == null) return null;
           const raw = typeof value === 'string' ? value : String(value);
@@ -8131,6 +8150,7 @@
             convertPressure,
             convertLightningDistance,
             formatLightningDistance,
+            formatLightningStrikeAgeLabel,
             setupAirQualityRotation,
             scheduleAirQualityRotation,
             stopAmbientRotationTimer,
