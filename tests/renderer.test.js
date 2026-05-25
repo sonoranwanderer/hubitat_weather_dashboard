@@ -417,6 +417,13 @@ describe('Renderer payload and layout branches', () => {
     }
   });
 
+  it('falls back when a lightning strike age label is missing', () => {
+    const { hooks } = bootstrapRenderer();
+
+    expect(hooks.formatLightningStrikeAgeLabel({ value: 1 })).toBe('days ago');
+    expect(hooks.formatLightningStrikeAgeLabel(null)).toBe('days ago');
+  });
+
   it('applies metadata unit defaults and preserves user overrides', () => {
     const { hooks } = bootstrapRenderer();
     hooks.applyTemperatureUnitsFromMetadata({ temperatureDisplayUnit: 'C', temperatureInputUnit: 'F' });

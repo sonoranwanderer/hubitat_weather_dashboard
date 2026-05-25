@@ -2424,7 +2424,7 @@ function createRenderer(options = {}) {
     const battery = toNumber(lightning.battery);
 
     const strikeAgeDisplay = strikeAge ? String(strikeAge.value) : '--';
-    const strikeAgeLabel = strikeAge ? strikeAge.label.toLowerCase() : 'days ago';
+    const strikeAgeLabel = formatLightningStrikeAgeLabel(strikeAge);
     const strikeAgeShortLabel = strikeAgeLabel.replace(/\bminutes?\b/, 'min');
     const lightningIconClass = strikeAge && strikeAge.isRecent ? ' wdash-lightning-header-icon--active' : '';
     let distanceDisplay = '--';
@@ -7803,6 +7803,12 @@ function createRenderer(options = {}) {
       isRecent: false
     };
   }
+
+  function formatLightningStrikeAgeLabel(strikeAge) {
+    return strikeAge && typeof strikeAge.label === 'string' && strikeAge.label
+      ? strikeAge.label.toLowerCase()
+      : 'days ago';
+  }
   function parseIsoDateParts(value) {
     if (value == null) return null;
     const raw = typeof value === 'string' ? value : String(value);
@@ -8081,6 +8087,7 @@ function createRenderer(options = {}) {
       convertPressure,
       convertLightningDistance,
       formatLightningDistance,
+      formatLightningStrikeAgeLabel,
       setupAirQualityRotation,
       scheduleAirQualityRotation,
       stopAmbientRotationTimer,
