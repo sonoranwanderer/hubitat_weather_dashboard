@@ -276,6 +276,90 @@ describe('Renderer payload and layout branches', () => {
     expect(hooks.layoutState.lastDiagnostics.base.activeBreakpoint).toBe('mobile');
   });
 
+  it('renders lightning recency in minutes and flashes the icon for sub-hour strikes', () => {
+    const { hooks, grid } = bootstrapRenderer();
+    const originalNow = Date.now;
+    Date.now = () => Date.parse('2026-05-25T12:00:00Z');
+
+    try {
+      hooks.render({
+        metadata: { weatherStationTimezone: 'UTC' },
+        lightning: {
+          time: '2026-05-25T11:42:30Z',
+          distanceMi: 4.5,
+          count: 3,
+          battery: 72
+        }
+      }, grid);
+
+      const lightningCard = grid.querySelector('.wdash-card--lightning');
+      const labels = Array.from(lightningCard.querySelectorAll('.wdash-lightning-label')).map(node => node.textContent);
+      const values = Array.from(lightningCard.querySelectorAll('.wdash-lightning-value')).map(node => node.textContent);
+
+      expect(labels[0]).toBe('Minutes Ago');
+      expect(values[0]).toBe('17');
+      expect(lightningCard.querySelector('.wdash-lightning-header-icon').classList.contains('wdash-lightning-header-icon--active')).toBe(true);
+    } finally {
+      Date.now = originalNow;
+    }
+  });
+
+  it('renders lightning recency in hours without flashing after the first hour', () => {
+    const { hooks, grid } = bootstrapRenderer();
+    const originalNow = Date.now;
+    Date.now = () => Date.parse('2026-05-25T12:00:00Z');
+
+    try {
+      hooks.render({
+        metadata: { weatherStationTimezone: 'UTC' },
+        lightning: {
+          time: '2026-05-25T09:15:00Z',
+          distanceMi: 4.5,
+          count: 3,
+          battery: 72
+        }
+      }, grid);
+
+      const lightningCard = grid.querySelector('.wdash-card--lightning');
+      const labels = Array.from(lightningCard.querySelectorAll('.wdash-lightning-label')).map(node => node.textContent);
+      const values = Array.from(lightningCard.querySelectorAll('.wdash-lightning-value')).map(node => node.textContent);
+
+      expect(labels[0]).toBe('Hours Ago');
+      expect(values[0]).toBe('2');
+      expect(lightningCard.querySelector('.wdash-lightning-header-icon').classList.contains('wdash-lightning-header-icon--active')).toBe(false);
+    } finally {
+      Date.now = originalNow;
+    }
+  });
+
+  it('keeps day-based lightning recency for strikes older than a day', () => {
+    const { hooks, grid } = bootstrapRenderer();
+    const originalNow = Date.now;
+    Date.now = () => Date.parse('2026-05-25T12:00:00Z');
+
+    try {
+      hooks.render({
+        metadata: { weatherStationTimezone: 'UTC' },
+        lightning: {
+          time: '2026-05-22T10:00:00Z',
+          distanceMi: 4.5,
+          count: 3,
+          battery: 72
+        }
+      }, grid);
+
+      const lightningCard = grid.querySelector('.wdash-card--lightning');
+      const labels = Array.from(lightningCard.querySelectorAll('.wdash-lightning-label')).map(node => node.textContent);
+      const values = Array.from(lightningCard.querySelectorAll('.wdash-lightning-value')).map(node => node.textContent);
+
+      expect(labels[0]).toBe('Days Ago');
+      expect(values[0]).toBe('3');
+      expect(lightningCard.querySelector('.wdash-lightning-header-icon').classList.contains('wdash-lightning-header-icon--active')).toBe(false);
+    } finally {
+      Date.now = originalNow;
+    }
+  });
+
   it('applies metadata unit defaults and preserves user overrides', () => {
     const { hooks } = bootstrapRenderer();
     hooks.applyTemperatureUnitsFromMetadata({ temperatureDisplayUnit: 'C', temperatureInputUnit: 'F' });

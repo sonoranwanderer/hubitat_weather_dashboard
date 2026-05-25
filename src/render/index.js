@@ -2416,14 +2416,16 @@ function createRenderer(options = {}) {
     const nowUtc = Date.now();
     const eventParts = parseHubDateTimeParts(lightning.time);
     const eventUtc = eventParts ? convertLocalPartsToUtc(eventParts, zone) : NaN;
-    const daysAgo = Number.isFinite(eventUtc) ? calculateDaysAgo(nowUtc, eventUtc) : null;
+    const strikeAge = formatLightningStrikeAge(nowUtc, eventUtc);
 
     const distanceMiles = toNumber(lightning.distanceMi ?? lightning.distance);
     const distanceKilometers = toNumber(lightning.distanceKm);
     const count = toNumber(lightning.count);
     const battery = toNumber(lightning.battery);
 
-    const daysAgoDisplay = Number.isFinite(daysAgo) ? String(daysAgo) : '--';
+    const strikeAgeDisplay = strikeAge ? String(strikeAge.value) : '--';
+    const strikeAgeLabel = strikeAge ? strikeAge.label : 'Days Ago';
+    const lightningIconClass = strikeAge && strikeAge.isRecent ? ' wdash-lightning-header-icon--active' : '';
     let distanceDisplay = '--';
     if (Number.isFinite(distanceMiles)) {
       distanceDisplay = formatLightningDistance(distanceMiles, { sourceUnit: 'mi' });
@@ -2453,12 +2455,12 @@ function createRenderer(options = {}) {
         <button type="button" class="wdash-temp-unit-indicator wdash-lightning-unit-indicator" data-lightning-unit-indicator="true" aria-label="${escapeHtml(indicatorLabel)}" title="${escapeHtml(indicatorLabel)}">${escapeHtml(indicatorText)}</button>
         <header class="wdash-card-header wdash-card-header--lightning">
           <h3>Lightning</h3>
-          <span class="wdash-lightning-header-icon" aria-hidden="true">${renderLightningBoltIcon()}</span>
+          <span class="wdash-lightning-header-icon${lightningIconClass}" aria-hidden="true">${renderLightningBoltIcon()}</span>
         </header>
         <div class="wdash-lightning">
           <div class="wdash-lightning-data">
-            <span class="wdash-lightning-label">Days Ago</span>
-            <span class="wdash-lightning-value">${escapeHtml(daysAgoDisplay)}</span>
+            <span class="wdash-lightning-label">${escapeHtml(strikeAgeLabel)}</span>
+            <span class="wdash-lightning-value">${escapeHtml(strikeAgeDisplay)}</span>
             <span class="wdash-lightning-label">Distance</span>
             <span class="wdash-lightning-value">${escapeHtml(distanceDisplay)}</span>
             <span class="wdash-lightning-label">Count</span>
@@ -6767,6 +6769,8 @@ function createRenderer(options = {}) {
 .wdash-card-header--lightning { align-items: flex-start; }
 .wdash-lightning-header-icon { display: flex; align-items: flex-start; justify-content: flex-end; margin-left: auto; }
 .wdash-lightning-header-icon .wdash-lightning-bolt-svg { width: 30px; height: auto; transform: scaleY(1.15) rotate(10deg); transform-origin: center; filter: drop-shadow(0 4px 10px rgba(0,0,0,0.45)); }
+.wdash-lightning-header-icon--active .wdash-lightning-bolt-svg { animation: wdash-lightning-flash 1s steps(2, end) infinite; }
+@keyframes wdash-lightning-flash { 0%, 100% { opacity: 1; } 50% { opacity: 0.2; } }
 .wdash-card--rain { grid-area: rain; position: relative; }
 .wdash-rain-battery { display: inline-flex; align-items: center; justify-content: center; }
 .wdash-card--pressure { grid-area: pressure; position: relative; }
@@ -7752,6 +7756,23 @@ function createRenderer(options = {}) {
     return Math.floor(diff / 86400000);
   }
 
+  function formatLightningStrikeAge(nowUtc, eventUtc) {
+    if (!Number.isFinite(nowUtc) || !Number.isFinite(eventUtc)) return null;
+    const diff = nowUtc - eventUtc;
+    if (!Number.isFinite(diff)) return null;
+    if (diff <= 0) {
+      return { label: 'Minutes Ago', value: 0, isRecent: true };
+    }
+    const minutes = Math.floor(diff / 60000);
+    if (minutes < 60) {
+      return { label: 'Minutes Ago', value: minutes, isRecent: true };
+    }
+    const hours = Math.floor(diff / 3600000);
+    if (hours < 24) {
+      return { label: 'Hours Ago', value: hours, isRecent: false };
+    }
+    return { label: 'Days Ago', value: calculateDaysAgo(nowUtc, eventUtc), isRecent: false };
+  }
   function parseIsoDateParts(value) {
     if (value == null) return null;
     const raw = typeof value === 'string' ? value : String(value);
