@@ -293,11 +293,11 @@ describe('Renderer payload and layout branches', () => {
       }, grid);
 
       const lightningCard = grid.querySelector('.wdash-card--lightning');
-      const labels = Array.from(lightningCard.querySelectorAll('.wdash-lightning-label')).map(node => node.textContent);
-      const values = Array.from(lightningCard.querySelectorAll('.wdash-lightning-value')).map(node => node.textContent);
+      const rows = Array.from(lightningCard.querySelectorAll('.wdash-lightning-row')).map(node => node.textContent.trim());
 
-      expect(labels[0]).toBe('Minutes Ago');
-      expect(values[0]).toBe('17');
+      expect(rows[0]).toBe('17 minutes ago');
+      expect(rows[1]).toBe('Distance: 4.5 mi');
+      expect(rows[2]).toBe('Count: 3');
       expect(lightningCard.querySelector('.wdash-lightning-header-icon').classList.contains('wdash-lightning-header-icon--active')).toBe(true);
     } finally {
       Date.now = originalNow;
@@ -321,11 +321,9 @@ describe('Renderer payload and layout branches', () => {
       }, grid);
 
       const lightningCard = grid.querySelector('.wdash-card--lightning');
-      const labels = Array.from(lightningCard.querySelectorAll('.wdash-lightning-label')).map(node => node.textContent);
-      const values = Array.from(lightningCard.querySelectorAll('.wdash-lightning-value')).map(node => node.textContent);
+      const rows = Array.from(lightningCard.querySelectorAll('.wdash-lightning-row')).map(node => node.textContent.trim());
 
-      expect(labels[0]).toBe('Hours Ago');
-      expect(values[0]).toBe('2');
+      expect(rows[0]).toBe('2 hours ago');
       expect(lightningCard.querySelector('.wdash-lightning-header-icon').classList.contains('wdash-lightning-header-icon--active')).toBe(false);
     } finally {
       Date.now = originalNow;
@@ -349,11 +347,9 @@ describe('Renderer payload and layout branches', () => {
       }, grid);
 
       const lightningCard = grid.querySelector('.wdash-card--lightning');
-      const labels = Array.from(lightningCard.querySelectorAll('.wdash-lightning-label')).map(node => node.textContent);
-      const values = Array.from(lightningCard.querySelectorAll('.wdash-lightning-value')).map(node => node.textContent);
+      const rows = Array.from(lightningCard.querySelectorAll('.wdash-lightning-row')).map(node => node.textContent.trim());
 
-      expect(labels[0]).toBe('Days Ago');
-      expect(values[0]).toBe('3');
+      expect(rows[0]).toBe('3 days ago');
       expect(lightningCard.querySelector('.wdash-lightning-header-icon').classList.contains('wdash-lightning-header-icon--active')).toBe(false);
     } finally {
       Date.now = originalNow;
@@ -366,9 +362,9 @@ describe('Renderer payload and layout branches', () => {
 
     try {
       const cases = [
-        { time: '2026-05-25T11:58:30Z', label: 'Minute Ago', value: '1' },
-        { time: '2026-05-25T10:30:00Z', label: 'Hour Ago', value: '1' },
-        { time: '2026-05-24T10:30:00Z', label: 'Day Ago', value: '1' }
+        { time: '2026-05-25T11:58:30Z', text: '1 minute ago' },
+        { time: '2026-05-25T10:30:00Z', text: '1 hour ago' },
+        { time: '2026-05-24T10:30:00Z', text: '1 day ago' }
       ];
 
       for (const testCase of cases) {
@@ -384,12 +380,38 @@ describe('Renderer payload and layout branches', () => {
         }, grid);
 
         const lightningCard = grid.querySelector('.wdash-card--lightning');
-        const labels = Array.from(lightningCard.querySelectorAll('.wdash-lightning-label')).map(node => node.textContent);
-        const values = Array.from(lightningCard.querySelectorAll('.wdash-lightning-value')).map(node => node.textContent);
+        const row = lightningCard.querySelector('.wdash-lightning-row--age');
 
-        expect(labels[0]).toBe(testCase.label);
-        expect(values[0]).toBe(testCase.value);
+        expect(row.textContent.trim()).toBe(testCase.text);
       }
+    } finally {
+      Date.now = originalNow;
+    }
+  });
+
+  it('provides narrow lightning row abbreviations without changing default text', () => {
+    const { hooks, grid } = bootstrapRenderer();
+    const originalNow = Date.now;
+    Date.now = () => Date.parse('2026-05-25T12:00:00Z');
+
+    try {
+      hooks.render({
+        metadata: { weatherStationTimezone: 'UTC' },
+        lightning: {
+          time: '2026-05-25T11:58:30Z',
+          distanceMi: 14.2,
+          count: 3
+        }
+      }, grid);
+
+      const lightningCard = grid.querySelector('.wdash-card--lightning');
+      const ageLabel = lightningCard.querySelector('.wdash-lightning-age-label');
+      const distanceLabel = lightningCard.querySelector('.wdash-lightning-label--distance');
+
+      expect(lightningCard.querySelector('.wdash-lightning-row--age').textContent.trim()).toBe('1 minute ago');
+      expect(ageLabel.dataset.short).toBe('min ago');
+      expect(distanceLabel.textContent).toBe('Distance');
+      expect(distanceLabel.dataset.short).toBe('Dis');
     } finally {
       Date.now = originalNow;
     }

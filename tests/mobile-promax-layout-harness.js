@@ -98,7 +98,8 @@ function assertMobileCssScoped(document) {
   assert(mobileCss.includes('.wdash-card--solar .wdash-sun-svg { transform: translateY(18%) scaleY(0.82);'), 'mobile solar arc should be moved closer to the time labels');
   assert(mobileCss.includes('.wdash-card--solar .wdash-sun-html-metric--solar { left: 50% !important; top: 15% !important; }'), 'mobile solar metric should sit above the sun arc');
   assert(mobileCss.includes('.wdash-card--solar .wdash-sun-time { top: auto !important; bottom: 3px; transform: translateX(-50%); }'), 'mobile solar times should be bottom anchored');
-  assert(mobileCss.includes('.wdash-lightning-data { grid-template-columns: minmax(0, 1fr);'), 'mobile lightning compaction should be present');
+  assert(mobileCss.includes('.wdash-lightning-data { gap: 2px; width: 100%; }'), 'mobile lightning rows should compact without returning to centered label/value columns');
+  assert(mobileCss.includes('.wdash-lightning-row { font-size: 0.52rem; line-height: 1.05; }'), 'mobile lightning row text should stay compact and left aligned');
   assert(mobileCss.includes('.wdash-air-metrics { --wdash-columns: 4 !important; grid-auto-rows: minmax(28px, 1fr);'), 'mobile air quality compaction should be present');
   assert(css.includes('@media (max-width: 980px) and (max-height: 520px)'), 'phone landscape compact rules should be scoped by width and height');
   assert(css.includes('.wdash-air-metrics { --wdash-columns: 4 !important; grid-auto-rows: minmax(24px, 1fr);'), 'phone landscape air quality compaction should be present');
