@@ -8,6 +8,8 @@
 
 const { createHubitatTilesAdapter } = require('../adapters/hubitat-tiles.js');
 
+const DEFAULT_RENDERER_MAX_SCALE = 2;
+
 function createRenderer(options = {}) {
   const envWindow = options.window
     ?? options.environment?.window
@@ -26,7 +28,7 @@ function createRenderer(options = {}) {
   const configuredMaxScale = Number(options.maxScale);
   const rendererMaxScale = Number.isFinite(configuredMaxScale) && configuredMaxScale > 0
     ? configuredMaxScale
-    : 1;
+    : DEFAULT_RENDERER_MAX_SCALE;
   const moduleApi = (() => {
     const window = envWindow;
     const document = envDocument;

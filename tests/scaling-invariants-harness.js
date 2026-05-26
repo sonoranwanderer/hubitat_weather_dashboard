@@ -28,6 +28,7 @@ const EXPECTED_CARD_SELECTORS = [
   '.wdash-card--rain',
   '.wdash-card--pressure'
 ];
+const DEFAULT_MAX_SCALE = 2;
 
 function loadFixtures() {
   return fs
@@ -70,7 +71,10 @@ function assertCardPresence(grid, payload, context) {
 function assertLayoutFits(root, hooks, viewport, context) {
   const scale = readScale(root);
   assert(Number.isFinite(scale) && scale > 0, `${context} should compute a positive scale`);
-  assert(scale <= 1.0001, `${context} should not scale above the default max scale`);
+  assert(scale <= DEFAULT_MAX_SCALE + 0.0001, `${context} should not exceed the default upscale cap`);
+  if (viewport.width >= 1600 && viewport.height >= 1200) {
+    assert(scale > 1, `${context} should upscale on large displays`);
+  }
 
   const renderWidth = readPixels(root, '--wdash-render-width');
   const renderHeight = readPixels(root, '--wdash-render-height');

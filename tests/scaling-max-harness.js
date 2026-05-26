@@ -37,7 +37,12 @@ function readPixels(root, propertyName) {
   return match ? Number(match[1]) : NaN;
 }
 
-function assertScale({ rendererOptions = {}, expectedScale, message }) {
+function assertScale({
+  rendererOptions = {},
+  expectedScale,
+  message,
+  viewport = { width: 1600, height: 1200 }
+}) {
   const { window, document } = createTestEnvironment();
   createRenderer({
     window,
@@ -49,8 +54,8 @@ function assertScale({ rendererOptions = {}, expectedScale, message }) {
   const skeleton = buildDashboardSkeleton(document);
 
   skeleton.root.setBoundingClientRect({
-    width: 1600,
-    height: 1200,
+    width: viewport.width,
+    height: viewport.height,
     top: 0,
     left: 0
   });
@@ -58,8 +63,8 @@ function assertScale({ rendererOptions = {}, expectedScale, message }) {
   hooks.resetTileMeasurement();
   hooks.setupScaling(skeleton.tile, skeleton.content);
 
-  const rawScale = Math.min(1600 / 1200, 1200 / 900);
-  assert(Math.abs(rawScale - 1.3333333333333333) < 0.0001, 'raw scale fixture should exceed 1');
+  const rawScale = Math.min(viewport.width / 1200, viewport.height / 900);
+  assert(rawScale > 1, 'raw scale fixture should exceed 1');
   assert(Math.abs(readScale(skeleton.root) - expectedScale) < 0.0001, message);
   assert(Math.abs(readPixels(skeleton.root, '--wdash-render-width') - (1200 * expectedScale)) < 0.01);
   assert(Math.abs(readPixels(skeleton.root, '--wdash-render-height') - (900 * expectedScale)) < 0.01);
@@ -67,14 +72,20 @@ function assertScale({ rendererOptions = {}, expectedScale, message }) {
 
 (function main() {
   assertScale({
-    expectedScale: 1,
-    message: 'default renderer scale should remain capped at 1'
+    expectedScale: 1.3333333333333333,
+    message: 'default renderer scale should use large display space up to the default upscale cap'
   });
 
   assertScale({
-    rendererOptions: { maxScale: 2 },
-    expectedScale: 1.3333333333333333,
-    message: 'opt-in renderer maxScale should allow raw HTML scale above 1'
+    viewport: { width: 3600, height: 2700 },
+    expectedScale: 2,
+    message: 'default renderer scale should remain capped at 2 on very large displays'
+  });
+
+  assertScale({
+    rendererOptions: { maxScale: 1.25 },
+    expectedScale: 1.25,
+    message: 'explicit renderer maxScale should override the default upscale cap'
   });
 
   console.log('Scaling max harness passed');
