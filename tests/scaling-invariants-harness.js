@@ -202,8 +202,9 @@ function assertCssContracts() {
   assert(source.includes('.wdash-gauge-value { font-size: var(--wdash-gauge-value-font-fluid, 2.32rem);'), 'temp gauge values should scale from renderer-provided typography');
   assert(source.includes('<h3>Rain</h3>'), 'rain card should render a visible header');
   assert(source.includes('.wdash-rain-unit-indicator { position: absolute; left: 6px; bottom: 6px;'), 'rain unit button should remain bottom-left anchored');
-  assert(source.includes('.wdash-rain-main { display: grid; grid-template-columns: minmax(115px, 0.72fr) minmax(0, 1.02fr) minmax(0, 1.26fr); gap: var(--wdash-rain-gap-fluid, 14px);'), 'rain grid should give the bounded drop a proportional desktop track');
-  assert(source.includes('.wdash-rain-col--drop { display: flex; align-items: center; justify-content: flex-end;'), 'rain drop should align toward the center metrics column');
+  assert(source.includes('.wdash-rain-main { display: grid; grid-template-columns: minmax(0, var(--wdash-rain-drop-track-fluid, 132px)) minmax(0, 1fr) minmax(0, var(--wdash-rain-stats-track-fluid, 250px)); gap: var(--wdash-rain-gap-fluid, 14px);'), 'rain grid should use bounded drop and stats tracks');
+  assert(source.includes('padding-inline: var(--wdash-rain-edge-gutter-fluid, 8px);'), 'rain grid should keep symmetric outer gutters');
+  assert(source.includes('.wdash-rain-col--drop { display: flex; align-items: center; justify-content: center;'), 'rain drop should center within its bounded track');
   assert(source.includes('.wdash-rain-col--drop svg { width: auto; height: min(var(--wdash-rain-drop-height, 82%), var(--wdash-rain-drop-max-fluid, 140px)); max-width: 100%; max-height: 100%;'), 'rain drop should be bounded by its column and fluid max size');
   assert(source.includes('.wdash-rain-col--center { display: flex; flex-direction: column; justify-content: center; gap: var(--wdash-rain-center-gap-fluid, 8px);'), 'rain center metrics should remain grouped and vertically centered');
   assert(source.includes('.wdash-rain-rate-wrapper .wdash-metric { justify-content: center; gap: 0.65rem; padding: 0; border-bottom: none; }'), 'rain rate row should read as part of the centered daily group');
