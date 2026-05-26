@@ -203,6 +203,8 @@ function assertCssContracts() {
   assert(source.includes('<h3>Rain</h3>'), 'rain card should render a visible header');
   assert(source.includes('.wdash-rain-unit-indicator { position: absolute; left: 6px; bottom: 6px;'), 'rain unit button should remain bottom-left anchored');
   assert(source.includes('.wdash-rain-col--drop svg { width: auto; height: min(var(--wdash-rain-drop-height, 88%), var(--wdash-rain-drop-max-fluid, 150px)); max-width: 100%; max-height: 100%;'), 'rain drop should be bounded by its column and fluid max size');
+  assert(source.includes('.wdash-rain-col--stats { align-self: stretch; display: flex; align-items: stretch; min-height: 0; }'), 'rain stats column should stretch to the rain content height');
+  assert(source.includes('.wdash-rain-col--stats > .wdash-rain-stats.wdash-metric-row--table { display: grid; grid-template-rows: repeat(5, minmax(0, 1fr));'), 'rain stats rows should distribute across available height');
   assert(source.includes('@media (max-width: 720px)'), 'renderer should define mobile scaling rules');
   assert(source.includes('@media (max-width: 980px) and (max-height: 520px)'), 'renderer should define phone landscape scaling rules');
   assert(source.includes('.wdash-card:not(.wdash-card--ambient) { overflow: hidden; }'), 'compact cards should clip to card bounds');
