@@ -7034,7 +7034,6 @@ function createRenderer(options = {}) {
 .wdash-rain-drop-fill { transition: all 0.4s ease-in-out; }
 .wdash-rain-col--center { display: flex; flex-direction: column; justify-content: center; gap: var(--wdash-rain-center-gap-fluid, 8px); height: 100%; text-align: center; }
 .wdash-rain-rate-wrapper { width: 100%; margin: 0 auto; }
-.wdash-rain-rate-wrapper .wdash-metric { display: grid; grid-template-columns: max-content max-content; justify-content: center; align-items: baseline; gap: var(--wdash-rain-rate-gap-fluid, 18px); padding: 0; border-bottom: none; }
 .wdash-rain-daily-metric { flex: 0 1 auto; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--wdash-rain-daily-gap-fluid, 6px); }
 .wdash-rain-daily-value { display: inline-flex; align-items: baseline; gap: var(--wdash-rain-daily-value-gap-fluid, 0.35rem); }
 .wdash-rain-daily-value-amount { font-size: var(--wdash-rain-daily-amount-font-fluid, 2.8rem); font-weight: 800; line-height: 1; }
@@ -7049,6 +7048,7 @@ function createRenderer(options = {}) {
 .wdash-rain-stats.wdash-metric-row--table .wdash-metric:last-child { border-bottom: none; }
 .wdash-rain-stats.wdash-metric-row--table .wdash-metric-label { text-align: left; font-size: var(--wdash-rain-stat-font-fluid, 0.9rem); font-weight: 600; color: #c9d8ff; }
 .wdash-rain-stats.wdash-metric-row--table .wdash-metric-value { text-align: right; font-size: var(--wdash-rain-stat-font-fluid, 0.9rem); font-weight: 600; color: #f4f6ff; font-variant-numeric: tabular-nums; }
+.wdash-rain-rate-wrapper .wdash-rain-stats.wdash-metric-row--table .wdash-metric { display: grid; grid-template-columns: max-content max-content; justify-content: center; align-items: baseline; gap: var(--wdash-rain-rate-gap-fluid, 18px); padding: 0; border-bottom: none; }
 .wdash-pressure-main { display: flex; flex-direction: column; gap: var(--wdash-pressure-main-gap-fluid, 16px); align-items: stretch; }
 .wdash-pressure-band { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: center; justify-items: center; gap: 12px; }
 .wdash-pressure-band-cell { display: flex; align-items: center; justify-content: center; text-align: center; }

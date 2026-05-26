@@ -194,6 +194,8 @@ function assertAirQualityRotationStability(payload, viewport) {
 
 function assertCssContracts() {
   const source = fs.readFileSync(path.join(__dirname, '..', 'src', 'render', 'index.js'), 'utf8');
+  const genericRainMetricRule = '.wdash-rain-stats.wdash-metric-row--table .wdash-metric { flex-direction: row; align-items: center; }';
+  const rainRateOverrideRule = '.wdash-rain-rate-wrapper .wdash-rain-stats.wdash-metric-row--table .wdash-metric { display: grid; grid-template-columns: max-content max-content; justify-content: center; align-items: baseline; gap: var(--wdash-rain-rate-gap-fluid, 18px);';
   assert(source.includes('function applyCanvasFluidScale(root, renderWidth, renderHeight)'), 'renderer should compute fluid scale from the rendered canvas');
   assert(source.includes("root.style.setProperty('--wdash-fluid-scale'"), 'renderer should expose the computed fluid scale');
   assert(!source.includes('@media (min-width: 1400px) and (min-height: 850px)'), 'large-canvas scaling should not depend on viewport-specific media queries');
@@ -207,7 +209,8 @@ function assertCssContracts() {
   assert(source.includes('.wdash-rain-col--drop { display: flex; align-items: center; justify-content: center;'), 'rain drop should center within its bounded track');
   assert(source.includes('.wdash-rain-col--drop svg { width: auto; height: min(var(--wdash-rain-drop-height, 82%), var(--wdash-rain-drop-max-fluid, 140px)); max-width: 100%; max-height: 100%;'), 'rain drop should be bounded by its column and fluid max size');
   assert(source.includes('.wdash-rain-col--center { display: flex; flex-direction: column; justify-content: center; gap: var(--wdash-rain-center-gap-fluid, 8px);'), 'rain center metrics should remain grouped and vertically centered');
-  assert(source.includes('.wdash-rain-rate-wrapper .wdash-metric { display: grid; grid-template-columns: max-content max-content; justify-content: center; align-items: baseline; gap: var(--wdash-rain-rate-gap-fluid, 18px);'), 'rain rate label and value should remain an intrinsic pair with controlled spacing');
+  assert(source.includes(rainRateOverrideRule), 'rain rate label and value should remain an intrinsic pair with controlled spacing');
+  assert(source.indexOf(rainRateOverrideRule) > source.indexOf(genericRainMetricRule), 'rain rate spacing override should follow generic rain table rules in cascade order');
   assert(source.includes('.wdash-rain-col--stats { align-self: stretch; display: flex; align-items: stretch; min-height: 0; padding-left: var(--wdash-rain-stats-inset-fluid, 4px); border-left: 1px solid rgba(255,255,255,0.06); }'), 'rain stats column should stretch to the rain content height with a subtle separator');
   assert(source.includes('.wdash-rain-col--stats > .wdash-rain-stats.wdash-metric-row--table { display: grid; grid-template-rows: repeat(5, minmax(0, 1fr));'), 'rain stats rows should distribute across available height');
   assert(source.includes('@media (max-width: 720px)'), 'renderer should define mobile scaling rules');
