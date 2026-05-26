@@ -1923,6 +1923,7 @@
           px('--wdash-rain-drop-track-fluid', 132, 230);
           px('--wdash-rain-drop-max-fluid', 140, 210);
           px('--wdash-rain-center-gap-fluid', 8, 18);
+          px('--wdash-rain-rate-gap-fluid', 18, 28);
           px('--wdash-rain-stats-inset-fluid', 4, 14);
           px('--wdash-rain-stats-track-fluid', 250, 430);
           pct('--wdash-rain-rate-width-fluid', 75, 88);
@@ -7095,8 +7096,8 @@
       .wdash-rain-drop-bg { fill: rgba(80,160,255,0.15); }
       .wdash-rain-drop-fill { transition: all 0.4s ease-in-out; }
       .wdash-rain-col--center { display: flex; flex-direction: column; justify-content: center; gap: var(--wdash-rain-center-gap-fluid, 8px); height: 100%; text-align: center; }
-      .wdash-rain-rate-wrapper { width: var(--wdash-rain-rate-width-fluid, 75%); margin: 0 auto; }
-      .wdash-rain-rate-wrapper .wdash-metric { justify-content: center; gap: 0.65rem; padding: 0; border-bottom: none; }
+      .wdash-rain-rate-wrapper { width: 100%; margin: 0 auto; }
+      .wdash-rain-rate-wrapper .wdash-metric { display: grid; grid-template-columns: max-content max-content; justify-content: center; align-items: baseline; gap: var(--wdash-rain-rate-gap-fluid, 18px); padding: 0; border-bottom: none; }
       .wdash-rain-daily-metric { flex: 0 1 auto; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--wdash-rain-daily-gap-fluid, 6px); }
       .wdash-rain-daily-value { display: inline-flex; align-items: baseline; gap: var(--wdash-rain-daily-value-gap-fluid, 0.35rem); }
       .wdash-rain-daily-value-amount { font-size: var(--wdash-rain-daily-amount-font-fluid, 2.8rem); font-weight: 800; line-height: 1; }
