@@ -51,6 +51,12 @@ function readScale(root) {
   return Number(root.style.getPropertyValue('--wdash-scale'));
 }
 
+function readUnitValue(element, propertyName, unit) {
+  const value = element.style.getPropertyValue(propertyName);
+  const match = String(value).match(new RegExp(`^(-?\\d+(?:\\.\\d+)?)${unit}$`));
+  return match ? Number(match[1]) : NaN;
+}
+
 function assertCardPresence(grid, payload, context) {
   EXPECTED_CARD_SELECTORS.forEach(selector => {
     assert(grid.querySelector(selector), `${context} should render ${selector}`);
@@ -74,6 +80,7 @@ function assertLayoutFits(root, hooks, viewport, context) {
   assert(scale <= DEFAULT_MAX_SCALE + 0.0001, `${context} should not exceed the default upscale cap`);
   if (viewport.width >= 1600 && viewport.height >= 1200) {
     assert(scale > 1, `${context} should upscale on large displays`);
+    assert(Number(root.style.getPropertyValue('--wdash-fluid-scale')) > 1, `${context} should increase internal card scale on large displays`);
   }
 
   const renderWidth = readPixels(root, '--wdash-render-width');
@@ -187,20 +194,53 @@ function assertAirQualityRotationStability(payload, viewport) {
 
 function assertCssContracts() {
   const source = fs.readFileSync(path.join(__dirname, '..', 'src', 'render', 'index.js'), 'utf8');
-  assert(source.includes('@media (min-width: 1400px) and (min-height: 850px)'), 'renderer should define large-canvas scaling rules');
-  assert(source.includes('.wdash-air-metrics { flex: 1 1 auto; grid-auto-rows: minmax(72px, 1fr);'), 'large-canvas air quality metrics should use available card height');
-  assert(source.includes('.wdash-ambient-circle { flex-basis: min(220px,'), 'large-canvas ambient circles should grow beyond the base desktop size');
-  assert(source.includes('.wdash-gauge-value { font-size: clamp(2.9rem,'), 'large-canvas temp gauge values should scale up');
+  assert(source.includes('function applyCanvasFluidScale(root, renderWidth, renderHeight)'), 'renderer should compute fluid scale from the rendered canvas');
+  assert(source.includes("root.style.setProperty('--wdash-fluid-scale'"), 'renderer should expose the computed fluid scale');
+  assert(!source.includes('@media (min-width: 1400px) and (min-height: 850px)'), 'large-canvas scaling should not depend on viewport-specific media queries');
+  assert(source.includes('.wdash-air-metrics { flex: 1 1 auto; grid-auto-rows: minmax(var(--wdash-air-row-min-fluid, 42px), 1fr);'), 'air quality metrics should scale from renderer-provided row sizing');
+  assert(source.includes('.wdash-ambient-circle { flex: 0 0 var(--wdash-ambient-circle-size-fluid, 130px);'), 'ambient circles should grow from renderer-provided sizing');
+  assert(source.includes('.wdash-gauge-value { font-size: var(--wdash-gauge-value-font-fluid, 2.32rem);'), 'temp gauge values should scale from renderer-provided typography');
   assert(source.includes('@media (max-width: 720px)'), 'renderer should define mobile scaling rules');
   assert(source.includes('@media (max-width: 980px) and (max-height: 520px)'), 'renderer should define phone landscape scaling rules');
   assert(source.includes('.wdash-card:not(.wdash-card--ambient) { overflow: hidden; }'), 'compact cards should clip to card bounds');
   assert(source.includes('.wdash-air-metrics .wdash-metric--placeholder { visibility: hidden; pointer-events: none; }'), 'AQ placeholders should preserve stable grid positions');
 }
 
+function assertCanvasFluidScaling(payload) {
+  const viewport = { label: 'expanded canvas', width: 2400, height: 1600 };
+  const env = setupRendererWithFakeTimers(viewport);
+  const expandedPayload = JSON.parse(JSON.stringify(payload));
+  expandedPayload.metadata = expandedPayload.metadata || {};
+  expandedPayload.metadata.layout = {
+    ...(expandedPayload.metadata.layout || {}),
+    baseWidth: 2000,
+    baseHeight: 1200
+  };
+
+  try {
+    env.hooks.render(expandedPayload, env.grid);
+    env.hooks.applyLayoutOverrides(expandedPayload.metadata);
+
+    const fluidScale = Number(env.root.style.getPropertyValue('--wdash-fluid-scale'));
+    const gaugeValueFont = readUnitValue(env.root, '--wdash-gauge-value-font-fluid', 'rem');
+    const airRowMin = readUnitValue(env.root, '--wdash-air-row-min-fluid', 'px');
+    const ambientCircleSize = readUnitValue(env.root, '--wdash-ambient-circle-size-fluid', 'px');
+
+    assert(fluidScale > 1, 'expanded canvas should compute an internal fluid scale above the base rendered size');
+    assert(gaugeValueFont > 2.32, 'expanded canvas should increase temp gauge typography');
+    assert(airRowMin > 42, 'expanded canvas should increase AQ row sizing');
+    assert(ambientCircleSize > 130, 'expanded canvas should increase ambient dial sizing');
+  } finally {
+    env.restoreTimers();
+    env.dom.window.close();
+  }
+}
+
 (function main() {
   const fixtures = loadFixtures();
   assert(fixtures.length >= 4, 'scaling fixture library should include live and stress fixtures');
   assertCssContracts();
+  assertCanvasFluidScaling(fixtures[0].payload);
 
   fixtures.forEach(({ name, payload }) => {
     VIEWPORTS.forEach(viewport => {
