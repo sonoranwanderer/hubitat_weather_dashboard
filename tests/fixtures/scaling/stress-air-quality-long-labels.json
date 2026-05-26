@@ -1,0 +1,304 @@
+{
+  "__fixture": {
+    "kind": "synthetic-scaling-stress",
+    "derivedFrom": "live-maker-2026-05-26.json",
+    "generatedAt": "2026-05-26T18:00:00.000Z",
+    "notes": "Contrived poor air quality and long labels for AQ rotation stability and text alignment."
+  },
+  "outdoor": {
+    "battery": 60,
+    "dailyHigh": 75,
+    "dailyLow": 52,
+    "dewPoint": 52.3,
+    "feelsLike": 75,
+    "humidity": 45,
+    "temperature": 75,
+    "trendPerHour": 3.75
+  },
+  "indoor": {
+    "battery": 80,
+    "humidity": 40,
+    "temperature": 71.1
+  },
+  "wind": {
+    "average": {
+      "directionCardinal": "ESE",
+      "directionDegrees": 104,
+      "minutes": 10,
+      "speedMph": 2.5
+    },
+    "averageMinutes": 10,
+    "battery": 100,
+    "dailyMaxGustMph": 8.3,
+    "directionCardinal": "E",
+    "directionDegrees": 83,
+    "gustMph": 6,
+    "speedMph": 2.5
+  },
+  "pressure": {
+    "absoluteInHg": 26.1,
+    "baseline": {
+      "dailyAverageInHg": 29.715,
+      "forecastText": "Pressure below normal — showers possible.",
+      "iconKey": "rainy",
+      "iconLabel": "Rain",
+      "tendencyHpa": -1.6,
+      "tendencyInHg": -0.046,
+      "thirtyDayAverageInHg": 29.761,
+      "trend": "Falling"
+    },
+    "changeInTrendWindow": -0.03,
+    "relativeInHg": 29.69,
+    "trend": "Falling",
+    "trendInHgPerHour": -0.01
+  },
+  "rain": {
+    "battery": 100,
+    "dailyIn": 0,
+    "eventIn": 0.41,
+    "hourlyIn": 0,
+    "monthlyIn": 0.41,
+    "rateInPerHour": 0,
+    "weeklyIn": 0.41,
+    "yearlyIn": 1.53
+  },
+  "solar": {
+    "moon": {
+      "ageDays": 10.29,
+      "hemisphere": "northern",
+      "illuminationFraction": 0.7899,
+      "illuminationPercent": 79,
+      "phase": "Waxing Gibbous",
+      "phaseAngle": 125.43,
+      "phaseKey": "waxing-gibbous",
+      "waxing": true
+    },
+    "solarRadiationWm2": 941.3,
+    "sunrise": "2026-05-26T05:19:00-07:00",
+    "sunset": "2026-05-26T19:32:00-07:00",
+    "uvColor": "e53210",
+    "uvDanger": "Very High",
+    "uvIndex": 8
+  },
+  "lightning": {
+    "battery": 100,
+    "count": 0,
+    "distance": 23,
+    "distanceKm": 37,
+    "distanceMi": 23,
+    "time": "5/25/26, 3:30 PM"
+  },
+  "outdoorAirQuality": {
+    "aqi": 287,
+    "aqiColor": "8f3f97",
+    "aqiDanger": "Very Unhealthy",
+    "aqiPeak": 321,
+    "aqi_avg_24h": 241,
+    "aqiColor_avg_24h": "b567ff",
+    "aqiDanger_avg_24h": "Very Unhealthy",
+    "battery": 13,
+    "pm25": 188.6,
+    "pm25Peak": 241.8,
+    "pm25_avg_24h": 162.4
+  },
+  "indoorAirQuality": {
+    "aqi": 156,
+    "aqiColor": "ff6f61",
+    "aqiDanger": "Unhealthy",
+    "aqiPeak": 199,
+    "aqi_avg_24h": 133,
+    "aqiColor_avg_24h": "ff9445",
+    "aqiDanger_avg_24h": "Unhealthy for Sensitive Groups",
+    "battery": 18,
+    "carbonDioxide": 2488,
+    "carbonDioxidePeak": 3012,
+    "carbonDioxide_avg_24h": 1724,
+    "pm10": 212.4,
+    "pm10Peak": 288.7,
+    "pm10_avg_24h": 184.1,
+    "pm25": 71.9,
+    "pm25Peak": 102.6,
+    "pm25_avg_24h": 64.3
+  },
+  "ambientSensors": [
+    {
+      "id": "long-1",
+      "name": "Primary Bedroom West Window Multi Sensor",
+      "temperature": 72.1,
+      "humidity": 44.2,
+      "battery": 100
+    },
+    {
+      "id": "long-2",
+      "name": "Downstairs Utility Closet Freezer Probe",
+      "temperature": -14.6,
+      "humidity": 72.4,
+      "battery": 88
+    },
+    {
+      "id": "long-3",
+      "name": "Outdoor Patio North Shade Reference Sensor",
+      "temperature": 109.7,
+      "humidity": 11.5,
+      "battery": 67
+    },
+    {
+      "id": "long-4",
+      "name": "Garage Workshop High Shelf Temperature Monitor",
+      "temperature": 96.3,
+      "humidity": 18.9,
+      "battery": 42
+    },
+    {
+      "id": "long-5",
+      "name": "Pool Equipment Pad Waterproof Probe",
+      "temperature": 82.8,
+      "battery": 91
+    },
+    {
+      "id": "long-6",
+      "name": "Greenhouse Seedling Bench Humidity Station",
+      "temperature": 101.2,
+      "humidity": 83.7,
+      "battery": 35
+    }
+  ],
+  "ambientRotationSeconds": 12,
+  "ambientHumidityUnit": "%",
+  "totalAmbientSensors": 6,
+  "outlook24h": {
+    "baseline": {
+      "dailyAverageInHg": 29.715,
+      "forecastText": "Pressure below normal — showers possible.",
+      "iconKey": "rainy",
+      "iconLabel": "Rain",
+      "tendencyHpa": -1.6,
+      "tendencyInHg": -0.046,
+      "thirtyDayAverageInHg": 29.761,
+      "trend": "Falling"
+    },
+    "category": "Rain",
+    "iconKey": "rainy",
+    "iconLabel": "Rain",
+    "shortSummary": "Falling • Rain",
+    "summary": "Pressure falling steadily. Pressure below normal — showers possible.",
+    "trendLabel": "Falling"
+  },
+  "metadata": {
+    "generatedAt": "2026-05-26T11:00:00-07:00",
+    "lightningDisplayUnit": "mi",
+    "pressureDisplayUnit": "inhg",
+    "rainDisplayUnit": "in",
+    "temperatureDisplayUnit": "F",
+    "weatherStationTime": "2026-05-26 10:30 AM",
+    "weatherStationTimezone": "US/Arizona",
+    "windDisplayUnit": "mph",
+    "layout": {
+      "desktop": {
+        "columns": [
+          50,
+          36,
+          14
+        ],
+        "gap": "6px",
+        "rows": [
+          {
+            "columns": [
+              "temp-wind",
+              "ambient",
+              "lightning"
+            ],
+            "height": 32
+          },
+          {
+            "columns": [
+              "temp-wind",
+              "rain",
+              "rain"
+            ],
+            "height": 24
+          },
+          {
+            "columns": [
+              "solar",
+              "rain",
+              "rain"
+            ],
+            "height": 2
+          },
+          {
+            "columns": [
+              "solar",
+              "pressure",
+              "pressure"
+            ],
+            "height": 27
+          },
+          {
+            "columns": [
+              "air",
+              "air",
+              "air"
+            ],
+            "height": 16
+          }
+        ]
+      },
+      "mobile": {
+        "columns": [
+          70,
+          30
+        ],
+        "gap": "6px",
+        "rows": [
+          {
+            "columns": [
+              "temp-wind",
+              "temp-wind"
+            ],
+            "height": 25
+          },
+          {
+            "columns": [
+              "ambient",
+              "lightning"
+            ],
+            "height": 18
+          },
+          {
+            "columns": [
+              "rain",
+              "rain"
+            ],
+            "height": 13
+          },
+          {
+            "columns": [
+              "pressure",
+              "pressure"
+            ],
+            "height": 15
+          },
+          {
+            "columns": [
+              "solar",
+              "solar"
+            ],
+            "height": 16
+          },
+          {
+            "columns": [
+              "air",
+              "air"
+            ],
+            "height": 13
+          }
+        ]
+      },
+      "trackUnit": "percent",
+      "baseWidth": 1200,
+      "baseHeight": 900
+    },
+    "dashboardUpdatedAt": "2026-05-26T11:00:00-07:00"
+  }
+}

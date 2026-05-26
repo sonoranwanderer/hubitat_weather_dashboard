@@ -1,0 +1,327 @@
+{
+  "__fixture": {
+    "kind": "synthetic-scaling-stress",
+    "derivedFrom": "live-maker-2026-05-26.json",
+    "generatedAt": "2026-05-26T18:00:00.000Z",
+    "notes": "Contrived weather extremes for card scaling: high heat, strong wind, heavy rain, pressure drop, active lightning."
+  },
+  "outdoor": {
+    "battery": 5,
+    "dailyHigh": 121.4,
+    "dailyLow": -18.7,
+    "dewPoint": 83.2,
+    "feelsLike": 131.8,
+    "humidity": 94,
+    "temperature": 118.6,
+    "trendPerHour": 11.25
+  },
+  "indoor": {
+    "battery": 12,
+    "humidity": 68,
+    "temperature": 88.4
+  },
+  "wind": {
+    "average": {
+      "directionCardinal": "WNW",
+      "directionDegrees": 292,
+      "minutes": 10,
+      "speedMph": 48.6
+    },
+    "averageMinutes": 10,
+    "battery": 9,
+    "dailyMaxGustMph": 104.8,
+    "directionCardinal": "WNW",
+    "directionDegrees": 298,
+    "gustMph": 86.7,
+    "speedMph": 57.4
+  },
+  "pressure": {
+    "absoluteInHg": 23.88,
+    "baseline": {
+      "dailyAverageInHg": 28.914,
+      "forecastText": "Rapid pressure fall with severe storm risk.",
+      "iconKey": "storm",
+      "iconLabel": "Storm",
+      "tendencyHpa": -12.9,
+      "tendencyInHg": -0.381,
+      "thirtyDayAverageInHg": 29.712,
+      "trend": "Falling Rapidly"
+    },
+    "changeInTrendWindow": -0.44,
+    "relativeInHg": 28.73,
+    "trend": "Falling Rapidly",
+    "trendInHgPerHour": -0.146
+  },
+  "rain": {
+    "battery": 8,
+    "dailyIn": 12.84,
+    "eventIn": 18.62,
+    "hourlyIn": 4.91,
+    "monthlyIn": 42.75,
+    "rateInPerHour": 9.87,
+    "weeklyIn": 24.38,
+    "yearlyIn": 123.45
+  },
+  "solar": {
+    "moon": {
+      "ageDays": 10.29,
+      "hemisphere": "northern",
+      "illuminationFraction": 0.7899,
+      "illuminationPercent": 79,
+      "phase": "Waxing Gibbous",
+      "phaseAngle": 125.43,
+      "phaseKey": "waxing-gibbous",
+      "waxing": true
+    },
+    "solarRadiationWm2": 1298.4,
+    "sunrise": "2026-05-26T05:19:00-07:00",
+    "sunset": "2026-05-26T19:32:00-07:00",
+    "uvColor": "b567ff",
+    "uvDanger": "Extreme",
+    "uvIndex": 14.7
+  },
+  "lightning": {
+    "battery": 7,
+    "count": 128,
+    "distance": 0.4,
+    "distanceKm": 0.6,
+    "distanceMi": 0.4,
+    "time": "5/26/26, 10:59 AM"
+  },
+  "outdoorAirQuality": {
+    "aqi": 8,
+    "aqiColor": "3ea72d",
+    "aqiColor_avg_24h": "3ea72d",
+    "aqiDanger": "Good",
+    "aqiDanger_avg_24h": "Good",
+    "aqiPeak": 42,
+    "aqi_avg_24h": 10,
+    "battery": 60,
+    "pm25": 2,
+    "pm25Peak": 10,
+    "pm25_avg_24h": 2.3
+  },
+  "indoorAirQuality": {
+    "aqi": 4,
+    "aqiColor": "3ea72d",
+    "aqiColor_avg_24h": "3ea72d",
+    "aqiDanger": "Good",
+    "aqiDanger_avg_24h": "Good",
+    "aqiPeak": 12,
+    "aqi_avg_24h": 5,
+    "battery": 80,
+    "carbonDioxide": 680,
+    "carbonDioxidePeak": 769,
+    "carbonDioxide_avg_24h": 594,
+    "pm10": 1.1,
+    "pm10Peak": 3.9,
+    "pm10_avg_24h": 1.8,
+    "pm25": 1,
+    "pm25Peak": 2.8,
+    "pm25_avg_24h": 1.2
+  },
+  "ambientSensors": [
+    {
+      "battery": 80,
+      "humidity": 43,
+      "id": "337",
+      "name": "Dining Room AQIN",
+      "temperature": 74.7,
+      "ordinal": 1
+    },
+    {
+      "battery": 100,
+      "humidity": 40,
+      "id": "328",
+      "name": "Living Room Sensor",
+      "temperature": 71.1,
+      "ordinal": 2
+    },
+    {
+      "battery": 100,
+      "humidity": 25,
+      "id": "330",
+      "name": "Kitchen Fridge",
+      "temperature": 34.2,
+      "ordinal": 3
+    },
+    {
+      "battery": 100,
+      "humidity": 63,
+      "id": "331",
+      "name": "Kitchen Freezer",
+      "temperature": -15.9,
+      "ordinal": 4
+    },
+    {
+      "battery": 100,
+      "humidity": 16,
+      "id": "332",
+      "name": "WH Fridge",
+      "temperature": 38.3,
+      "ordinal": 5
+    },
+    {
+      "battery": 100,
+      "humidity": 54,
+      "id": "333",
+      "name": "WH Freezer",
+      "temperature": -1.5,
+      "ordinal": 6
+    },
+    {
+      "battery": 100,
+      "humidity": 64,
+      "id": "334",
+      "name": "Big Freezer",
+      "temperature": -10.5,
+      "ordinal": 7
+    },
+    {
+      "battery": 100,
+      "id": "335",
+      "name": "Pool Temperature",
+      "temperature": 70.3,
+      "ordinal": 8
+    }
+  ],
+  "ambientRotationSeconds": 12,
+  "ambientHumidityUnit": "%",
+  "totalAmbientSensors": 8,
+  "outlook24h": {
+    "category": "Severe Storm",
+    "humidityNote": "Very humid air is supporting heavy rain potential.",
+    "iconKey": "storm",
+    "iconLabel": "Storm",
+    "shortSummary": "Rapid Fall • Severe Storm",
+    "summary": "Rapid pressure fall with severe storm risk. Very humid air is supporting heavy rain potential.",
+    "trendLabel": "Falling Rapidly",
+    "baseline": {
+      "dailyAverageInHg": 28.914,
+      "forecastText": "Rapid pressure fall with severe storm risk.",
+      "iconKey": "storm",
+      "iconLabel": "Storm",
+      "tendencyHpa": -12.9,
+      "tendencyInHg": -0.381,
+      "thirtyDayAverageInHg": 29.712,
+      "trend": "Falling Rapidly"
+    }
+  },
+  "metadata": {
+    "generatedAt": "2026-05-26T11:00:00-07:00",
+    "lightningDisplayUnit": "mi",
+    "pressureDisplayUnit": "inhg",
+    "rainDisplayUnit": "in",
+    "temperatureDisplayUnit": "F",
+    "weatherStationTime": "2026-05-26 10:30 AM",
+    "weatherStationTimezone": "US/Arizona",
+    "windDisplayUnit": "mph",
+    "layout": {
+      "desktop": {
+        "columns": [
+          50,
+          36,
+          14
+        ],
+        "gap": "6px",
+        "rows": [
+          {
+            "columns": [
+              "temp-wind",
+              "ambient",
+              "lightning"
+            ],
+            "height": 32
+          },
+          {
+            "columns": [
+              "temp-wind",
+              "rain",
+              "rain"
+            ],
+            "height": 24
+          },
+          {
+            "columns": [
+              "solar",
+              "rain",
+              "rain"
+            ],
+            "height": 2
+          },
+          {
+            "columns": [
+              "solar",
+              "pressure",
+              "pressure"
+            ],
+            "height": 27
+          },
+          {
+            "columns": [
+              "air",
+              "air",
+              "air"
+            ],
+            "height": 16
+          }
+        ]
+      },
+      "mobile": {
+        "columns": [
+          70,
+          30
+        ],
+        "gap": "6px",
+        "rows": [
+          {
+            "columns": [
+              "temp-wind",
+              "temp-wind"
+            ],
+            "height": 25
+          },
+          {
+            "columns": [
+              "ambient",
+              "lightning"
+            ],
+            "height": 18
+          },
+          {
+            "columns": [
+              "rain",
+              "rain"
+            ],
+            "height": 13
+          },
+          {
+            "columns": [
+              "pressure",
+              "pressure"
+            ],
+            "height": 15
+          },
+          {
+            "columns": [
+              "solar",
+              "solar"
+            ],
+            "height": 16
+          },
+          {
+            "columns": [
+              "air",
+              "air"
+            ],
+            "height": 13
+          }
+        ]
+      },
+      "trackUnit": "percent",
+      "baseWidth": 1200,
+      "baseHeight": 900
+    },
+    "dashboardUpdatedAt": "2026-05-26T11:00:00-07:00"
+  }
+}

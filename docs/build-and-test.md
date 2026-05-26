@@ -91,6 +91,8 @@ Useful targeted commands while developing:
 
 ```bash
 node tests/dashboard-fixtures-harness.js
+node tests/scaling-fixtures-harness.js
+node tests/scaling-invariants-harness.js
 node tests/temp-wind-card-harness.js
 node tests/layout-base-dimensions-harness.js
 node tests/maker-endpoint-simulation.js
@@ -107,6 +109,31 @@ WDASH_UPDATE_EXPECTED=1 node tests/dashboard-fixtures-harness.js
 ```
 
 Only update expected fixtures when the rendering change is intentional and has been reviewed.
+
+## Scaling Fixture Captures
+
+Scaling fixtures live under `tests/fixtures/scaling/`. They include redacted Maker API captures and deterministic synthetic stress payloads for renderer layout testing.
+
+To capture a live Weather Dashboard Device payload from Maker API:
+
+```bash
+node tests/capture-maker-fixture.js \
+  --hub 192.168.50.231 \
+  --app-id 377 \
+  --token YOUR_MAKER_TOKEN \
+  --device-ids 362 \
+  --out tests/fixtures/scaling/live-maker-YYYY-MM-DD.json
+```
+
+The capture helper converts segmented Weather Dashboard Device attributes into the renderer payload shape and redacts secrets in fixture metadata. Do not commit unredacted Maker API URLs or tokens.
+
+To rebuild deterministic stress fixtures from the committed live seed:
+
+```bash
+node tests/build-scaling-stress-fixtures.js
+```
+
+Run `node tests/scaling-fixtures-harness.js` after changing fixture capture or stress generation logic.
 
 ## Docker Build
 
