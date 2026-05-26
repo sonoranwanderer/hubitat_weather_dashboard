@@ -91,7 +91,7 @@ function assertMobileCssScoped(document) {
   assert(mobileCss.includes('.wdash-temp-wind-details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));'), 'mobile temp/wind metrics should use a 2 by 3 grid');
   assert(mobileCss.includes('.wdash-rain-main { grid-template-columns: minmax(0, 0.65fr) minmax(0, 0.95fr) minmax(0, 1.25fr); gap: 9px; min-height: 0; position: relative; }'), 'mobile rain card should anchor floating elements inside the rain grid');
   assert(mobileCss.includes('.wdash-rain-daily-metric .wdash-battery-slot { position: absolute; left: calc((100% - 18px) * 0.205 + 3px); bottom: 11%; margin-top: 0; transform: scale(0.86); transform-origin: left bottom; }'), 'mobile rain battery should float between the drop and daily label');
-  assert(css.includes('.wdash-rain-col--drop svg { width: auto; height: min(var(--wdash-rain-drop-height, 88%), var(--wdash-rain-drop-max-fluid, 150px)); max-width: 100%; max-height: 100%;'), 'rain drop should stay bounded by the column and fluid max size');
+  assert(css.includes('.wdash-rain-col--drop svg { width: auto; height: min(var(--wdash-rain-drop-height, 82%), var(--wdash-rain-drop-max-fluid, 140px)); max-width: 100%; max-height: 100%;'), 'rain drop should stay bounded by the column and fluid max size');
   assert(!css.includes('--wdash-rain-drop-height: 72%;'), 'mobile rain drop should not override the universal height');
   assert(!css.includes('--wdash-rain-drop-height: 66%;'), 'phone landscape rain drop should not override the universal height');
   assert(mobileCss.includes('.wdash-card--solar .wdash-sun-graphic { flex: 1 1 auto; height: auto; min-height: 74px;'), 'mobile solar graphic should use a compact fixed composition');

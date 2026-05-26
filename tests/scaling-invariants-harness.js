@@ -202,8 +202,10 @@ function assertCssContracts() {
   assert(source.includes('.wdash-gauge-value { font-size: var(--wdash-gauge-value-font-fluid, 2.32rem);'), 'temp gauge values should scale from renderer-provided typography');
   assert(source.includes('<h3>Rain</h3>'), 'rain card should render a visible header');
   assert(source.includes('.wdash-rain-unit-indicator { position: absolute; left: 6px; bottom: 6px;'), 'rain unit button should remain bottom-left anchored');
-  assert(source.includes('.wdash-rain-col--drop svg { width: auto; height: min(var(--wdash-rain-drop-height, 88%), var(--wdash-rain-drop-max-fluid, 150px)); max-width: 100%; max-height: 100%;'), 'rain drop should be bounded by its column and fluid max size');
-  assert(source.includes('.wdash-rain-col--stats { align-self: stretch; display: flex; align-items: stretch; min-height: 0; }'), 'rain stats column should stretch to the rain content height');
+  assert(source.includes('.wdash-rain-col--drop svg { width: auto; height: min(var(--wdash-rain-drop-height, 82%), var(--wdash-rain-drop-max-fluid, 140px)); max-width: 100%; max-height: 100%;'), 'rain drop should be bounded by its column and fluid max size');
+  assert(source.includes('.wdash-rain-col--center { display: flex; flex-direction: column; justify-content: center; gap: var(--wdash-rain-center-gap-fluid, 8px);'), 'rain center metrics should remain grouped and vertically centered');
+  assert(source.includes('.wdash-rain-rate-wrapper .wdash-metric { justify-content: center; gap: 0.65rem; padding: 0; border-bottom: none; }'), 'rain rate row should read as part of the centered daily group');
+  assert(source.includes('.wdash-rain-col--stats { align-self: stretch; display: flex; align-items: stretch; min-height: 0; padding-left: var(--wdash-rain-stats-inset-fluid, 4px); border-left: 1px solid rgba(255,255,255,0.06); }'), 'rain stats column should stretch to the rain content height with a subtle separator');
   assert(source.includes('.wdash-rain-col--stats > .wdash-rain-stats.wdash-metric-row--table { display: grid; grid-template-rows: repeat(5, minmax(0, 1fr));'), 'rain stats rows should distribute across available height');
   assert(source.includes('@media (max-width: 720px)'), 'renderer should define mobile scaling rules');
   assert(source.includes('@media (max-width: 980px) and (max-height: 520px)'), 'renderer should define phone landscape scaling rules');
