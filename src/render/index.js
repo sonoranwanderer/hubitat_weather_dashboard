@@ -7020,6 +7020,80 @@ function createRenderer(options = {}) {
 .wdash-air-metrics .wdash-metric-value { font-size: 1rem; white-space: nowrap; text-align: right; }
 .wdash-air-metrics .wdash-metric--placeholder { visibility: hidden; pointer-events: none; }
 .wdash-air-empty { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; min-height: 72px; padding: 14px; border-radius: 10px; background: rgba(255,255,255,0.04); font-size: 0.86rem; letter-spacing: 0.08em; text-transform: uppercase; color: #9badcf; opacity: 0.8; text-align: center; }
+@media (min-width: 1400px) and (min-height: 850px) {
+  .wdash { --wdash-frame-gap: clamp(16px, 0.95vw, 24px); }
+  .wdash-grid { gap: clamp(14px, 0.8vw, 22px); }
+  .wdash-card { padding: clamp(14px, 0.9vw, 22px); gap: clamp(12px, 0.8vw, 18px); border-radius: 16px; }
+  .wdash-card-header { font-size: clamp(0.8rem, 0.52vw, 1.02rem); line-height: 1.14; }
+  .wdash-card-header h3 { font-size: clamp(0.95rem, 0.68vw, 1.25rem); line-height: 1.12; }
+  .wdash-updated { font-size: clamp(0.74rem, 0.48vw, 0.94rem); }
+  .wdash-updated-line--secondary { font-size: clamp(0.68rem, 0.42vw, 0.84rem); }
+  .wdash-temp-unit-indicator { width: clamp(29px, 1.6vw, 38px); height: clamp(29px, 1.6vw, 38px); font-size: clamp(0.82rem, 0.48vw, 1rem); }
+  .wdash-card--temp-wind { --temp-wind-gauge-center-inset: 22%; --temp-wind-compass-block-inset: 21%; --temp-wind-compass-inline-inset: 17%; padding-block: clamp(8px, 0.7vw, 16px); }
+  .wdash-temp-wind-main { gap: clamp(18px, 1.3vw, 34px); }
+  .wdash-gauge-center { padding: clamp(12px, 0.85vw, 20px); gap: clamp(7px, 0.55vw, 12px); }
+  .wdash-gauge-value { font-size: clamp(2.9rem, 2.25vw, 4.2rem); line-height: 0.98; letter-spacing: 0; }
+  .wdash-gauge-label { font-size: clamp(0.74rem, 0.44vw, 0.92rem); }
+  .wdash-temp-extrema-label { font-size: clamp(0.68rem, 0.4vw, 0.86rem); }
+  .wdash-temp-extrema-value { font-size: clamp(1.1rem, 0.72vw, 1.45rem); }
+  .wdash-wind-overlay { gap: clamp(7px, 0.55vw, 12px); }
+  .wdash-wind-bearing,
+  .wdash-wind-heading { font-size: clamp(0.9rem, 0.58vw, 1.12rem); }
+  .wdash-wind-speed-value { font-size: clamp(2.7rem, 2vw, 3.9rem); line-height: 1; }
+  .wdash-wind-speed-unit { font-size: clamp(1rem, 0.62vw, 1.25rem); }
+  .wdash-wind-gust-value { font-size: clamp(1.1rem, 0.72vw, 1.45rem); }
+  .wdash-wind-gust-label { font-size: clamp(0.72rem, 0.44vw, 0.92rem); }
+  .wdash-metric-label { font-size: clamp(0.68rem, 0.42vw, 0.86rem); line-height: 1.16; }
+  .wdash-metric-value { font-size: clamp(1.08rem, 0.72vw, 1.42rem); line-height: 1.12; }
+  .wdash-metric-sub { font-size: clamp(0.76rem, 0.48vw, 1rem); }
+  .wdash-card--ambient { gap: clamp(12px, 0.8vw, 20px); }
+  .wdash-ambient { gap: clamp(12px, 0.8vw, 20px); min-height: 0; }
+  .wdash-ambient-circles { flex: 1 1 auto; align-items: center; gap: clamp(24px, 2vw, 48px); min-height: 0; }
+  .wdash-ambient-circle { flex-basis: min(220px, calc((100% - 48px) / 2)); width: min(220px, calc((100% - 48px) / 2)); max-width: min(42vh, 220px); padding: clamp(14px, 0.9vw, 22px); gap: clamp(7px, 0.5vw, 12px); }
+  .wdash-ambient-reading { font-size: clamp(2.2rem, 1.75vw, 3.25rem); line-height: 1; }
+  .wdash-ambient-label { font-size: clamp(0.72rem, 0.48vw, 0.98rem); line-height: 1.12; }
+  .wdash-ambient-rotation { font-size: clamp(0.8rem, 0.5vw, 1rem); }
+  .wdash-ambient-next,
+  .wdash-ambient-timer { top: auto; bottom: 8%; width: clamp(40px, 2.4vw, 54px); height: clamp(40px, 2.4vw, 54px); }
+  .wdash-ambient-next { left: max(-42px, -18%); }
+  .wdash-ambient-timer { right: max(-42px, -18%); }
+  .wdash-ambient-timer-countdown { font-size: clamp(0.78rem, 0.48vw, 1rem); }
+  .wdash-lightning { gap: clamp(14px, 1vw, 26px); padding: clamp(8px, 0.7vw, 16px); }
+  .wdash-lightning-data { gap: clamp(10px, 0.8vw, 18px); }
+  .wdash-lightning-row { font-size: clamp(0.86rem, 0.58vw, 1.12rem); }
+  .wdash-lightning-value { font-size: clamp(1.15rem, 0.82vw, 1.55rem); }
+  .wdash-rain-main { grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr) minmax(0, 1.15fr); gap: clamp(22px, 1.6vw, 42px); align-items: center; }
+  .wdash-rain-col--drop svg { --wdash-rain-drop-height: 100%; }
+  .wdash-rain-rate-wrapper { width: 88%; }
+  .wdash-rain-daily-metric { gap: clamp(8px, 0.55vw, 14px); }
+  .wdash-rain-daily-value { gap: clamp(0.4rem, 0.4vw, 0.7rem); }
+  .wdash-rain-daily-value-amount { font-size: clamp(3.3rem, 2.5vw, 4.8rem); }
+  .wdash-rain-daily-value-unit { font-size: clamp(1rem, 0.72vw, 1.35rem); }
+  .wdash-rain-daily-label { font-size: clamp(1rem, 0.72vw, 1.35rem); }
+  .wdash-rain-stats.wdash-metric-row--table .wdash-metric { padding: clamp(5px, 0.45vw, 9px) 0; }
+  .wdash-rain-stats.wdash-metric-row--table .wdash-metric-label,
+  .wdash-rain-stats.wdash-metric-row--table .wdash-metric-value { font-size: clamp(0.95rem, 0.68vw, 1.28rem); line-height: 1.16; }
+  .wdash-pressure-main { gap: clamp(20px, 1.4vw, 36px); }
+  .wdash-pressure-reading { font-size: clamp(2.2rem, 1.65vw, 3.1rem); min-height: 1.25em; }
+  .wdash-pressure-button { font-size: clamp(0.78rem, 0.5vw, 1rem); padding: clamp(5px, 0.36vw, 8px) clamp(12px, 0.8vw, 18px); }
+  .wdash-pressure-outlook-icon { width: clamp(54px, 3.5vw, 78px); height: clamp(54px, 3.5vw, 78px); }
+  .wdash-pressure-outlook-label { font-size: clamp(0.82rem, 0.55vw, 1.05rem); padding: clamp(5px, 0.36vw, 8px) clamp(12px, 0.8vw, 18px); }
+  .wdash-pressure-stats .wdash-metric-value { font-size: clamp(1rem, 0.68vw, 1.32rem); }
+  .wdash-card--solar .wdash-sun-graphic { margin-top: clamp(-28px, -1.1vw, -16px); }
+  .wdash-sun-metric-label,
+  .wdash-sun-metric-value,
+  .wdash-sun-time { font-size: clamp(0.9rem, 0.62vw, 1.2rem); }
+  .wdash-sun-metric-subvalue,
+  .wdash-moon-phase-name { font-size: clamp(0.82rem, 0.56vw, 1.05rem); }
+  .wdash-moon-illumination { font-size: clamp(0.74rem, 0.48vw, 0.95rem); }
+  .wdash-moon-icon { width: clamp(18px, 1.15vw, 28px); height: clamp(18px, 1.15vw, 28px); }
+  .wdash-card--air { gap: clamp(10px, 0.7vw, 16px); }
+  .wdash-air-source { font-size: clamp(0.72rem, 0.45vw, 0.92rem); }
+  .wdash-air-metrics { flex: 1 1 auto; grid-auto-rows: minmax(72px, 1fr); gap: clamp(10px, 0.8vw, 18px) clamp(14px, 1vw, 26px); align-content: stretch; }
+  .wdash-air-metrics .wdash-metric { min-height: 72px; padding: clamp(10px, 0.72vw, 16px) clamp(12px, 0.85vw, 20px); }
+  .wdash-air-metrics .wdash-metric-label { min-height: 0; font-size: clamp(0.68rem, 0.42vw, 0.9rem); line-height: 1.12; }
+  .wdash-air-metrics .wdash-metric-value { font-size: clamp(1.15rem, 0.9vw, 1.8rem); line-height: 1.08; }
+}
 @media (max-width: 1100px) {
   .wdash-grid { gap: var(--wdash-grid-gap-tablet, ${DEFAULT_GAPS.tablet}); grid-template-columns: var(--wdash-grid-columns-tablet, ${DEFAULT_COLUMNS.tablet}); grid-template-rows: var(--wdash-grid-rows-tablet, ${DEFAULT_TEMPLATES.tablet.rows}); grid-template-areas: var(--wdash-grid-areas-tablet, ${DEFAULT_TEMPLATES.tablet.areas}); }
   .wdash { --wdash-frame-gap: var(--wdash-frame-gap-tablet, var(--wdash-frame-gap-desktop, 18px)); }

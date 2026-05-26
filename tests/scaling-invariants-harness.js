@@ -187,6 +187,10 @@ function assertAirQualityRotationStability(payload, viewport) {
 
 function assertCssContracts() {
   const source = fs.readFileSync(path.join(__dirname, '..', 'src', 'render', 'index.js'), 'utf8');
+  assert(source.includes('@media (min-width: 1400px) and (min-height: 850px)'), 'renderer should define large-canvas scaling rules');
+  assert(source.includes('.wdash-air-metrics { flex: 1 1 auto; grid-auto-rows: minmax(72px, 1fr);'), 'large-canvas air quality metrics should use available card height');
+  assert(source.includes('.wdash-ambient-circle { flex-basis: min(220px,'), 'large-canvas ambient circles should grow beyond the base desktop size');
+  assert(source.includes('.wdash-gauge-value { font-size: clamp(2.9rem,'), 'large-canvas temp gauge values should scale up');
   assert(source.includes('@media (max-width: 720px)'), 'renderer should define mobile scaling rules');
   assert(source.includes('@media (max-width: 980px) and (max-height: 520px)'), 'renderer should define phone landscape scaling rules');
   assert(source.includes('.wdash-card:not(.wdash-card--ambient) { overflow: hidden; }'), 'compact cards should clip to card bounds');
