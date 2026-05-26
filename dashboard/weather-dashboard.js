@@ -1919,6 +1919,7 @@
           root.style.setProperty('--wdash-lightning-padding-fluid', `${lerp(4, 8).toFixed(2)}px ${lerp(6, 16).toFixed(2)}px ${lerp(10, 16).toFixed(2)}px`);
           px('--wdash-lightning-data-gap-fluid', 10, 18);
           px('--wdash-rain-gap-fluid', 18, 42);
+          px('--wdash-rain-drop-max-fluid', 150, 235);
           pct('--wdash-rain-rate-width-fluid', 75, 88);
           px('--wdash-rain-daily-gap-fluid', 6, 14);
           rem('--wdash-rain-daily-value-gap-fluid', 0.35, 0.7);
@@ -2681,6 +2682,9 @@
           return `
             <section class="wdash-card wdash-card--rain">
               <button type="button" class="wdash-temp-unit-indicator wdash-rain-unit-indicator" data-rain-unit-indicator="true" aria-label="${escapeHtml(indicatorLabel)}" title="${escapeHtml(indicatorLabel)}">${escapeHtml(indicatorText)}</button>
+              <header class="wdash-card-header">
+                <h3>Rain</h3>
+              </header>
               <div class="wdash-rain-main">
                 <div class="wdash-rain-col wdash-rain-col--drop">
                   <svg viewBox="0 0 120 160" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Rain rate visualization">
@@ -6931,7 +6935,7 @@
         }
       }
       @keyframes wdash-lightning-flash { 0%, 100% { opacity: 1; } 50% { opacity: 0.2; } }
-      .wdash-card--rain { grid-area: rain; position: relative; }
+      .wdash-card--rain { grid-area: rain; position: relative; overflow: hidden; }
       .wdash-rain-battery { display: inline-flex; align-items: center; justify-content: center; }
       .wdash-card--pressure { grid-area: pressure; position: relative; }
       .wdash-card--solar { grid-area: solar; }
@@ -6955,7 +6959,7 @@
       .wdash-temp-unit-indicator--gauge { position: absolute; top: 0; left: 0; transform: none; z-index: 2; }
       .wdash-wind-unit-indicator { position: absolute; top: 6px; right: 6px; z-index: 2; }
       .wdash-pressure-unit-indicator { position: absolute; left: 6px; bottom: 6px; z-index: 2; }
-      .wdash-rain-unit-indicator { position: absolute; top: 6px; left: 6px; z-index: 2; }
+      .wdash-rain-unit-indicator { position: absolute; left: 6px; bottom: 6px; z-index: 2; }
       .wdash-lightning-unit-indicator { position: absolute; left: 6px; bottom: 6px; z-index: 2; }
       .wdash-temp-unit-indicator:hover { background: rgba(255,255,255,0.16); border-color: rgba(255,255,255,0.35); }
       .wdash-temp-unit-indicator:active { background: rgba(77,167,255,0.28); border-color: rgba(77,167,255,0.6); }
@@ -7078,10 +7082,10 @@
       .wdash-ambient-rotation { font-size: var(--wdash-ambient-meta-font-fluid, 0.75rem); color: #8ea0c8; }
       .wdash-ambient-rotation:empty { display: none; }
       .wdash-ambient--empty .wdash-ambient-reading { opacity: 0.6; }
-      .wdash-rain-main { display: grid; grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr) minmax(0, 1.15fr); gap: var(--wdash-rain-gap-fluid, 18px); align-items: center; flex: 1; height: 100%; }
+      .wdash-rain-main { display: grid; grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr) minmax(0, 1.15fr); gap: var(--wdash-rain-gap-fluid, 18px); align-items: center; flex: 1 1 auto; min-height: 0; height: auto; overflow: hidden; }
       .wdash-rain-col { min-height: 0; }
-      .wdash-rain-col--drop { display: flex; align-items: center; justify-content: center; }
-      .wdash-rain-col--drop svg { width: auto; height: var(--wdash-rain-drop-height, 95%); max-width: 100%; max-height: var(--wdash-rain-drop-height, 95%); display: block; filter: drop-shadow(0 6px 12px rgba(0,0,0,0.3)); overflow: visible; }
+      .wdash-rain-col--drop { display: flex; align-items: center; justify-content: center; height: 100%; overflow: hidden; }
+      .wdash-rain-col--drop svg { width: auto; height: min(var(--wdash-rain-drop-height, 88%), var(--wdash-rain-drop-max-fluid, 150px)); max-width: 100%; max-height: 100%; display: block; filter: drop-shadow(0 6px 12px rgba(0,0,0,0.3)); overflow: hidden; }
       .wdash-rain-drop-outline { fill: none; stroke: #6ab9ff; stroke-width: 4; stroke-linejoin: round; }
       .wdash-rain-drop-bg { fill: rgba(80,160,255,0.15); }
       .wdash-rain-drop-fill { transition: all 0.4s ease-in-out; }

@@ -268,6 +268,7 @@ describe('Renderer payload and layout branches', () => {
     expect(grid.querySelector('.wdash-card--ambient')).not.toBeNull();
     expect(grid.querySelector('.wdash-card--lightning')).not.toBeNull();
     expect(grid.querySelector('.wdash-card--rain')).not.toBeNull();
+    expect(grid.querySelector('.wdash-card--rain .wdash-card-header h3').textContent).toBe('Rain');
     expect(grid.querySelector('.wdash-card--pressure')).not.toBeNull();
     expect(grid.querySelector('.wdash-card--solar')).not.toBeNull();
     expect(grid.querySelector('.wdash-card--air')).not.toBeNull();

@@ -200,6 +200,9 @@ function assertCssContracts() {
   assert(source.includes('.wdash-air-metrics { flex: 1 1 auto; grid-auto-rows: minmax(var(--wdash-air-row-min-fluid, 42px), 1fr);'), 'air quality metrics should scale from renderer-provided row sizing');
   assert(source.includes('.wdash-ambient-circle { flex: 0 0 var(--wdash-ambient-circle-size-fluid, 130px);'), 'ambient circles should grow from renderer-provided sizing');
   assert(source.includes('.wdash-gauge-value { font-size: var(--wdash-gauge-value-font-fluid, 2.32rem);'), 'temp gauge values should scale from renderer-provided typography');
+  assert(source.includes('<h3>Rain</h3>'), 'rain card should render a visible header');
+  assert(source.includes('.wdash-rain-unit-indicator { position: absolute; left: 6px; bottom: 6px;'), 'rain unit button should remain bottom-left anchored');
+  assert(source.includes('.wdash-rain-col--drop svg { width: auto; height: min(var(--wdash-rain-drop-height, 88%), var(--wdash-rain-drop-max-fluid, 150px)); max-width: 100%; max-height: 100%;'), 'rain drop should be bounded by its column and fluid max size');
   assert(source.includes('@media (max-width: 720px)'), 'renderer should define mobile scaling rules');
   assert(source.includes('@media (max-width: 980px) and (max-height: 520px)'), 'renderer should define phone landscape scaling rules');
   assert(source.includes('.wdash-card:not(.wdash-card--ambient) { overflow: hidden; }'), 'compact cards should clip to card bounds');
