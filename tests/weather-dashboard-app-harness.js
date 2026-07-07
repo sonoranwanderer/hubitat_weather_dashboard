@@ -13,6 +13,13 @@ function makePayload(temp = 76.2) {
   };
 }
 
+function assertApprox(actual, expected, tolerance, message) {
+  assert(
+    Math.abs(actual - expected) <= tolerance,
+    `${message}: expected ${expected}, received ${actual}`
+  );
+}
+
 function setupAppEnvironment(options = {}) {
   const search = options.search || '?hubBaseUrl=http%3A%2F%2Fhubitat.local&appId=123&makerToken=token&deviceIds=10,11&statusBar=no&pollIntervalMs=5000&maxBackoffMs=20000';
   const inlineConfig = options.inlineConfig
@@ -287,6 +294,68 @@ function runScheduledCallbacks(env, limit = 20) {
   delete global.document;
   delete global.location;
 
+  const portraitPhoneEnv = setupAppEnvironment({
+    search: '?hubBaseUrl=http%3A%2F%2Fhubitat.local&appId=123&makerToken=token&deviceIds=10&width=430&height=932',
+    responses: [
+      { ok: true, text: JSON.stringify(makePayload(77.8)) }
+    ]
+  });
+  portraitPhoneEnv.window.__WEATHER_DASHBOARD_APP__.refreshNow();
+  await flushMicrotasks();
+  const portraitPhonePayload = lastRenderedPayload(portraitPhoneEnv.renderCalls);
+  assertApprox(portraitPhonePayload.metadata.layout.baseWidth, 1200, 0.01, 'portrait phone top-level baseWidth should keep same-ratio base');
+  assertApprox(portraitPhonePayload.metadata.layout.baseHeight, 2600.93, 0.01, 'portrait phone top-level baseHeight should keep same-ratio base');
+  assertApprox(portraitPhonePayload.metadata.layout.desktop.baseWidth, 1200, 0.01, 'portrait phone desktop baseWidth should keep same-ratio base');
+  assertApprox(portraitPhonePayload.metadata.layout.desktop.baseHeight, 2600.93, 0.01, 'portrait phone desktop baseHeight should keep same-ratio base');
+  assertApprox(portraitPhonePayload.metadata.layout.tablet.baseWidth, 1200, 0.01, 'portrait phone tablet baseWidth should keep same-ratio base');
+  assertApprox(portraitPhonePayload.metadata.layout.tablet.baseHeight, 2600.93, 0.01, 'portrait phone tablet baseHeight should keep same-ratio base');
+  assert.strictEqual(portraitPhonePayload.metadata.layout.mobile.baseWidth, 430, 'portrait phone mobile baseWidth should match standalone width');
+  assert.strictEqual(portraitPhonePayload.metadata.layout.mobile.baseHeight, 932, 'portrait phone mobile baseHeight should match standalone height');
+
+  delete global.window;
+  delete global.document;
+  delete global.location;
+
+  const landscapePhoneEnv = setupAppEnvironment({
+    search: '?hubBaseUrl=http%3A%2F%2Fhubitat.local&appId=123&makerToken=token&deviceIds=10&width=932&height=430',
+    responses: [
+      { ok: true, text: JSON.stringify(makePayload(77.9)) }
+    ]
+  });
+  landscapePhoneEnv.window.__WEATHER_DASHBOARD_APP__.refreshNow();
+  await flushMicrotasks();
+  const landscapePhonePayload = lastRenderedPayload(landscapePhoneEnv.renderCalls);
+  assertApprox(landscapePhonePayload.metadata.layout.baseWidth, 1950.698, 0.01, 'landscape phone top-level baseWidth should keep same-ratio base');
+  assert.strictEqual(landscapePhonePayload.metadata.layout.baseHeight, 900, 'landscape phone top-level baseHeight should keep same-ratio base');
+  assertApprox(landscapePhonePayload.metadata.layout.desktop.baseWidth, 1950.698, 0.01, 'landscape phone desktop baseWidth should keep same-ratio base');
+  assert.strictEqual(landscapePhonePayload.metadata.layout.desktop.baseHeight, 900, 'landscape phone desktop baseHeight should keep same-ratio base');
+  assert.strictEqual(landscapePhonePayload.metadata.layout.tablet.baseWidth, 932, 'landscape phone tablet baseWidth should match standalone width');
+  assert.strictEqual(landscapePhonePayload.metadata.layout.tablet.baseHeight, 430, 'landscape phone tablet baseHeight should match standalone height');
+  assert.strictEqual(landscapePhonePayload.metadata.layout.mobile.baseWidth, 932, 'landscape phone mobile baseWidth should match standalone width');
+  assert.strictEqual(landscapePhonePayload.metadata.layout.mobile.baseHeight, 430, 'landscape phone mobile baseHeight should match standalone height');
+
+  delete global.window;
+  delete global.document;
+  delete global.location;
+
+  const narrowLandscapePhoneEnv = setupAppEnvironment({
+    search: '?hubBaseUrl=http%3A%2F%2Fhubitat.local&appId=123&makerToken=token&deviceIds=10&width=700&height=390',
+    responses: [
+      { ok: true, text: JSON.stringify(makePayload(78.0)) }
+    ]
+  });
+  narrowLandscapePhoneEnv.window.__WEATHER_DASHBOARD_APP__.refreshNow();
+  await flushMicrotasks();
+  const narrowLandscapePhonePayload = lastRenderedPayload(narrowLandscapePhoneEnv.renderCalls);
+  assert.strictEqual(narrowLandscapePhonePayload.metadata.layout.tablet.baseWidth, 700, 'narrow landscape phone tablet baseWidth should match standalone width');
+  assert.strictEqual(narrowLandscapePhonePayload.metadata.layout.tablet.baseHeight, 390, 'narrow landscape phone tablet baseHeight should match standalone height');
+  assert.strictEqual(narrowLandscapePhonePayload.metadata.layout.mobile.baseWidth, 700, 'narrow landscape phone mobile baseWidth should match standalone width');
+  assert.strictEqual(narrowLandscapePhonePayload.metadata.layout.mobile.baseHeight, 390, 'narrow landscape phone mobile baseHeight should match standalone height');
+
+  delete global.window;
+  delete global.document;
+  delete global.location;
+
   const browserDimensionEnv = setupAppEnvironment({
     search: '?hubBaseUrl=http%3A%2F%2Fhubitat.local&appId=123&makerToken=token&deviceIds=10&statusBar=no',
     innerWidth: 600,
@@ -304,6 +373,56 @@ function runScheduledCallbacks(env, limit = 20) {
   const browserDisplayTile = findElementById(browserDimensionEnv.window.document.body, 'tile-0');
   assert.strictEqual(browserDisplayTile.style.width, '560px', 'browser viewport should subtract the horizontal inner offset from default width');
   assert.strictEqual(browserDisplayTile.style.height, '310px', 'browser viewport should subtract the vertical inner offset from default height');
+
+  delete global.window;
+  delete global.document;
+  delete global.location;
+
+  const browserPortraitPhoneEnv = setupAppEnvironment({
+    search: '?hubBaseUrl=http%3A%2F%2Fhubitat.local&appId=123&makerToken=token&deviceIds=10&statusBar=no',
+    innerWidth: 430,
+    innerHeight: 932,
+    responses: [
+      { ok: true, text: JSON.stringify(makePayload(78.15)) }
+    ]
+  });
+  browserPortraitPhoneEnv.window.__WEATHER_DASHBOARD_APP__.refreshNow();
+  await flushMicrotasks();
+  runScheduledCallbacks(browserPortraitPhoneEnv);
+  const browserPortraitPhonePayload = lastRenderedPayload(browserPortraitPhoneEnv.renderCalls);
+  assert.strictEqual(browserPortraitPhonePayload.metadata.layout.mobile.baseWidth, 406, 'browser portrait phone mobile baseWidth should subtract compact horizontal inner offset');
+  assert.strictEqual(browserPortraitPhonePayload.metadata.layout.mobile.baseHeight, 908, 'browser portrait phone mobile baseHeight should subtract compact vertical inner offset');
+  assertApprox(browserPortraitPhonePayload.metadata.layout.tablet.baseWidth, 1200, 0.01, 'browser portrait phone tablet baseWidth should keep same-ratio base');
+  assertApprox(browserPortraitPhonePayload.metadata.layout.tablet.baseHeight, 2683.744, 0.01, 'browser portrait phone tablet baseHeight should keep same-ratio base');
+  const browserPortraitDisplayTile = findElementById(browserPortraitPhoneEnv.window.document.body, 'tile-0');
+  assert.strictEqual(browserPortraitDisplayTile.style.width, '406px', 'browser portrait phone display should subtract compact horizontal inner offset');
+  assert.strictEqual(browserPortraitDisplayTile.style.height, '908px', 'browser portrait phone display should subtract compact vertical inner offset');
+
+  delete global.window;
+  delete global.document;
+  delete global.location;
+
+  const browserLandscapePhoneEnv = setupAppEnvironment({
+    search: '?hubBaseUrl=http%3A%2F%2Fhubitat.local&appId=123&makerToken=token&deviceIds=10&statusBar=no',
+    innerWidth: 932,
+    innerHeight: 430,
+    responses: [
+      { ok: true, text: JSON.stringify(makePayload(78.16)) }
+    ]
+  });
+  browserLandscapePhoneEnv.window.__WEATHER_DASHBOARD_APP__.refreshNow();
+  await flushMicrotasks();
+  runScheduledCallbacks(browserLandscapePhoneEnv);
+  const browserLandscapePhonePayload = lastRenderedPayload(browserLandscapePhoneEnv.renderCalls);
+  assert.strictEqual(browserLandscapePhonePayload.metadata.layout.tablet.baseWidth, 892, 'browser landscape phone tablet baseWidth should subtract horizontal inner offset');
+  assert.strictEqual(browserLandscapePhonePayload.metadata.layout.tablet.baseHeight, 390, 'browser landscape phone tablet baseHeight should subtract vertical inner offset');
+  assert.strictEqual(browserLandscapePhonePayload.metadata.layout.mobile.baseWidth, 892, 'browser landscape phone mobile baseWidth should subtract horizontal inner offset');
+  assert.strictEqual(browserLandscapePhonePayload.metadata.layout.mobile.baseHeight, 390, 'browser landscape phone mobile baseHeight should subtract vertical inner offset');
+  assertApprox(browserLandscapePhonePayload.metadata.layout.desktop.baseWidth, 2058.462, 0.01, 'browser landscape phone desktop baseWidth should keep same-ratio base');
+  assert.strictEqual(browserLandscapePhonePayload.metadata.layout.desktop.baseHeight, 900, 'browser landscape phone desktop baseHeight should keep same-ratio base');
+  const browserLandscapeDisplayTile = findElementById(browserLandscapePhoneEnv.window.document.body, 'tile-0');
+  assert.strictEqual(browserLandscapeDisplayTile.style.width, '892px', 'browser landscape phone display should subtract horizontal inner offset');
+  assert.strictEqual(browserLandscapeDisplayTile.style.height, '390px', 'browser landscape phone display should subtract vertical inner offset');
 
   delete global.window;
   delete global.document;

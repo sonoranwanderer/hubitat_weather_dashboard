@@ -15,6 +15,7 @@
   const DEFAULT_RENDER_BASE_WIDTH = 1200;
   const DEFAULT_RENDER_BASE_HEIGHT = 900;
   const HTML_APP_INNER_OFFSET = 20;
+  const HTML_APP_PHONE_PORTRAIT_INNER_OFFSET = 12;
   const HTML_APP_MAX_SCALE = 2;
   const HOST_RESIZE_BUFFER_PX = 2;
 
@@ -463,6 +464,11 @@
         --wdash-grid-gap-tablet: 14px;
         background: radial-gradient(circle at top, rgba(20,40,80,0.55), rgba(4,10,22,0.92));
         font-family: var(--wdash-app-font);
+      }
+      @media (max-width: 720px) and (orientation: portrait) {
+        #${HOST_ID} {
+          padding: ${HTML_APP_PHONE_PORTRAIT_INNER_OFFSET}px;
+        }
       }
       #${HOST_ID}[data-status-bar-visible="false"][data-status-bar-locked="true"] {
         gap: 0;
@@ -1277,8 +1283,13 @@
   function browserViewportDimensions() {
     const doc = global.document;
     const docElement = doc?.documentElement || null;
-    const width = (Number(global.innerWidth) || Number(docElement?.clientWidth) || 0) - (HTML_APP_INNER_OFFSET * 2);
-    const height = (Number(global.innerHeight) || Number(docElement?.clientHeight) || 0) - (HTML_APP_INNER_OFFSET * 2);
+    const rawWidth = Number(global.innerWidth) || Number(docElement?.clientWidth) || 0;
+    const rawHeight = Number(global.innerHeight) || Number(docElement?.clientHeight) || 0;
+    const offset = rawWidth <= 720 && rawHeight > rawWidth
+      ? HTML_APP_PHONE_PORTRAIT_INNER_OFFSET
+      : HTML_APP_INNER_OFFSET;
+    const width = rawWidth - (offset * 2);
+    const height = rawHeight - (offset * 2);
     if (!Number.isFinite(width) || width <= 0 || !Number.isFinite(height) || height <= 0) {
       return null;
     }
@@ -1319,22 +1330,53 @@
     };
   }
 
+  function isStandalonePortraitPhone(dimensions) {
+    const width = Number(dimensions?.width);
+    const height = Number(dimensions?.height);
+    return Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0
+      && width <= 720
+      && height > width;
+  }
+
+  function isStandaloneLandscapePhone(dimensions) {
+    const width = Number(dimensions?.width);
+    const height = Number(dimensions?.height);
+    return Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0
+      && width <= 980
+      && height <= 520
+      && width > height;
+  }
+
+  function assignLayoutBaseDimensions(layout, breakpoint, dimensions) {
+    if (!isObjectRecord(layout) || !breakpoint || !isObjectRecord(dimensions)) {
+      return;
+    }
+    if (!isObjectRecord(layout[breakpoint])) {
+      layout[breakpoint] = {};
+    }
+    layout[breakpoint].baseWidth = dimensions.width;
+    layout[breakpoint].baseHeight = dimensions.height;
+  }
+
   function applyStandaloneLayoutMetadata(payload) {
     if (!isObjectRecord(payload)) {
       return;
     }
     ensureDefaultLayoutMetadata(payload);
-    const dimensions = deriveStandaloneBaseDimensions(standaloneDashboardDimensions());
+    const dashboardDimensions = standaloneDashboardDimensions();
+    const dimensions = deriveStandaloneBaseDimensions(dashboardDimensions);
     const layout = payload.metadata.layout;
     layout.baseWidth = dimensions.width;
     layout.baseHeight = dimensions.height;
     ['desktop', 'tablet', 'mobile'].forEach(breakpoint => {
-      if (!isObjectRecord(layout[breakpoint])) {
-        layout[breakpoint] = {};
-      }
-      layout[breakpoint].baseWidth = dimensions.width;
-      layout[breakpoint].baseHeight = dimensions.height;
+      assignLayoutBaseDimensions(layout, breakpoint, dimensions);
     });
+    if (isStandalonePortraitPhone(dashboardDimensions)) {
+      assignLayoutBaseDimensions(layout, 'mobile', dashboardDimensions);
+    } else if (isStandaloneLandscapePhone(dashboardDimensions)) {
+      assignLayoutBaseDimensions(layout, 'tablet', dashboardDimensions);
+      assignLayoutBaseDimensions(layout, 'mobile', dashboardDimensions);
+    }
   }
 
   function buildPayloadFromDevice(device) {
